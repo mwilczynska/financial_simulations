@@ -14,8 +14,8 @@ Stochastic generators and retirement calculations remain planned.
 | Daily time resolution and accounting | [Daily engine](daily-engine.md): Stage 1A daily core implemented; later generators/rules pending | Trading observations, calendar dates, compounding, scheduled events, costs and daily validation |
 | Data contract and adapters | [Data adapters](data-adapters.md): implemented, fixture-validated | Dataset aliases, strict calendars, currencies, source rows, distributions, embedded fees and input hashes |
 | Deterministic portfolio accounting | [Portfolio accounting](portfolio-accounting.md): implemented and validated | Positions, daily returns, cash flows, rebalancing, retained cash, shortfalls and transaction ordering |
-| Historical replay | Planned | Start windows, complete horizons, joint sequences and interpretation of overlapping windows |
-| Independent and block bootstrap | Planned | Joint daily sampling, block-length units/selection, stationary blocks, boundary handling and diagnostics |
+| Historical replay | [Resampling](resampling.md): core implemented | Complete windows, joint sequences, mapped calendar and overlap limitations |
+| Independent and block bootstrap | [Resampling](resampling.md): core implemented; comparison runner in progress | Joint rows, observation block lengths, circular boundaries and reproducible streams |
 | Parametric Monte Carlo | Planned | Daily calibration, covariance, return support and conversion of annual assumptions |
 | Assumption uncertainty and stresses | Planned | Persistent long-run parameters, scenario grids, parameter sampling and model comparison |
 | Reporting and outcome measures | [Baseline reporting](portfolio-accounting.md): deterministic PNG/CSV/HTML implemented; stochastic measures planned | Daily performance drawdown, account value, allocation, flows and period reconciliation |

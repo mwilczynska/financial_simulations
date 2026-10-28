@@ -120,6 +120,9 @@ extension; PDF generation is excluded by user instruction. See the
 
 ### 1B. Historical replay and dependence-preserving bootstrap
 
+Implementation in progress: joint samplers, complete-window checks and daily
+batch accounting are fixture-validated. See [resampling](docs/methodology/resampling.md).
+
 Implement:
 
 - Contiguous rolling historical windows, preserving the complete sequence of joint returns and available inflation/FX factors.
