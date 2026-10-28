@@ -1,6 +1,14 @@
-# Stage 1C implementation and next-session handoff
+# Stage 1D implementation and next-session handoff
 
 Updated: 2026-10-28. The user authorised Stage 1B after the Stage 1A closeout.
+
+The user has now authorised the next section, Stage 1D. Its evaluation kernel
+is implemented: exact pointwise nominal/real quantiles on calendar account
+marks, explicit growing targets, drawdown/recovery with censoring and conditional
+Monte Carlo error. Continue runner integration, PNG reports and companion-data
+validation. Read [evaluation methodology](methodology/evaluation.md) and
+[ADR 0008](decisions/0008-calendar-evaluation-and-sampling-error.md). Keep the
+default 40/20/20/20 mix and generate PNGs directly from Python, never PDFs.
 
 The user has now requested a commit/push and implementation of the next part.
 Stage 1C now implements daily correlated log-return calibration/generation,
@@ -27,10 +35,10 @@ Python-source SHA-256 `492e79b7f86e001d43fa839cf8991ca317e9c5cc77695b223724f90f6
 Stage 1C is complete within its documented scope. Source data, reports and
 private machine information remain ignored.
 
-The next planned part is Stage 1D: timewise nominal/real percentile reporting,
-stated targets, drawdown/recovery and sampling-error/model sensitivity. That
-stage has not been started. Do not begin retirement modelling as part of this
-Stage 1C checkpoint.
+Stage 1D now follows this completed Stage 1C checkpoint. Rolling holdouts,
+observed/reconstructed-segment sensitivity and paired multi-portfolio reporting
+remain future Stage 1D work. Do not begin retirement modelling without its own
+user instruction.
 
 Stage 1B now provides complete-window mapped historical replay, joint independent
 rows, moving blocks, stationary bootstrap and a daily no-flow sensitivity runner.
