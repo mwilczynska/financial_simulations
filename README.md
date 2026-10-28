@@ -18,5 +18,8 @@ Status: planning and methodology. Simulation code has not been implemented yet.
 
 - [Project plan](PLAN.md): staged implementation, data contracts and validation requirements.
 - [Literature review](docs/literature-review.md): primary research, modelling implications and limitations of the review.
+- [Methodology register](docs/methodology/README.md): detailed documentation standards, topic roadmap and current status.
+- [Daily-engine methodology](docs/methodology/daily-engine.md): calendars, compounding, scheduled cash flows, leverage, costs and worked examples.
+- [Decision records](docs/decisions/README.md): dated explanations of material choices, alternatives, evidence and consequences.
 
 Monthly and annual charts or tables will be summaries derived from daily paths. Cash flows may occur monthly, annually or on other configured dates; the underlying accounting remains daily.

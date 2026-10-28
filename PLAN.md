@@ -275,7 +275,7 @@ Keep reusable code/examples separate from private balances, birth dates, tax pos
 
 Detailed methodology is an ongoing deliverable for each model, calculation and Australian rule module. Each document records its purpose, equations and conventions, data/provenance, assumptions, algorithm, worked examples, validation, limitations and references. Clearly label proposed, implemented and validated behaviour.
 
-For material choices, record the context, alternatives, selected approach, reasons, consequences and supporting evidence in a dated decision record. Distinguish a user requirement, a verified fact, a research result and an engineering judgement. If evidence or requirements change, supersede the decision explicitly and preserve its history.
+For material choices, record the context, alternatives, selected approach, reasons, consequences and supporting evidence in a dated decision record. Distinguish a user requirement, a verified fact, a research result and an engineering judgement. If evidence or requirements change, supersede the decision explicitly and preserve its history. See the [methodology register](docs/methodology/README.md), [daily-engine methodology](docs/methodology/daily-engine.md) and [decision register](docs/decisions/README.md).
 
 Update the relevant methodology and validation evidence in the same coherent change as the implementation. Commit and push reviewed work at meaningful checkpoints, using ordinary commits on the repository's current branch and preserving remote history. Keep personal scenarios, reports, local machine paths and credentials outside committed content.
 
