@@ -1,6 +1,15 @@
-# Stage 1B implementation and next-session handoff
+# Stage 1C implementation and next-session handoff
 
 Updated: 2026-10-28. The user authorised Stage 1B after the Stage 1A closeout.
+
+The user has now requested a commit/push and implementation of the next part.
+Stage 1C is in progress: daily correlated log-return calibration/generation,
+annual return conventions and synthetic moment/boundary checks are implemented.
+There are 67 passing tests. Continue with persistent scenario assumptions,
+comparison integration, purchasing-power deflation, trace reconciliation and
+direct Python PNG review. Read [parametric methodology](methodology/parametric.md),
+[ADR 0007](decisions/0007-daily-parametric-assumptions.md) and
+[Stage 1C validation](validation/stage-1c.md).
 
 Stage 1B now provides complete-window mapped historical replay, joint independent
 rows, moving blocks, stationary bootstrap and a daily no-flow sensitivity runner.
@@ -55,6 +64,6 @@ inspected, and an initial allocation-legend overlap was corrected. See the
 The earlier planned handoff write was interrupted after the implementation had
 already been pushed. This document now supplies the durable project handoff.
 
-Additional fees, Australian inflation/FX, parametric generators, tax, super and
-retirement modelling remain unimplemented. Stage 1C is the next planned stage;
-it has not been started. Read AGENTS.md and PLAN.md before changing behaviour.
+Additional fees, Australian inflation/FX, tax, super and retirement modelling
+remain unimplemented. Stage 1D follows the current Stage 1C work. Read AGENTS.md
+and PLAN.md before changing behaviour.

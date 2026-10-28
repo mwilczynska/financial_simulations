@@ -145,6 +145,12 @@ Deliverable: one configurable portfolio compared across historical replay, indep
 
 ### 1C. Statistical Monte Carlo and assumption uncertainty
 
+In progress: correlated daily log-return calibration/generation and explicit
+annual mean conversions are implemented with synthetic validation. Scenario
+grid integration and the companion-data PNG report remain in progress. See
+[methodology](docs/methodology/parametric.md) and
+[validation](docs/validation/stage-1c.md).
+
 Add a correlated daily log-return model as an understandable parametric benchmark. Calibrate the daily log-return mean and covariance consistently, validate simulated moments, and translate any requested annual or arithmetic return assumption correctly under a stated time basis. Generate daily paths rather than generating annual returns and spreading them across days.
 
 Support explicit forward assumptions that differ from the historical mean. Show at least base, lower-return and persistent-high-inflation cases. These are user/research assumptions with recorded rationale; historical estimates remain separately visible.
