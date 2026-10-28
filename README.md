@@ -9,8 +9,9 @@ baseline reports. Synthetic tests and daily reconciliation with the companion
 optimiser are recorded in [validation evidence](docs/validation/stage-1a.md).
 Stage 1B is also implemented: joint daily historical replay, independent rows,
 moving blocks and stationary bootstrap, with sample-period/block-length/seed
-sensitivity and traceable PNG reports. Parametric generators and Australian
-retirement rules remain planned.
+sensitivity and traceable PNG reports. Stage 1C adds a correlated daily
+log-return benchmark, explicit persistent return assumptions and an assumed
+purchasing-power comparison. Australian retirement rules remain planned.
 
 ## Development
 
@@ -83,6 +84,35 @@ through an explicit `calendar_file` CSV in the experiment. Dated cash flows,
 inflation/FX factors and retirement rules are outside this comparison runner.
 Read [methodology](docs/methodology/resampling.md) and
 [validation](docs/validation/stage-1b.md) before interpreting the sample percentiles.
+
+## Compare return assumptions (Stage 1C)
+
+```powershell
+.\.venv\Scripts\python.exe -m financial_simulations compare scenarios/examples/monte_carlo.toml --output output/stage1c
+.\.venv\Scripts\python.exe scripts/validate_stage1b.py --experiment scenarios/examples/monte_carlo.toml --output output/stage1c
+```
+
+The second command runs the experiment and independently reconciles its saved
+paths through the full daily ledger; the validator supports both Stage 1B and
+1C. The example keeps the selected 40/20/20/20 portfolio and compares empirical
+generators with correlated Gaussian daily log returns under a historical fit,
+base, lower-return and persistent-high-inflation grid. Each stochastic case
+uses 512 paths per seed, two seeds and two calibration windows.
+
+Forward return and inflation rates are explicitly labelled engineering
+demonstrations, not forecasts or user-approved expectations. Historical log
+means/covariance and forward inputs are recorded separately. Annual geometric,
+expected compounded and annualised daily arithmetic conventions have distinct
+daily conversions. Gaussian cases share innovations, so base and high inflation
+have identical nominal market paths and different assumed purchasing power.
+
+Additional outputs are `terminal_purchasing_power.png`, `mean_assumptions.png`,
+`mean_assumptions.csv` and `calibration.json`. The manifest records source/code
+hashes, fitted parameters, canonical assumptions and random-stream recipes.
+The assumed deflator accrues over elapsed calendar days; it is not observed
+CPI, Australian inflation or an AUD conversion. See
+[parametric methodology](docs/methodology/parametric.md) and
+[Stage 1C validation](docs/validation/stage-1c.md) for limits and executed checks.
 
 ## Reproduce the checks
 

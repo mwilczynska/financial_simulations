@@ -1,7 +1,7 @@
 # 0007: Daily Gaussian log returns and persistent scenario assumptions
 
-Date: 2026-10-28. Status: accepted; generator implemented, report integration
-in progress.
+Date: 2026-10-28. Status: accepted and implemented for the Stage 1C no-flow
+comparison scope, with synthetic and companion-data validation.
 
 ## Context and alternatives
 
@@ -33,9 +33,9 @@ model. Differences between generators remain separate results. The initial
 grid represents assumption uncertainty transparently; an outer parameter
 distribution, regime models and retirement integration remain later work.
 
-The planned high-inflation comparison is a persistent assumed purchasing-power
+The high-inflation comparison is a persistent assumed purchasing-power
 deflator paired with the same nominal market draws as the base case. It will
 not model market reactions to inflation or claim to be observed CPI. Rates
 must have a recorded rationale and units, with demonstration inputs labelled
 as such. See [methodology](../methodology/parametric.md) for the implemented
-generator and remaining report work.
+generator and supported report scope.

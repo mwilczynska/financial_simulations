@@ -145,9 +145,9 @@ Deliverable: one configurable portfolio compared across historical replay, indep
 
 ### 1C. Statistical Monte Carlo and assumption uncertainty
 
-In progress: correlated daily log-return calibration/generation and explicit
-annual mean conversions are implemented with synthetic validation. Scenario
-grid integration and the companion-data PNG report remain in progress. See
+Implemented for the no-flow comparison: correlated daily log-return
+calibration/generation, explicit annual mean conversions, persistent assumption
+grid, assumed purchasing power, reconciled saved paths and reviewed PNGs. See
 [methodology](docs/methodology/parametric.md) and
 [validation](docs/validation/stage-1c.md).
 

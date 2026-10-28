@@ -123,3 +123,67 @@ def test_block_sampling_preserves_synthetic_serial_pattern_that_iid_breaks():
     for method in ("moving_block", "stationary"):
         draw = sample_indices(len(source), 30000, Sampler(method, 20), seed=42, path_id=0)
         assert autocorrelation(source[draw.indices], 1) < -0.90
+
+
+def test_parametric_grid_pairing_reconstruction_and_batch_invariance(tmp_path):
+    from financial_simulations.markets.assumptions import assumed_price_index
+
+    fixture(tmp_path)
+    experiment = tmp_path / "experiment.toml"
+    grid = '''
+[parametric]
+observations_per_year = 252
+reference_inflation = 0.02
+trace_assumption = "base"
+[[assumptions]]
+name = "historical"
+mean_convention = "historical"
+inflation_annual = 0.02
+rationale = "Synthetic fitted benchmark"
+[[assumptions]]
+name = "base"
+mean_convention = "expected_compounded_return"
+inflation_annual = 0.02
+rationale = "Synthetic base"
+annual_returns = {GLSTOCK = 0.08, GLBOND = 0.03}
+[[assumptions]]
+name = "high_inflation"
+mean_convention = "expected_compounded_return"
+inflation_annual = 0.04
+rationale = "Same nominal inputs, different assumed purchasing power"
+annual_returns = {GLSTOCK = 0.08, GLBOND = 0.03}
+'''
+    experiment.write_text(experiment.read_text(encoding="utf-8") + grid, encoding="utf-8")
+    config = load_comparison(experiment)
+    first, second = tmp_path / "parametric", tmp_path / "parametric-other"
+    manifest = run_comparison(config, first)
+    run_comparison(replace(config, batch_size=1), second)
+    assert manifest["model"] == "stage_1c_joint_daily_v1"
+    assert manifest["cases"] == 28 and manifest["paths_evaluated"] == 103
+    for filename in ("summary.csv", "outcomes.csv", "traces.csv", "calibration.json"):
+        assert (first / filename).read_bytes() == (second / filename).read_bytes()
+    summary = pd.read_csv(first / "summary.csv")
+    outcomes = pd.read_csv(first / "outcomes.csv").merge(summary, on="case_id", suffixes=("", "_summary"))
+    gaussian = outcomes[outcomes["method"] == "lognormal"]
+    for _, group in gaussian.groupby(["window", "horizon_observations", "seed", "path_id"]):
+        group = group.set_index("assumption")
+        assert group.loc["base", "terminal_value"] == group.loc["high_inflation", "terminal_value"]
+        assert group.loc["base", "real_terminal_value"] > group.loc["high_inflation", "real_terminal_value"]
+        dates = tuple(pd.to_datetime(group.loc["base", ["target_opening", "target_end"]]).dt.date)
+        ratio = assumed_price_index(dates, 0.02)[-1] / assumed_price_index(dates, 0.04)[-1]
+        assert group.loc["high_inflation", "real_terminal_value"] == pytest.approx(group.loc["base", "real_terminal_value"] * ratio)
+    scenario = load_scenario(config.scenario_file)
+    traces = pd.read_csv(first / "traces.csv")
+    for _, trace in traces.groupby(["case_id", "path_id"]):
+        target = tuple(t.date() for t in pd.to_datetime(trace["target_date"]))
+        returns = trace[[f"return_{a}" for a in scenario.portfolio.assets]].iloc[1:].to_numpy()
+        ledger = simulate_portfolio(MarketPath(target, scenario.portfolio.assets, returns), scenario.portfolio, 100)
+        np.testing.assert_allclose(ledger.daily.loc[pd.to_datetime(target), "value"], trace["value"], atol=1e-12)
+        if trace["method"].iloc[0] == "lognormal":
+            assert trace["donor_index"].isna().all()
+            assert trace["source_date"].isna().all()
+        np.testing.assert_allclose(trace["real_value"], trace["value"] / trace["price_index"])
+    from PIL import Image
+    with Image.open(first / "terminal_purchasing_power.png") as image:
+        assert image.format == "PNG"
+    assert not list(first.glob("*.pdf"))

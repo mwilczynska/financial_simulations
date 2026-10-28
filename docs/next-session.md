@@ -3,13 +3,30 @@
 Updated: 2026-10-28. The user authorised Stage 1B after the Stage 1A closeout.
 
 The user has now requested a commit/push and implementation of the next part.
-Stage 1C is in progress: daily correlated log-return calibration/generation,
-annual return conventions and synthetic moment/boundary checks are implemented.
-There are 67 passing tests. Continue with persistent scenario assumptions,
-comparison integration, purchasing-power deflation, trace reconciliation and
-direct Python PNG review. Read [parametric methodology](methodology/parametric.md),
+Stage 1C now implements daily correlated log-return calibration/generation,
+annual return conventions, persistent scenario assumptions, comparison reports
+and an assumed purchasing-power deflator. The companion-data experiment has
+90 cases/54,564 paths; all 15 saved paths reconcile with the full daily ledger,
+and all 6,144 base/high-inflation pairs match nominally. Five Python PNGs were
+visually reviewed; no PDFs were created. Read [parametric methodology](methodology/parametric.md),
 [ADR 0007](decisions/0007-daily-parametric-assumptions.md) and
 [Stage 1C validation](validation/stage-1c.md).
+
+Run `python scripts/validate_stage1b.py --experiment scenarios/examples/monte_carlo.toml --output output/stage1c`
+to reproduce the comparison and audits. The validator supports both stages.
+The core checkpoint is `e48498a`; its hosted CI passed on Python 3.11 and 3.14.
+The integration checkpoint follows it. Forward rates are demonstration inputs,
+not forecasts or user-approved expectations. Assumed inflation is not observed
+CPI or Australian purchasing power. Keep it distinct from nominal market draws.
+
+All 71 local tests pass on Python 3.14; the tracked-input/link/privacy check
+passes. Hosted integration CI and a clean-code output manifest are the final
+closeout checks after the implementation push.
+
+The next planned part is Stage 1D: timewise nominal/real percentile reporting,
+stated targets, drawdown/recovery and sampling-error/model sensitivity. That
+stage has not been started. Do not begin retirement modelling as part of this
+Stage 1C checkpoint.
 
 Stage 1B now provides complete-window mapped historical replay, joint independent
 rows, moving blocks, stationary bootstrap and a daily no-flow sensitivity runner.

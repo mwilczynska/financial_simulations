@@ -1,8 +1,9 @@
 # Correlated daily log-return benchmark (Stage 1C)
 
-Status on 2026-10-28: generator and synthetic checks implemented. Scenario-grid
-integration and the companion-data report are in progress; this document does
-not yet establish their validation.
+Status on 2026-10-28: implemented for the no-flow, common-currency comparison
+runner. Synthetic checks and the companion-data experiment have been executed;
+see [validation evidence](../validation/stage-1c.md). This is an initial
+conditional benchmark, not a fitted inflation model or retirement engine.
 
 ## Purpose and provenance
 
@@ -81,6 +82,77 @@ Historical means are noisy, and calibration windows may include reconstructed
 or synthetic fund history. This model does not reproduce jumps, regimes,
 serial dependence, changing covariance or uncertain long-run parameters.
 Outer parameter sampling, heavy tails, FX and retirement rules are deferred.
+
+## Persistent assumptions and assumed purchasing power
+
+The comparison TOML optionally pairs a `[parametric]` table with named
+`[[assumptions]]` tables. Every assumption records its convention, annual return
+inputs when applicable, annual inflation rate and rationale. Overrides must
+specify exactly the portfolio assets, with explicit alias resolution and no
+duplicates. All Gaussian cases in a window share its fitted daily covariance.
+The log mean and inflation assumption remain fixed for the entire path. The
+grid is a set of alternatives, with no probability weights or averaging.
+
+The supplied `monte_carlo.toml` uses engineering demonstration inputs:
+
+| Case | USLCAP3x | ITT3x | GOLDPM2x | COMM | Assumed annual inflation |
+| --- | --- | --- | --- | --- | --- |
+| Historical fit | fitted log mean | fitted log mean | fitted log mean | fitted log mean | 2% |
+| Base | 8% | 3% | 4% | 3% | 2% |
+| Lower return | 4% | 1% | 2% | 1% | 2% |
+| High inflation | 8% | 3% | 4% | 3% | 4% |
+
+Return inputs above use `geometric_growth`. They are not research estimates,
+forecasts, or user-approved expectations. They apply to the fund series after
+its embedded expenses, rather than being unlevered inputs to multiply again.
+The mean plot displays historical estimates beside these inputs in comparable
+annual geometric units; `mean_assumptions.csv` also preserves daily log/simple
+means and the original convention.
+
+For target date d, opening date d0 and assumed annual inflation pi, define
+I(d) = exp[ln(1+pi) (d-d0).days / 365.25]. Opening-price wealth is V(d)/I(d).
+This is a deterministic assumed deflator in the selected reporting currency,
+not observed CPI and not Australian inflation or an AUD conversion. It accrues
+over weekends and holidays. Inflation must exceed -100%; negative rates are
+supported. A zero rate leaves wealth unchanged. The annual mean basis counts
+observations, while this deflator uses elapsed calendar days; horizons therefore
+are not silently equated to calendar years.
+
+Empirical methods use a separately recorded reference inflation rate. Base and
+high inflation use identical nominal return assumptions and the same Gaussian
+innovations, making their nominal paths identical. Their difference isolates
+assumed purchasing power. Market returns do not react to inflation in this
+model. A joint stochastic inflation/market model requires further research.
+
+## Comparison accounting, outputs and validation
+
+All methods use the same target observation dates, portfolio weights and
+[daily no-flow accounting](resampling.md), including calendar-year risky-asset
+rebalancing before the first return of the new year. An opening cash reserve
+is retained. Initial portfolio investment must be positive; dated cash flows
+are rejected. The default retains the user's 40/20/20/20 mix. No extra fees,
+financing or taxes are charged to the existing total-return series.
+
+Terminal nominal and opening-price p05/median/p95 use linear sample quantiles.
+Fractions below opening capital are conditional sample fractions; they are not
+retirement success probabilities. Nominal maximum drawdown includes the opening
+mark and every return observation. Real maximum drawdown/recovery and timewise
+percentile bands remain Stage 1D work: calendar-only deflator changes must be
+included before making real drawdown claims.
+
+`calibration.json` records fitted log moments, the effective covariance/factor,
+roundoff repair and each assumption's daily moments. Its SHA-256 is saved in
+the input/code manifest alongside source hashes and the canonical grid. Small
+saved Gaussian traces include every generated per-asset simple return and no
+historical donor dates. Empirical traces retain source indices and boundaries.
+All saved paths reconcile independently through the full daily ledger.
+
+The runner writes nominal intervals, purchasing-power intervals, assumption
+comparisons, individual paths and source dependence as standalone PNGs directly
+from Python. Paths are individual realizations, separate from terminal
+percentiles. The observed-date template is an explicit accounting device, not
+a future exchange calendar forecast. Source-window and seed sensitivities
+remain separate results. Keep all reports and companion input data ignored.
 
 ## Primary references
 

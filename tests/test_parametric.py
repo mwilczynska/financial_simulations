@@ -41,6 +41,8 @@ def test_simulated_log_and_simple_moments_and_common_innovations():
     logs = np.log1p(draws)
     np.testing.assert_allclose(logs.mean(axis=0), mean, atol=0.00012)
     np.testing.assert_allclose(np.cov(logs, rowvar=False), covariance, rtol=0.025)
+    expected_correlation = covariance[0, 1] / np.sqrt(covariance[0, 0] * covariance[1, 1])
+    assert np.corrcoef(logs, rowvar=False)[0, 1] == pytest.approx(expected_correlation, abs=0.015)
     simple_mean, simple_cov = model.simple_moments()
     np.testing.assert_allclose(draws.mean(axis=0), simple_mean, atol=0.00012)
     np.testing.assert_allclose(np.cov(draws, rowvar=False), simple_cov, rtol=0.025)
@@ -67,3 +69,45 @@ def test_parametric_error_boundaries():
     dates = (date(2020, 1, 1), date(2020, 1, 2), date(2020, 1, 3))
     with pytest.raises(ValueError, match="above -100%"):
         fit_lognormal(MarketPath(dates, ("a",), np.array([[0.01], [-1]])))
+
+
+def test_only_roundoff_negative_eigenvalues_are_repaired_and_recorded():
+    model = LognormalModel(("a", "b"), [0, 0], [[1, 0], [0, -1e-15]])
+    assert model.eigenvalue_correction == pytest.approx(1e-15, abs=1e-20)
+    assert np.linalg.eigvalsh(model.covariance).min() >= 0
+    assert model.manifest()["negative_eigenvalue_correction"] > 0
+    with pytest.raises(ValueError, match="positive semidefinite"):
+        LognormalModel(("a", "b"), [0, 0], [[1, 0], [0, -1e-8]])
+
+
+def test_assumed_price_index_uses_calendar_days_including_weekends():
+    from financial_simulations.markets.assumptions import assumed_price_index
+
+    dates = (date(2026, 10, 23), date(2026, 10, 26), date(2027, 10, 23))
+    index = assumed_price_index(dates, 0.04)
+    np.testing.assert_allclose(index, 1.04 ** (np.array([0, 3, 365]) / 365.25))
+    np.testing.assert_array_equal(assumed_price_index(dates, 0), [1, 1, 1])
+    assert assumed_price_index(dates, -0.02)[-1] < 1
+    for rate in (-1, float("nan"), True):
+        with pytest.raises(ValueError):
+            assumed_price_index(dates, rate)
+    with pytest.raises(ValueError):
+        assumed_price_index(dates[::-1], 0.02)
+
+
+def test_assumptions_validation_and_asset_aliases():
+    from financial_simulations.markets.assumptions import load_assumptions
+
+    options = {"observations_per_year": 252, "reference_inflation": 0.02, "trace_assumption": "base"}
+    case = {"name": "base", "mean_convention": "geometric_growth", "inflation_annual": 0.02,
+            "annual_returns": {"GOLDPM2x": 0.04}, "rationale": "Synthetic example"}
+    settings = load_assumptions(options, [case])
+    model = LognormalModel(("GOLD2X",), [0], [[0.01]])
+    assert settings.assumptions[0].daily_mean(model)[0] == pytest.approx(np.log1p(0.04) / 252)
+    for change in ({"annual_returns": {"GOLDPM2x": 0.04, "GOLD2X": 0.04}},
+                   {"inflation_annual": -1}, {"rationale": ""}, {"mean_convention": "historical"},
+                   {"annual_returns": {"GOLDPM2x": True}}):
+        with pytest.raises(ValueError):
+            load_assumptions(options, [{**case, **change}])
+    with pytest.raises(ValueError, match="exactly"):
+        settings.assumptions[0].daily_mean(LognormalModel(("GLBOND",), [0], [[0]]))
