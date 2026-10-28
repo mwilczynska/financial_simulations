@@ -44,11 +44,15 @@ and censored recovery durations are explicit. No PDFs were created.
 
 The expanded companion audit passed terminal quantiles against case summaries,
 calendar-only nominal carry, real deflation, target counts, interval scope and
-saved-path calendar recovery. Final execution evidence and clean-code/CI
-provenance are recorded in the handoff as the checkpoint closes.
+saved-path calendar recovery. A fresh run from clean implementation commit
+`9b57ed2` passed every check, recording `working_tree_dirty: false` and package
+Python-source SHA-256
+`defefec95b9855ea862c6419085801a7f1c1f8484086a29bc64a7d5c4d04fed2`.
 
 The kernel checkpoint `8f33304` passed Python 3.11/3.14 hosted CI in
 [run 40773485891](https://github.com/mwilczynska/financial_simulations/actions/runs/40773485891).
+The full report implementation `9b57ed2` passed both hosted jobs in
+[run 40775393820](https://github.com/mwilczynska/financial_simulations/actions/runs/40775393820).
 
 ## Remaining Stage 1D work
 

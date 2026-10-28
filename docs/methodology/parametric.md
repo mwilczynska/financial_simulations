@@ -136,9 +136,10 @@ financing or taxes are charged to the existing total-return series.
 Terminal nominal and opening-price p05/median/p95 use linear sample quantiles.
 Fractions below opening capital are conditional sample fractions; they are not
 retirement success probabilities. Nominal maximum drawdown includes the opening
-mark and every return observation. Real maximum drawdown/recovery and timewise
-percentile bands remain Stage 1D work: calendar-only deflator changes must be
-included before making real drawdown claims.
+mark and every return observation. The optional
+[Stage 1D evaluation pass](evaluation.md) now adds real maximum
+drawdown/recovery and timewise percentile bands, including calendar-only
+deflator changes. These remain separate from the base Stage 1C summaries.
 
 `calibration.json` records fitted log moments, the effective covariance/factor,
 roundoff repair and each assumption's daily moments. Its SHA-256 is saved in

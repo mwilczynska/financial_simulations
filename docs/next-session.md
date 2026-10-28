@@ -16,9 +16,16 @@ default 40/20/20/20 mix and generate PNGs directly from Python, never PDFs.
 Run `python scripts/validate_stage1b.py --experiment scenarios/examples/evaluation.toml --output output/stage1d`
 for the experiment and expanded artifact audit. The target of preserving
 opening real wealth is an explicit demonstration, not a personal user goal.
-Kernel checkpoint `8f33304` passed Python 3.11/3.14 hosted CI. The report
-integration checkpoint follows it. Finish clean-code/hosted integration checks
-before continuing further Stage 1D work.
+Kernel checkpoint `8f33304` and report checkpoint `9b57ed2` passed Python
+3.11/3.14 hosted CI. The report run is
+[40775393820](https://github.com/mwilczynska/financial_simulations/actions/runs/40775393820).
+A fresh run from clean `9b57ed2` passed every audit: terminal percentile
+agreement, daily carry, real deflation, explicit target counts, interval scope
+and full-calendar saved-path recovery. Its Python-source SHA-256 is
+`defefec95b9855ea862c6419085801a7f1c1f8484086a29bc64a7d5c4d04fed2`.
+The initial Stage 1D reporting chunk is complete. Continue with paired
+multi-portfolio reports, rolling holdouts and source-segment sensitivity; Stage
+1D as a whole remains open. Keep retirement rules out of this checkpoint.
 
 The user has now requested a commit/push and implementation of the next part.
 Stage 1C now implements daily correlated log-return calibration/generation,
