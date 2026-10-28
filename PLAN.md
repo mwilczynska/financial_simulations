@@ -1,16 +1,19 @@
 # Financial Simulations: portfolio futures and Australian retirement
 
-Planning baseline: 28 October 2026. Status: Stages 1A-1C are implemented and
-validated within their documented scope, and Stage 1D's first reporting pass
-is implemented. Stage 1A provides strict data and weight adapters, daily
+Planning baseline: 28 October 2026. Status: Stage 1 (1A-1D) is implemented and
+validated within its documented scope. Stage 1A provides strict data and weight adapters, daily
 accounting, cash flows, annual/buy-and-hold policies, static PNG plots and a
 reproducible baseline report. Stage 1B adds joint daily replay/bootstrap and a
 calibration/block-length sensitivity runner. Stage 1C adds the correlated daily
 log-return benchmark, persistent assumption grid and assumed purchasing power.
-Stage 1D adds calendar-day nominal/real percentiles, explicit targets, censored
-drawdown/recovery and Monte Carlo sampling error. Paired multi-portfolio
-reports, rolling holdouts and source-segment sensitivity remain open Stage 1D
-work; Stage 2 remains proposed. See the validation evidence for
+An optional GARCH filtered-historical-simulation generator adds volatility
+clustering and empirical heavy tails. Stage 1D adds calendar-day nominal/real
+percentiles, explicit targets, censored drawdown/recovery, Monte Carlo
+sampling error, and paired multi-portfolio studies on shared draws. It also
+adds provenance-checked source segments, a leveraged-risk tail diagnostic and
+rolling calibration/holdout PIT scoring. A batched many-path ledger with dated
+flows and an opt-in common-date calendar policy prepare for Stage 2, which
+remains proposed. See the validation evidence for
 [1A](docs/validation/stage-1a.md), [1B](docs/validation/stage-1b.md),
 [1C](docs/validation/stage-1c.md) and [1D](docs/validation/stage-1d.md).
 
@@ -163,18 +166,23 @@ Support explicit forward assumptions that differ from the historical mean. Show 
 
 Represent uncertainty in long-run assumptions separately from random daily shocks. Start with a transparent scenario grid. A subsequent outer parameter-sampling layer can hold a sampled long-run assumption persistent through a path. Redrawing a supposedly uncertain long-run mean independently each day does not represent the same uncertainty.
 
-Heavy-tail, mixture, regime and volatility models are later candidates. A chosen distribution must have appropriate return support and moments; do not silently clip impossible returns or introduce an uncontrolled exponentiated heavy-tail distribution.
+GARCH(1,1) filtered historical simulation is implemented as the first
+volatility/heavy-tail model ([methodology](docs/methodology/volatility.md)).
+Mixture, regime and time-varying-correlation models remain later candidates. A chosen distribution must have appropriate return support and moments; do not silently clip impossible returns or introduce an uncontrolled exponentiated heavy-tail distribution.
 
 Deliverable: a report showing the effect of generator choice and return assumptions on the same candidate portfolios.
 
 ### 1D. Evaluation and reporting
 
-Initial reporting pass implemented: calendar-day nominal/real wealth quantiles,
-terminal empirical distributions, explicit targets, censored drawdown/recovery
-and conditional Monte Carlo precision, with CSV exports and reviewed Python
-PNGs. Paired multi-portfolio reports, rolling holdouts and source-segment
-sensitivity remain further Stage 1D work. See
-[methodology](docs/methodology/evaluation.md) and
+Implemented. The calendar-day nominal/real wealth quantiles, terminal
+empirical distributions, explicit targets, censored drawdown/recovery and
+conditional Monte Carlo precision are in `compare`. The `paired` and `holdout`
+study commands add multi-portfolio comparisons on shared draws,
+provenance-checked observed/reconstructed windows, tail and
+volatility-clustering diagnostics, and rolling calibration/holdout PIT
+scoring. All outputs are CSVs and reviewed Python PNGs. See
+[methodology](docs/methodology/evaluation.md),
+[ADR 0012](docs/decisions/0012-paired-holdout-and-segment-studies.md) and
 [validation](docs/validation/stage-1d.md).
 
 Report wealth and real purchasing-power percentiles over time, terminal-wealth distribution, probability of missing a stated target, drawdown/recovery statistics and selected complete sample paths. Pointwise percentile bands are not individual realizable life histories; show traceable paths as well.

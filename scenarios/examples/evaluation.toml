@@ -11,6 +11,12 @@ batch_size = 64
 trace_horizon = 1260
 trace_block_length = 63
 
+[volatility]
+# GARCH(1,1) filtered historical simulation beside every Gaussian assumption.
+model = "garch_fhs"
+initial_variance = "unconditional"
+persistence_cap = 0.999
+
 [parametric]
 observations_per_year = 252
 reference_inflation = 0.02

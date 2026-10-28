@@ -327,7 +327,7 @@ annual_returns = {GLSTOCK = 0.08, GLBOND = 0.03}
     garch = summary[summary["method"] == "garch_fhs"]
     assert len(garch) and set(garch["nominal_paths_match"].dropna()) == {"base"}
     twin = garch[garch["assumption"] == "high_inflation"].iloc[0]
-    assert _label(twin) == "GARCH-FHS: high inflation (deflator only; nominal = base)"
+    assert _label(twin) == "GARCH-FHS: high inflation (deflator only)"
     outcomes = pd.read_csv(first / "outcomes.csv").merge(summary, on="case_id")
     for _, group in outcomes[outcomes["method"] == "garch_fhs"].groupby(["window", "horizon_observations", "path_id"]):
         assert group["terminal_value"].nunique() == 1

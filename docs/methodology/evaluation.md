@@ -1,9 +1,10 @@
 # Calendar-day evaluation and reporting (Stage 1D)
 
-Date: 2026-10-28. Status: the initial evaluation/reporting pass is implemented
-for the existing single-portfolio, no-flow comparison. This does not establish
-completion of all Stage 1D work, including paired multi-portfolio reporting,
-rolling holdout studies and source-segment sensitivity.
+Date: 2026-10-28. Status: implemented. The first sections describe the
+calendar-day evaluation pass for the single-portfolio, no-flow comparison
+([ADR 0008](../decisions/0008-calendar-evaluation-and-sampling-error.md)).
+[Paired, segment and holdout studies](#paired-portfolio-source-segment-and-holdout-studies)
+completes Stage 1D ([ADR 0012](../decisions/0012-paired-holdout-and-segment-studies.md)).
 
 ## Purpose, inputs and conventions
 
@@ -107,8 +108,9 @@ Runner tests verify unchanged market outcomes when evaluation is enabled,
 byte-identical reports across batch sizes, agreement with the full calendar-day
 ledger including weekends, valid PNG output and no PDF generation. See
 [executed evidence](../validation/stage-1d.md).
-Multi-portfolio paired comparisons, rolling holdout exercises and observed-data
-segment sensitivity remain further Stage 1D work; retirement rules remain later.
+Multi-portfolio paired comparisons, rolling holdouts and source-segment
+sensitivity are covered in the study section below. Retirement rules remain
+later work.
 
 The drawdown/target definitions and reporting choices above are engineering
 conventions. The [NIST Wilson interval reference](https://www.itl.nist.gov/div898/handbook/prc/section2/prc241.htm),
@@ -152,3 +154,127 @@ The terminal plot is an empirical CDF, without arbitrary histogram bin choices.
 The drawdown plot's depth/duration bars are path percentiles, whereas the target
 plot's bars are conditional Monte Carlo confidence intervals. Caption this
 distinction explicitly. All plots are generated directly from Python as PNGs.
+
+## Paired portfolio, source-segment and holdout studies
+
+Two commands complete Stage 1D:
+`financial-simulations paired <study.toml> --output <dir>` and
+`financial-simulations holdout <study.toml> --output <dir>`. A study file names
+at least two portfolios with weights and rebalancing, one reference portfolio,
+the data root and calendar policy, and a `[generators]` table. That table lists
+the methods (`historical_replay`, `independent`, `moving_block`, `stationary`,
+`lognormal`, `garch_fhs`), the block length, paths, seeds, batch size, annual
+observation basis, GARCH settings and the number of diagnostic paths. The
+union of held assets is loaded jointly, so a draw is a joint row covering every
+portfolio's assets. Generators always use historical fitted means. Forward
+assumption grids remain a feature of `compare`.
+
+### Paired portfolios
+
+Within a case (window x horizon x method x seed), every portfolio compounds the
+same return draws with the [batched accounting](portfolio-accounting.md). For
+portfolio A against reference R on path k, the wealth ratio is
+W_A,k / W_R,k at the horizon. `paired_differences.csv` reports the 5th, 50th
+and 95th percentiles of ln(W_A/W_R), the share of paths with W_A > W_R (and
+the share of exact ties), and the share where A's maximum drawdown is
+shallower. It also reports percentiles of the drawdown difference. For
+generated paths, a 95% Wilson interval for the share ahead measures
+simulation error conditional on the generator. Replay windows overlap, so they
+get no interval. Sharing draws removes most of the generator noise from the
+difference. It does not make the generator correct. Paths are mapped onto one
+observed account calendar (`calendar_window`) taken from the first H+1 dates
+of that window, as in the [comparison runner](resampling.md).
+`paired_summary.csv` gives each portfolio's own terminal and drawdown
+percentiles. `paired_outcomes.csv` keeps every path's terminal wealth and
+drawdown for every portfolio.
+
+### Source segments
+
+Each `[[windows]]` entry can set `provenance = "observed"` or
+`"reconstructed"`, and optionally `provenance_assets` to scope the check. The
+run fails unless every return interval of every scoped asset carries that
+label (see the [adapter method](data-adapters.md#common-date-policy-and-per-return-provenance)).
+Splice intervals are `mixed`, so a window can only be observed if it opens on
+or after the last asset's switch date. `window_statistics.csv` records, per
+window and asset, the interval counts by provenance class and the
+multi-observation intervals, plus annual log growth (mean log return x basis),
+annual volatility, volatility drag, skewness, excess kurtosis, worst day, the
+0.1% and 1% quantiles, summed squared-return ACF and rolling-volatility
+percentiles. `window_correlations.csv` gives log-return correlations. Running
+the same generators on separate windows shows how far conclusions depend on
+reconstructed history.
+
+### Leveraged-risk diagnostic
+
+`tail_diagnostics.csv` computes the same daily statistics for the calibration
+sample (`method = historical`) and for each generator's paths. It covers every
+asset and every portfolio's daily log growth, and uses the first
+`diagnostic_paths` paths of the first seed at the longest horizon. For daily
+log returns x:
+
+- excess kurtosis is m4/m2^2 - 3, using pooled central moments;
+- `squared_acf_sum_21` sums, over lags 1 to 21, the average across paths of
+  each path's autocorrelation of x^2;
+- rolling volatility is the population standard deviation over 63 consecutive
+  observations, times sqrt(basis), pooled before taking percentiles;
+- volatility drag is (mean(exp(x)-1) - mean(x)) x basis.
+
+A Gaussian generator gives excess kurtosis near zero and no squared-return
+autocorrelation, whatever the sample. Matching the sample on these statistics
+is necessary, but not sufficient, for a generator to represent the risk of
+daily-reset leverage. `tail_diagnostics.png` shows them for the reference
+portfolio and its holdings.
+
+### Rolling holdouts
+
+The origins are the first common observation on or after 1 January of each year
+from `first_origin_year`, in steps of `step_years`. For origin o, calibration
+returns are those ending on dates from the first observation of year
+(o - `calibration_years`) up to and including o (`rolling`), or from the data
+start (`expanding`). The holdout is the next H returns, mapped onto their
+actual dates. A fold without H future returns is recorded as
+`incomplete_holdout`. One set of generators fitted at an origin serves every
+horizon. With `initial_variance = "last_fitted"`, GARCH-FHS starts from the
+variance filtered up to the origin, which makes it a conditional forecast.
+
+For each portfolio and generator, the realised value y and N generated values
+g_i give the mid-rank PIT, (#{g_i < y} + 0.5 #{g_i = y}) / N. It is computed
+for terminal wealth, maximum drawdown (a negative number: a low PIT means the
+realised drawdown was deeper than most simulated ones) and realised annualised
+volatility. `holdout_summary.csv` reports, per horizon, method, portfolio and
+metric:
+
+- the number of folds and the mean PIT;
+- the shares of PIT below 0.05 and above 0.95, and the central 90% coverage;
+- the KS distance max_i max(i/n - u_(i), u_(i) - (i-1)/n) from uniform;
+- the number of non-overlapping folds (every ceil(H/basis/step) origins) and
+  their coverage.
+
+These figures are descriptive. Holdouts at H = 1,260 overlap heavily, so they
+are not independent tests. Each fold row records the observed fraction of its
+calibration and holdout intervals for the portfolio's assets.
+`holdout_generated.csv` stores every generated path's three metrics, so PIT
+values can be recomputed independently. `holdout_pit.png` plots the PIT ECDF
+against the diagonal, and `holdout_timeline.png` the generated annualised
+growth bands against realised growth.
+
+### Validation and limitations
+
+`tests/test_studies.py` covers paired outcomes recomputed through the full
+ledger for replay, stationary and lognormal paths, for every portfolio, with
+byte-identical outputs across batch sizes. It checks Wilson-interval scope,
+provenance enforcement (failure and success cases), segment counts with
+multi-step intervals, and diagnostic coverage. For holdouts it checks that
+perturbing returns after a fold's holdout leaves the fold unchanged (no
+look-ahead), the incomplete-fold status, PIT recomputation, realised-path
+reconciliation and hand-checked PIT/KS/kurtosis values.
+`scripts/validate_studies.py` repeats the recomputations on companion data
+and adds a batched cash-flow reconciliation. The executed results are in the
+[validation record](../validation/stage-1d.md).
+
+Limitations: the studies use historical means fitted to each window.
+Pre-2009 leveraged series are reconstructions, so holdout scores there
+partly test the dataset project's model. The reference default portfolio was
+chosen by an optimiser on this history. Generators fitted on 10 years of
+history inherit that decade's mean, which is the main source of PIT
+miscalibration for terminal wealth. No metric combines generators.

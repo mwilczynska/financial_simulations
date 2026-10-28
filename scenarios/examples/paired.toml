@@ -1,0 +1,66 @@
+# Stage 1D paired portfolios, source-segment sensitivity and tail diagnostics.
+# Every portfolio compounds identical joint daily draws within a case.
+[study]
+name = "Leveraged default against unlevered and global comparators"
+initial_value = 100000.0
+currency = "USD"
+reference = "Optimised CURRENT 40/20/20/20"
+
+[data]
+root = "../../../financial_datasets/data/processed"
+format = "csv"
+# Pre-2006 source calendars differ by holiday; keep common dates (ADR 0009).
+calendar_policy = "common_dates"
+
+[[portfolios]]
+# User-selected default from portfolio_plot17.py, not a new optimisation claim.
+name = "Optimised CURRENT 40/20/20/20"
+rebalance = "annual"
+weights = {USLCAP3x = 0.4, ITT3x = 0.2, GOLDPM2x = 0.2, COMM = 0.2}
+
+[[portfolios]]
+# Same mix through the unlevered underlying series: isolates the leverage.
+name = "Unlevered same mix"
+rebalance = "annual"
+weights = {USLCAP = 0.4, ITT = 0.2, GOLDPM = 0.2, COMM = 0.2}
+
+[[portfolios]]
+name = "Equal-weight global four-asset"
+rebalance = "annual"
+weights = {GLSTOCK = 0.25, GLBOND = 0.25, GOLDPM = 0.25, COMM = 0.25}
+
+[generators]
+methods = ["historical_replay", "stationary", "lognormal", "garch_fhs"]
+block_length = 63
+paths = 512
+seeds = [1729]
+batch_size = 128
+observations_per_year = 252
+initial_variance = "unconditional"
+persistence_cap = 0.999
+diagnostic_paths = 128
+
+[paired]
+# Counts of daily return observations, not exact calendar years.
+horizons = [252, 1260, 2520]
+calendar_window = "Full 1970-2025"
+
+[[windows]]
+# Every held series is observed from 2009-06-26 (UPRO is the last to switch).
+name = "Observed 2009-2025"
+start = "2009-06-26"
+end = "2025-12-31"
+provenance = "observed"
+
+[[windows]]
+# Every leveraged-default series is a dataset-project model before 2006-02-07.
+name = "Reconstructed 1970-2006"
+start = "1970-01-01"
+end = "2006-02-06"
+provenance = "reconstructed"
+provenance_assets = ["USLCAP3x", "ITT3x", "GOLDPM2x", "COMM"]
+
+[[windows]]
+name = "Full 1970-2025"
+start = "1970-01-01"
+end = "2025-12-31"

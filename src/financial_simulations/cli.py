@@ -21,8 +21,25 @@ def main(argv=None) -> int:
     compare = commands.add_parser("compare", help="Compare daily generators, assumptions and optional target/risk evaluation.")
     compare.add_argument("experiment")
     compare.add_argument("--output", required=True)
+    paired = commands.add_parser("paired", help="Compare portfolios on shared draws across generators and source windows.")
+    paired.add_argument("study")
+    paired.add_argument("--output", required=True)
+    holdout = commands.add_parser("holdout", help="Score generators against realised rolling holdouts.")
+    holdout.add_argument("study")
+    holdout.add_argument("--output", required=True)
     args = parser.parse_args(argv)
     try:
+        if args.command in ("paired", "holdout"):
+            from financial_simulations import studies
+
+            if args.command == "paired":
+                manifest = studies.run_paired(studies.load_paired(args.study), args.output)
+                keys = ("model", "cases", "paths_evaluated")
+            else:
+                manifest = studies.run_holdout(studies.load_holdout(args.study), args.output)
+                keys = ("model", "scored_folds", "incomplete_folds", "generated_paths")
+            print(json.dumps({key: manifest[key] for key in keys}, indent=2))
+            return 0
         if args.command == "compare":
             from financial_simulations.comparison import load_comparison, run_comparison
 

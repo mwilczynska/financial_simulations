@@ -22,7 +22,7 @@ def _label(row):
         label = ("Lognormal: " if method == "lognormal" else "GARCH-FHS: ") + row["assumption"].replace("_", " ")
         twin = row.get("nominal_paths_match")
         if isinstance(twin, str) and twin:
-            label += f" (deflator only; nominal = {twin.replace('_', ' ')})"
+            label += " (deflator only)"
         return label
     prefix = "Moving" if method == "moving_block" else "Stationary"
     return f"{prefix} L={int(row['block_length'])}"

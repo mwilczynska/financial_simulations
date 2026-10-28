@@ -45,8 +45,12 @@ have no closed form.
 
 The generator is optional (`[volatility]` in a comparison, or `garch_fhs` in a
 study) and never replaces the Gaussian, replay or bootstrap results. Results
-are reported side by side, never averaged. Time-varying correlation, leverage
-effects and jumps remain unmodelled; see the
+are reported side by side, never averaged. Companion-data evidence shows two
+things. It matches historical volatility clustering, and tracks realised
+holdout volatility and drawdowns much better than the Gaussian model. But it
+overstates the most extreme days when a large standardised residual meets a
+high simulated variance. Time-varying correlation, leverage effects and jumps
+remain unmodelled; see the
 [methodology](../methodology/volatility.md) limitations. Holdout PIT
 diagnostics and the leveraged-risk tables are the evidence for whether the
 extra structure changes conclusions.

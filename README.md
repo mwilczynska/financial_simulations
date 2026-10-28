@@ -11,11 +11,14 @@ Stage 1B is also implemented: joint daily historical replay, independent rows,
 moving blocks and stationary bootstrap, with sample-period/block-length/seed
 sensitivity and traceable PNG reports. Stage 1C adds a correlated daily
 log-return benchmark, explicit persistent return assumptions and an assumed
-purchasing-power comparison. Stage 1D's first reporting pass adds calendar-day
-nominal/real wealth percentiles, explicit targets, censored drawdown/recovery
-and Monte Carlo sampling error; paired multi-portfolio reports, rolling
-holdouts and source-segment sensitivity remain open. Australian retirement
-rules remain planned.
+purchasing-power comparison, plus an optional GARCH filtered-historical-
+simulation generator for volatility clustering and heavy tails. Stage 1D is
+complete: calendar-day nominal/real wealth percentiles, explicit targets,
+censored drawdown/recovery and Monte Carlo sampling error. It also adds paired
+multi-portfolio studies on shared draws, provenance-checked source-segment
+sensitivity, a leveraged-risk tail diagnostic and rolling calibration/holdout
+scoring. A batched many-path ledger with dated cash flows is ready for Stage 2.
+Australian retirement rules, AUD FX and Australian inflation remain planned.
 
 ## Development
 
@@ -141,16 +144,53 @@ sampling error; overlapping replay windows receive descriptive statistics.
 They do not cover parameter uncertainty or disagreement between generators.
 
 Read [evaluation methodology](docs/methodology/evaluation.md) and
-[validation](docs/validation/stage-1d.md). Paired multi-portfolio reporting,
-rolling holdouts and source-segment sensitivity remain further Stage 1D work.
+[validation](docs/validation/stage-1d.md).
+
+Add `[volatility]` with `model = "garch_fhs"` to a comparison with parametric
+assumptions to run the [GARCH filtered historical simulation](docs/methodology/volatility.md)
+beside the Gaussian cases. It supports `historical` and `geometric_growth`
+means only.
+
+## Paired portfolios, source segments and holdouts (Stage 1D)
+
+```powershell
+.\.venv\Scripts\python.exe -m financial_simulations paired scenarios/examples/paired.toml --output output/stage1d-paired
+.\.venv\Scripts\python.exe -m financial_simulations holdout scenarios/examples/holdout.toml --output output/stage1d-holdout
+.\.venv\Scripts\python.exe scripts/validate_studies.py --reuse
+```
+
+Both examples compare the leveraged default with the same mix in unlevered
+series and an equal-weight global portfolio. They use the opt-in
+`common_dates` calendar policy, which reaches back to 1970 (see
+[ADR 0009](docs/decisions/0009-common-date-calendar-policy.md)).
+
+The paired study compounds every portfolio on identical draws (replay,
+stationary bootstrap, lognormal, GARCH-FHS). It runs on an observed-only
+2009-2025 window, a reconstructed-only 1970-2006 window and the full history.
+A window whose required provenance does not hold fails. Outputs are
+`paired_terminal.png`, `paired_differences.png`, `segment_statistics.png`,
+`tail_diagnostics.png` and the matching CSVs.
+
+The holdout study refits each generator on the ten years before each January
+origin, then scores the realised next 252 and 1,260 observations by their PIT
+within the generated distribution: `holdout_pit.png`, `holdout_timeline.png`,
+`holdout_folds.csv` and `holdout_summary.csv`.
+
+The validator recomputes sampled paths through the full daily ledger,
+recomputes PIT values, and reconciles the batched cash-flow engine on
+bootstrapped companion data. `--reuse` audits existing outputs; without it the
+studies are rerun.
 
 ## Reproduce the checks
 
 The unit suite uses only small synthetic fixtures; companion data is not needed.
+`scripts/check_repository.py` checks tracked text for UTF-8/LF, machine paths,
+broken local links and ignored private paths; CI runs it after the tests.
 The integration script below needs both sibling checkouts and Parquet support:
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest
+.\.venv\Scripts\python.exe scripts/check_repository.py
 .\.venv\Scripts\python.exe scripts/validate_stage1a.py --output output/validation
 ```
 

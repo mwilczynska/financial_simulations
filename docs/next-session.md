@@ -1,115 +1,72 @@
-# Stage 1D implementation and next-session handoff
+# Next-session handoff
 
-Updated: 2026-10-28. The user authorised Stage 1B after the Stage 1A closeout.
+Updated: 2026-10-28. Read [AGENTS.md](../AGENTS.md) and [PLAN.md](../PLAN.md) before
+changing model behaviour. This note describes the current state. Earlier
+handoff text is in Git history.
 
-The user has now authorised Stage 1D. Its first evaluation/reporting pass is
-implemented: exact pointwise nominal/real quantiles on calendar account marks,
-explicit growing targets, drawdown/recovery with censoring, conditional Monte
-Carlo error, CSV reports and five new Python PNGs. All 79 local tests pass.
-The first companion experiment has 90 cases/54,564 paths, 89 evaluated cases
-and 171,873 calendar-day percentile rows. Its 15 saved paths reconcile with
-the daily ledger. PNGs were visually reviewed, including a header-spacing fix.
-Read [evaluation methodology](methodology/evaluation.md) and
-[ADR 0008](decisions/0008-calendar-evaluation-and-sampling-error.md). Keep the
-default 40/20/20/20 mix and generate PNGs directly from Python, never PDFs.
+## Where the project stands
 
-Run `python scripts/validate_experiment.py --experiment scenarios/examples/evaluation.toml --output output/stage1d`
-for the experiment and expanded artifact audit. The target of preserving
-opening real wealth is an explicit demonstration, not a personal user goal.
-Kernel checkpoint `8f33304` and report checkpoint `9b57ed2` passed Python
-3.11/3.14 hosted CI. The report run is
-[40775393820](https://github.com/mwilczynska/financial_simulations/actions/runs/40775393820).
-A fresh run from clean `9b57ed2` passed every audit: terminal percentile
-agreement, daily carry, real deflation, explicit target counts, interval scope
-and full-calendar saved-path recovery. Its Python-source SHA-256 is
-`defefec95b9855ea862c6419085801a7f1c1f8484086a29bc64a7d5c4d04fed2`.
-The initial Stage 1D reporting chunk is complete. Continue with paired
-multi-portfolio reports, rolling holdouts and source-segment sensitivity; Stage
-1D as a whole remains open. Keep retirement rules out of this checkpoint.
+Stage 1 (portfolio futures, 1A-1D) is implemented and validated within its
+documented scope. Stage 2 (Australian retirement) has not started. Begin it
+only on the user's instruction. AUD FX and Australian inflation are deferred
+by the user to a later date. Keep the user-selected default portfolio:
+`USLCAP3x` 40%, `ITT3x` 20%, `GOLDPM2x` 20%, `COMM` 20%, annual rebalancing.
+Generate PNGs directly from Python; never create PDFs.
 
-The user has now requested a commit/push and implementation of the next part.
-Stage 1C now implements daily correlated log-return calibration/generation,
-annual return conventions, persistent scenario assumptions, comparison reports
-and an assumed purchasing-power deflator. The companion-data experiment has
-90 cases/54,564 paths; all 15 saved paths reconcile with the full daily ledger,
-and all 6,144 base/high-inflation pairs match nominally. Five Python PNGs were
-visually reviewed; no PDFs were created. Read [parametric methodology](methodology/parametric.md),
-[ADR 0007](decisions/0007-daily-parametric-assumptions.md) and
-[Stage 1C validation](validation/stage-1c.md).
+| Area | Entry point | Method / decision | Evidence |
+| --- | --- | --- | --- |
+| Data adapters, strict and `common_dates` calendars, per-return provenance | `load_datasets` | [data adapters](methodology/data-adapters.md), ADR [0003](decisions/0003-stage-1a-data-contract.md), [0009](decisions/0009-common-date-calendar-policy.md) | `tests/test_adapters.py` |
+| Daily ledger and batched many-path ledger with dated flows | `simulate_portfolio`, `simulate_paths` | [accounting](methodology/portfolio-accounting.md), ADR [0004](decisions/0004-stage-1a-accounting-conventions.md), [0010](decisions/0010-batched-cash-flow-accounting.md) | `tests/test_accounting.py`, `tests/test_batch_flows.py` |
+| Replay and bootstraps | `compare` | [resampling](methodology/resampling.md), ADR [0006](decisions/0006-joint-daily-resampling.md) | [stage 1B](validation/stage-1b.md) |
+| Gaussian benchmark, assumption grid | `compare` with `[parametric]` | [parametric](methodology/parametric.md), ADR [0007](decisions/0007-daily-parametric-assumptions.md) | [stage 1C](validation/stage-1c.md) |
+| GARCH(1,1) filtered historical simulation | `[volatility]` or `garch_fhs` | [volatility](methodology/volatility.md), ADR [0011](decisions/0011-garch-filtered-historical-simulation.md) | `tests/test_volatility.py` |
+| Calendar evaluation, targets, recovery, MC error | `compare` with `[evaluation]` | [evaluation](methodology/evaluation.md), ADR [0008](decisions/0008-calendar-evaluation-and-sampling-error.md) | [stage 1D](validation/stage-1d.md) |
+| Paired portfolios, source segments, tail diagnostic, holdouts | `paired`, `holdout` | [evaluation](methodology/evaluation.md#paired-portfolio-source-segment-and-holdout-studies), ADR [0012](decisions/0012-paired-holdout-and-segment-studies.md) | [stage 1D](validation/stage-1d.md), `tests/test_studies.py` |
 
-Run `python scripts/validate_experiment.py --experiment scenarios/examples/monte_carlo.toml --output output/stage1c`
-to reproduce the comparison and audits. The validator supports both stages.
-The core checkpoint is `e48498a` and the integration checkpoint is `e69401f`.
-Both passed hosted Python 3.11/3.14 CI. Forward rates are demonstration inputs,
-not forecasts or user-approved expectations. Assumed inflation is not observed
-CPI or Australian purchasing power. Keep it distinct from nominal market draws.
-
-All 71 local tests pass on Python 3.14; the tracked-input/link/privacy check
-passes. The integration's hosted jobs passed in
-[run 40767049484](https://github.com/mwilczynska/financial_simulations/actions/runs/40767049484).
-A fresh companion-data run from clean `e69401f` passed every audit, recording
-Python-source SHA-256 `492e79b7f86e001d43fa839cf8991ca317e9c5cc77695b223724f90f6916e742`.
-Stage 1C is complete within its documented scope. Source data, reports and
-private machine information remain ignored.
-
-Stage 1D now follows this completed Stage 1C checkpoint. Rolling holdouts,
-observed/reconstructed-segment sensitivity and paired multi-portfolio reporting
-remain future Stage 1D work. Do not begin retirement modelling without its own
-user instruction.
-
-Stage 1B now provides complete-window mapped historical replay, joint independent
-rows, moving blocks, stationary bootstrap and a daily no-flow sensitivity runner.
-The sampler/accounting checkpoint is `245f9e4`; the following runner checkpoint
-contains the rest of this implementation. See
-[methodology](methodology/resampling.md) and [validation](validation/stage-1b.md).
-
-The default comparison uses 2010-2025 and 2016-2025, horizons 252/1260/2520,
-block lengths 21/63/252 and two seeds with 256 stochastic paths each. The first
-run evaluates 90 cases and 33,060 paths, with 12 reconstructible examples.
-The shorter sample has zero complete 2,520-observation replay windows. PNGs
-include terminal intervals, individual paths and return/squared-return dependence.
-No-flow batched accounting matches the full ledger; the full suite has 63 tests.
-
-Use `python scripts/validate_experiment.py --output output/stage1b` to run the
-experiment and audit saved traces. The account calendar is explicitly a shared
-observed template; an optional target-date CSV can provide another grid.
-
-Stage 1A is implemented: explicit local adapters, daily holdings/cash accounting,
-annual/buy-and-hold policies, dated flows, inspectable CSV/Parquet/HTML outputs
-and standalone Matplotlib PNGs. The user-selected default is `USLCAP3x` 40%,
-`ITT3x` 20%, `GOLDPM2x` 20%, `COMM` 20%. Keep daily observations distinct from
-calendar account marks. Do not create PDFs. Interactive charts remain later work.
-
-Implementation checkpoints are `a9031fc` (adapters) and `cd68aac` (daily
-accounting, plots, examples and local legacy-calculation audit). The subsequent
-closeout checkpoint contains this handoff and two boundary fixes: explicit null
-status for an unrepresentable annualised summary, and validation of malformed
-weight mappings. No ordinary historical calculation convention changed.
-
-The initial implementation's hosted Python 3.11 and 3.14 jobs passed in
-[run 40732786508](https://github.com/mwilczynska/financial_simulations/actions/runs/40732786508).
-The expanded local suite has 43 tests. The local integration command is:
+## Reproduce
 
 ```powershell
-python scripts/validate_stage1a.py --output output/validation
+.\.venv\Scripts\python.exe -m pytest
+.\.venv\Scripts\python.exe scripts/check_repository.py
+.\.venv\Scripts\python.exe scripts/validate_stage1a.py --output output/validation
+.\.venv\Scripts\python.exe scripts/validate_experiment.py --experiment scenarios/examples/evaluation.toml --output output/stage1d
+.\.venv\Scripts\python.exe -m financial_simulations paired scenarios/examples/paired.toml --output output/stage1d-paired
+.\.venv\Scripts\python.exe -m financial_simulations holdout scenarios/examples/holdout.toml --output output/stage1d-holdout
+.\.venv\Scripts\python.exe scripts/validate_studies.py --reuse
 ```
 
-The optional `--tracker-script` argument accepts the trusted local
-`portfolio_plot17.py`; its machine-specific path is intentionally not tracked.
-The calculation audit confirms matching CAGR/drawdown formulas on common values
-and records the existing tracker's observation-date shift and contribution-TWR
-discrepancy. See [ADR 0005](decisions/0005-default-portfolio-and-tracker-audit.md).
+`validate_experiment.py` (formerly `validate_stage1b.py`) audits any `compare`
+experiment. `validate_studies.py` audits the two study outputs and the batched
+cash-flow engine. Outputs and companion data stay ignored.
 
-Six optimiser comparisons across 4,023 observations passed; repeated CSV/PNG
-outputs, CSV/Parquet agreement and daily account invariants passed. Exact input
-and code provenance lives in ignored local manifests. The PNGs were visually
-inspected, and an initial allocation-legend overlap was corrected. See the
-[validation record](validation/stage-1a.md) and
-[accounting methodology](methodology/portfolio-accounting.md) for details.
+## Findings to carry forward
 
-The earlier planned handoff write was interrupted after the implementation had
-already been pushed. This document now supplies the durable project handoff.
+These are conditional, nominal-USD results, not forecasts:
 
-Additional fees, Australian inflation/FX, tax, super and retirement modelling
-remain unimplemented. Stage 1D follows the current Stage 1C work. Read AGENTS.md
-and PLAN.md before changing behaviour.
+- **The lognormal model understates leveraged-portfolio risk.** Across 45
+  one-year rolling holdouts, its central 90% interval covered the default
+  portfolio's realised volatility in 38% of origins, and its maximum drawdown
+  in 51%. GARCH-FHS covered 78% and 73%, and the stationary bootstrap 67% and
+  71%. All three covered terminal wealth in about 90% of origins.
+- **GARCH-FHS overstates the most extreme days.** A 1987-style residual drawn
+  in a high-variance state gives losses beyond history: in the reconstructed
+  window, a -66% worst portfolio day against -25% observed.
+- **Window choice dominates generator choice.** On the observed-only
+  2009-2025 window, the leveraged default beats both comparators on almost
+  every 2,520-observation path. On the reconstructed 1970-2006 window, the
+  unlevered same mix beats it on 27-35% of generated paths, and its 5th
+  percentile is higher.
+- **Reconstructed history differs materially.** Before 2006 the series are
+  dataset-project models: `USLCAP3X` excess kurtosis is 67 there against 16
+  observed, and its worst day is -57% against -35%.
+
+## Open next steps
+
+- Stage 2A: the sourced Australian rule register and an audited single-path
+  ledger. `simulate_paths` is the batched building block, but state-dependent
+  withdrawals still need a ledger-reconciled extension.
+- Optional Stage 1 extensions: residual trimming or stress scenarios for
+  GARCH-FHS, time-varying correlation, outer parameter sampling, and
+  interactive plots (a later reporting step).
+- AUD FX and Australian CPI datasets belong in `financial_datasets` when the
+  user schedules them.

@@ -122,8 +122,15 @@ including the leveraged-risk diagnostic, is in the
 - Variance targeting ties long-run volatility to the calibration sample. A
   short sample from a calm or turbulent period sets the level for every
   simulated year.
-- Shocks cannot exceed the worst standardised day in the sample. Long
-  horizons may need stress scenarios beyond the observed residuals.
+- Shocks cannot exceed the worst standardised day in the sample, but that
+  bound is in standardised units. A residual recorded after a calm period
+  (19 October 1987 is -13.5 standard deviations for `USLCAP3X` in the
+  1970-2006 fit) can be drawn when simulated variance is high, giving a
+  daily loss larger than any in history. On companion data the
+  reconstructed-window portfolio's worst generated day was -66%, against
+  -25% in the sample. Excess kurtosis was 219 against 22. Read GARCH-FHS
+  extreme tails as a stress-leaning model, not as a fitted tail. Capping or
+  trimming residuals would be a separate, documented choice.
 - Gaussian QML is consistent for GARCH parameters under broad conditions, but
   grid precision (0.0001) and the bounds limit the estimates. No standard
   errors are reported.
