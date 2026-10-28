@@ -14,14 +14,18 @@ visually reviewed; no PDFs were created. Read [parametric methodology](methodolo
 
 Run `python scripts/validate_stage1b.py --experiment scenarios/examples/monte_carlo.toml --output output/stage1c`
 to reproduce the comparison and audits. The validator supports both stages.
-The core checkpoint is `e48498a`; its hosted CI passed on Python 3.11 and 3.14.
-The integration checkpoint follows it. Forward rates are demonstration inputs,
+The core checkpoint is `e48498a` and the integration checkpoint is `e69401f`.
+Both passed hosted Python 3.11/3.14 CI. Forward rates are demonstration inputs,
 not forecasts or user-approved expectations. Assumed inflation is not observed
 CPI or Australian purchasing power. Keep it distinct from nominal market draws.
 
 All 71 local tests pass on Python 3.14; the tracked-input/link/privacy check
-passes. Hosted integration CI and a clean-code output manifest are the final
-closeout checks after the implementation push.
+passes. The integration's hosted jobs passed in
+[run 40767049484](https://github.com/mwilczynska/financial_simulations/actions/runs/40767049484).
+A fresh companion-data run from clean `e69401f` passed every audit, recording
+Python-source SHA-256 `492e79b7f86e001d43fa839cf8991ca317e9c5cc77695b223724f90f6916e742`.
+Stage 1C is complete within its documented scope. Source data, reports and
+private machine information remain ignored.
 
 The next planned part is Stage 1D: timewise nominal/real percentile reporting,
 stated targets, drawdown/recovery and sampling-error/model sensitivity. That

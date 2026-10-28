@@ -79,9 +79,13 @@ while leaving the paired nominal market outcomes unchanged by construction.
 
 The core checkpoint `e48498a` passed hosted Python 3.11/3.14 CI in
 [run 40765841885](https://github.com/mwilczynska/financial_simulations/actions/runs/40765841885).
-Final integration checks and clean-code manifests are recorded in the handoff
-as they complete. Private paths, source data and generated reports are excluded
-from Git.
+The full implementation `e69401f` passed both hosted jobs in
+[run 40767049484](https://github.com/mwilczynska/financial_simulations/actions/runs/40767049484).
+The companion-data experiment was rerun from clean commit `e69401f`; its input
+and validation manifests record `working_tree_dirty: false` and Python-source
+SHA-256 `492e79b7f86e001d43fa839cf8991ca317e9c5cc77695b223724f90f6916e742`.
+Counts, trace reconciliation and paired-scenario checks all passed again.
+Private paths, source data and generated reports are excluded from Git.
 
 ## Limits
 
