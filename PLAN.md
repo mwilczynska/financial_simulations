@@ -1,12 +1,18 @@
 # Financial Simulations: portfolio futures and Australian retirement
 
-Planning baseline: 28 October 2026. Status: Stage 1A implemented and validated
-against synthetic cases and the local optimiser. This includes strict data and
-weight adapters, daily accounting, cash flows, annual/buy-and-hold policies,
-static PNG plots and a reproducible baseline report. Stage 1B now implements
-joint daily replay/bootstrap and a calibration/block-length sensitivity runner.
-See [Stage 1A evidence](docs/validation/stage-1a.md) and
-[Stage 1B evidence](docs/validation/stage-1b.md). Stages 1C onward remain proposed.
+Planning baseline: 28 October 2026. Status: Stages 1A-1C are implemented and
+validated within their documented scope, and Stage 1D's first reporting pass
+is implemented. Stage 1A provides strict data and weight adapters, daily
+accounting, cash flows, annual/buy-and-hold policies, static PNG plots and a
+reproducible baseline report. Stage 1B adds joint daily replay/bootstrap and a
+calibration/block-length sensitivity runner. Stage 1C adds the correlated daily
+log-return benchmark, persistent assumption grid and assumed purchasing power.
+Stage 1D adds calendar-day nominal/real percentiles, explicit targets, censored
+drawdown/recovery and Monte Carlo sampling error. Paired multi-portfolio
+reports, rolling holdouts and source-segment sensitivity remain open Stage 1D
+work; Stage 2 remains proposed. See the validation evidence for
+[1A](docs/validation/stage-1a.md), [1B](docs/validation/stage-1b.md),
+[1C](docs/validation/stage-1c.md) and [1D](docs/validation/stage-1d.md).
 
 The initial retirement scenario is for one person who remains an Australian tax resident. Couples follow after the single-person model is validated. Account ownership, dates of birth and access conditions should be represented individually from the start so that adding a partner does not require replacing the engine.
 

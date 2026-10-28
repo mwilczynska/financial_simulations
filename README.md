@@ -11,7 +11,11 @@ Stage 1B is also implemented: joint daily historical replay, independent rows,
 moving blocks and stationary bootstrap, with sample-period/block-length/seed
 sensitivity and traceable PNG reports. Stage 1C adds a correlated daily
 log-return benchmark, explicit persistent return assumptions and an assumed
-purchasing-power comparison. Australian retirement rules remain planned.
+purchasing-power comparison. Stage 1D's first reporting pass adds calendar-day
+nominal/real wealth percentiles, explicit targets, censored drawdown/recovery
+and Monte Carlo sampling error; paired multi-portfolio reports, rolling
+holdouts and source-segment sensitivity remain open. Australian retirement
+rules remain planned.
 
 ## Development
 
@@ -114,7 +118,7 @@ CPI, Australian inflation or an AUD conversion. See
 [parametric methodology](docs/methodology/parametric.md) and
 [Stage 1C validation](docs/validation/stage-1c.md) for limits and executed checks.
 
-## Reproduce the checks
+## Evaluate outcomes (Stage 1D)
 
 Stage 1D's first evaluation/reporting pass is available:
 
@@ -139,6 +143,8 @@ They do not cover parameter uncertainty or disagreement between generators.
 Read [evaluation methodology](docs/methodology/evaluation.md) and
 [validation](docs/validation/stage-1d.md). Paired multi-portfolio reporting,
 rolling holdouts and source-segment sensitivity remain further Stage 1D work.
+
+## Reproduce the checks
 
 The unit suite uses only small synthetic fixtures; companion data is not needed.
 The integration script below needs both sibling checkouts and Parquet support:
