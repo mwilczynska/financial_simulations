@@ -1,6 +1,9 @@
 # Financial Simulations: portfolio futures and Australian retirement
 
-Planning baseline: 28 October 2026. Status: proposed design; simulation code has not been implemented.
+Planning baseline: 28 October 2026. Status: Stage 1A implementation in progress.
+The local dataset and portfolio adapters are implemented and fixture-validated;
+portfolio accounting, reports and historical reconciliation are the next checkpoint.
+Later stages remain proposed design.
 
 The initial retirement scenario is for one person who remains an Australian tax resident. Couples follow after the single-person model is validated. Account ownership, dates of birth and access conditions should be represented individually from the start so that adding a partner does not require replacing the engine.
 

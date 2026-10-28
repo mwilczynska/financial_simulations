@@ -2,7 +2,23 @@
 
 Python tools for simulating portfolio futures and planning Australian retirement, including early retirement funded outside super and subsequent combinations of outside investments and super.
 
-Status: planning and methodology. Simulation code has not been implemented yet.
+Status: Stage 1A implementation in progress. Typed portfolio specifications and
+local CSV/Parquet dataset and optimiser-weight adapters are implemented and
+fixture-validated. Daily accounting and the baseline report are the next checkpoint.
+
+## Development
+
+Use Python 3.11 or newer:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e '.[dev,parquet]'
+.\.venv\Scripts\python.exe -m pytest
+```
+
+Parquet support is optional; omit `parquet` for CSV-only use. The
+[adapter methodology](docs/methodology/data-adapters.md) records the implemented
+scope, strict calendar policy, supported aliases and validation evidence.
 
 ## Project principles
 

@@ -8,6 +8,7 @@ Decision records preserve why Financial Simulations makes a material modelling o
 | --- | --- | --- | --- |
 | [0001](0001-daily-returns-throughout.md) | 2026-10-28 | Accepted requirement; implementation pending | Retain daily returns and daily account evolution throughout |
 | [0002](0002-methodology-and-decision-records.md) | 2026-10-28 | Accepted documentation workflow | Maintain detailed methodology and referenced reasons with the code |
+| [0003](0003-stage-1a-data-contract.md) | 2026-10-28 | Accepted; adapters fixture-validated | Explicit data/weight contracts and strict matching observation calendars |
 
 ## When to write a record
 
