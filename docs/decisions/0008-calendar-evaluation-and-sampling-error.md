@@ -1,7 +1,7 @@
 # 0008: Calendar evaluation, censored recovery and conditional simulation error
 
-Date: 2026-10-28. Status: accepted; evaluation kernel implemented, report
-integration in progress.
+Date: 2026-10-28. Status: accepted and implemented for the initial Stage 1D
+single-portfolio, no-flow evaluation/reporting pass.
 
 ## Context and alternatives
 

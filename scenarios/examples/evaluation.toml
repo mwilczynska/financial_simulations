@@ -1,0 +1,73 @@
+# Stage 1D evaluation example; preserve opening purchasing power as an explicit toy target.
+# Demonstration grid: these fund-level geometric rates are not forecasts.
+# Covariance stays fitted; base/high-inflation nominal innovations and means match.
+[comparison]
+scenario = "baseline.toml"
+horizons = [252, 1260, 2520]
+paths = 512
+seeds = [1729, 2718]
+block_lengths = [63]
+batch_size = 64
+trace_horizon = 1260
+trace_block_length = 63
+
+[parametric]
+observations_per_year = 252
+reference_inflation = 0.02
+trace_assumption = "base"
+
+[[assumptions]]
+name = "historical_fit"
+mean_convention = "historical"
+inflation_annual = 0.02
+rationale = "Diagnostic fitted log means, with an assumed 2% deflator. Historical estimates are not forecasts."
+
+[[assumptions]]
+name = "base"
+mean_convention = "geometric_growth"
+inflation_annual = 0.02
+rationale = "Engineering demonstration: persistent fund-level geometric returns 8/3/4/3%, lower than the fitted sample for some assets. Not researched forecasts or user-approved expectations."
+[assumptions.annual_returns]
+USLCAP3x = 0.08
+ITT3x = 0.03
+GOLDPM2x = 0.04
+COMM = 0.03
+
+[[assumptions]]
+name = "lower_return"
+mean_convention = "geometric_growth"
+inflation_annual = 0.02
+rationale = "Engineering sensitivity: persistent geometric returns 4/1/2/1%, sharing innovations and fitted covariance with base. Not forecasts."
+[assumptions.annual_returns]
+USLCAP3x = 0.04
+ITT3x = 0.01
+GOLDPM2x = 0.02
+COMM = 0.01
+
+[[assumptions]]
+name = "high_inflation"
+mean_convention = "geometric_growth"
+inflation_annual = 0.04
+rationale = "Engineering sensitivity: same nominal paths as base, with a persistent assumed 4% deflator. Does not model markets reacting to inflation."
+[assumptions.annual_returns]
+USLCAP3x = 0.08
+ITT3x = 0.03
+GOLDPM2x = 0.04
+COMM = 0.03
+
+[[calibration]]
+name = "2010-2025"
+start = "2010-01-01"
+end = "2025-12-31"
+
+[[calibration]]
+name = "2016-2025"
+start = "2016-01-01"
+end = "2025-12-31"
+
+[evaluation]
+target_basis = "real"
+target_multiple = 1.0
+target_annual_growth = 0.0
+confidence = 0.95
+max_panel_mb = 128

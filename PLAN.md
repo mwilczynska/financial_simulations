@@ -163,10 +163,13 @@ Deliverable: a report showing the effect of generator choice and return assumpti
 
 ### 1D. Evaluation and reporting
 
-In progress: calendar-day evaluation, exact pointwise wealth quantiles, explicit
-targets, censored drawdown/recovery and conditional Monte Carlo precision have
-an implemented synthetic-tested kernel. Runner/PNG integration follows. See
-[methodology](docs/methodology/evaluation.md).
+Initial reporting pass implemented: calendar-day nominal/real wealth quantiles,
+terminal empirical distributions, explicit targets, censored drawdown/recovery
+and conditional Monte Carlo precision, with CSV exports and reviewed Python
+PNGs. Paired multi-portfolio reports, rolling holdouts and source-segment
+sensitivity remain further Stage 1D work. See
+[methodology](docs/methodology/evaluation.md) and
+[validation](docs/validation/stage-1d.md).
 
 Report wealth and real purchasing-power percentiles over time, terminal-wealth distribution, probability of missing a stated target, drawdown/recovery statistics and selected complete sample paths. Pointwise percentile bands are not individual realizable life histories; show traceable paths as well.
 

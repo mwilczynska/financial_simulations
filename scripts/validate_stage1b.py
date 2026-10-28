@@ -1,4 +1,4 @@
-"""Run a Stage 1B/1C experiment and audit saved traces with the full daily ledger."""
+"""Run a daily comparison and audit saved paths and optional evaluation reports."""
 
 import argparse
 import json
@@ -9,6 +9,7 @@ import pandas as pd
 
 from financial_simulations.comparison import load_comparison, run_comparison
 from financial_simulations.data.datasets import load_datasets
+from financial_simulations.evaluation import drawdown_statistics
 from financial_simulations.markets.path import MarketPath
 from financial_simulations.markets.assumptions import assumed_price_index
 from financial_simulations.portfolios.engine import simulate_portfolio
@@ -28,8 +29,12 @@ def main():
                            currency=scenario.portfolio.currency, file_format=scenario.file_format).path
     output = Path(args.output)
     traces = pd.read_csv(output / "traces.csv")
+    summary = pd.read_csv(output / "summary.csv")
+    outcomes = pd.read_csv(output / "outcomes.csv")
+    summary_index = summary.set_index("case_id")
+    outcome_index = outcomes.set_index(["case_id", "path_id"])
     max_error, count = 0.0, 0
-    for _, group in traces.groupby(["case_id", "path_id"]):
+    for (case_id, path_id), group in traces.groupby(["case_id", "path_id"]):
         gaussian = group["method"].iloc[0] == "lognormal"
         if gaussian:
             returns = group[[f"return_{a}" for a in source.assets]].iloc[1:].to_numpy()
@@ -49,10 +54,19 @@ def main():
         np.testing.assert_allclose(actual, expected, rtol=1e-11, atol=1e-7)
         if config.parametric:
             np.testing.assert_allclose(group["real_value"], actual / group["price_index"], rtol=1e-11, atol=1e-7)
+        if config.evaluation:
+            dates = tuple(result.daily.index.date)
+            values = result.daily["value"].to_numpy()
+            for prefix in ("nominal", "real") if config.parametric else ("nominal",):
+                evaluated = values if prefix == "nominal" else values / assumed_price_index(dates, summary_index.loc[case_id, "inflation_annual"])
+                statistics = drawdown_statistics([evaluated], dates)
+                row = outcome_index.loc[(case_id, path_id)]
+                for key in ("max_drawdown", "longest_underwater_days", "max_drawdown_observed_duration_days"):
+                    np.testing.assert_allclose(row[f"{prefix}_{key}"], statistics[key][0], rtol=1e-11, atol=1e-10)
+                if row[f"{prefix}_max_drawdown_recovery_status"] != statistics["max_drawdown_recovery_status"][0]:
+                    raise AssertionError("Recovery status disagrees with the full-calendar path.")
         max_error = max(max_error, float(np.max(np.abs(actual - expected))))
         count += 1
-    summary = pd.read_csv(output / "summary.csv")
-    outcomes = pd.read_csv(output / "outcomes.csv")
     for _, case in summary.iterrows():
         actual_count = int((outcomes["case_id"] == case["case_id"]).sum())
         if actual_count != case["paths"]:
@@ -82,10 +96,38 @@ def main():
                     paired += len(lvalues)
     if any(output.glob("*.pdf")):
         raise AssertionError("PNG plotting must not create PDFs.")
+    evaluation = None
+    if config.evaluation:
+        series = pd.read_csv(output / "wealth_percentiles.csv")
+        risks = pd.read_csv(output / "risk_summary.csv").set_index("case_id")
+        for case_id, group in series.groupby("case_id"):
+            case = summary_index.loc[case_id]
+            observed = group["is_observation"]
+            for suffix in ("p05", "median", "p95"):
+                column = f"nominal_{suffix}"
+                np.testing.assert_allclose(group[column], group[column].where(observed).ffill())
+                np.testing.assert_allclose(group[column].iloc[-1], case[f"terminal_{suffix}"])
+                if config.parametric:
+                    np.testing.assert_allclose(group[f"real_{suffix}"], group[column] / group["price_index"])
+            case_outcomes = outcomes[outcomes["case_id"] == case_id]
+            risk = risks.loc[case_id]
+            terminal = case_outcomes["real_terminal_value" if config.evaluation.target_basis == "real" else "terminal_value"]
+            if risk["misses"] != int((terminal < risk["terminal_target"]).sum()):
+                raise AssertionError("Reported target misses disagree with path outcomes.")
+            if case["method"] == "historical_replay":
+                if risk[["fraction_ci_low", "fraction_ci_high", "fraction_mcse", "terminal_mean_mcse"]].notna().any():
+                    raise AssertionError("Dependent replay must not receive independent-sample inference.")
+            elif not risk["fraction_ci_low"] <= risk["fraction_below_target"] <= risk["fraction_ci_high"]:
+                raise AssertionError("Monte Carlo interval does not contain its estimated fraction.")
+        evaluation = {"daily_percentile_rows": len(series), "cases_checked": len(risks),
+                      "terminal_quantiles": "passed", "calendar_carry": "passed",
+                      "real_deflation": "passed" if config.parametric else "not_requested",
+                      "target_counts_and_interval_scope": "passed", "saved_path_recovery": "passed"}
     evidence = {"cases": manifest["cases"], "paths_evaluated": len(outcomes),
                 "traces_reconciled": count, "max_trace_absolute_error": max_error,
                 "trace_rtol": 1e-11, "trace_atol": 1e-7, "outcome_counts": "passed",
                 "complete_replay_counts": "passed", "paired_assumption_paths_checked": paired,
+                "evaluation": evaluation,
                 "code": manifest["code"]}
     (output / "validation.json").write_text(json.dumps(evidence, indent=2, allow_nan=False) + "\n",
                                             encoding="utf-8", newline="\n")

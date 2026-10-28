@@ -12,6 +12,7 @@ import pandas as pd
 
 from financial_simulations.data.datasets import load_datasets
 from financial_simulations.dates import as_date
+from financial_simulations.evaluation import EvaluationPanel, EvaluationSettings, load_evaluation
 from financial_simulations.markets.assumptions import ParametricSettings, assumed_price_index, load_assumptions
 from financial_simulations.markets.parametric import fit_lognormal
 from financial_simulations.markets.resampling import (Sampler, complete_window_count, historical_draw,
@@ -35,16 +36,20 @@ class Comparison:
     calendar_file: Path | None
     manifest: dict
     parametric: ParametricSettings | None = None
+    evaluation: EvaluationSettings | None = None
 
 
 def load_comparison(path: str | Path) -> Comparison:
     path = Path(path).resolve()
     raw = path.read_bytes()
     config = tomllib.loads(raw.decode("utf-8"))
-    _keys(config, {"comparison", "calibration", "parametric", "assumptions"}, {"comparison", "calibration"}, "experiment")
+    _keys(config, {"comparison", "calibration", "parametric", "assumptions", "evaluation"}, {"comparison", "calibration"}, "experiment")
     if ("parametric" in config) != ("assumptions" in config):
         raise ValueError("Supply parametric and assumptions together.")
     parametric = load_assumptions(config["parametric"], config["assumptions"]) if "parametric" in config else None
+    evaluation = load_evaluation(config["evaluation"]) if "evaluation" in config else None
+    if evaluation and evaluation.target_basis == "real" and parametric is None:
+        raise ValueError("Real evaluation requires parametric settings with explicit inflation assumptions.")
     options, windows = config["comparison"], config["calibration"]
     required = {"scenario", "horizons", "paths", "seeds", "block_lengths", "trace_horizon", "trace_block_length"}
     _keys(options, required | {"batch_size", "calendar_file"}, required, "comparison")
@@ -78,7 +83,7 @@ def load_comparison(path: str | Path) -> Comparison:
                       trace_horizon, trace_length,
                       (path.parent / options["calendar_file"]).resolve() if "calendar_file" in options else None,
                       {"file": path.name, "sha256": sha256(raw).hexdigest(), "options": options,
-                       "calibration": canonical_windows}, parametric)
+                       "calibration": canonical_windows}, parametric, evaluation)
 
 
 def autocorrelation(values, lag: int) -> float | None:
@@ -116,6 +121,8 @@ def run_comparison(config: Comparison, output: str | Path) -> dict:
     pd.DataFrame({"Date": dates[:max(config.horizons) + 1]}).to_csv(output / "target_calendar.csv", index=False, lineterminator="\n")
     summaries, outcomes, traces, diagnostics, correlations, inputs = [], [], [], [], [], []
     calibrations, mean_rows = [], []
+    evaluation_summaries, selected_series = [], []
+    percentile_rows, max_panel_bytes = 0, 0
     settings = [("historical_replay", None, None, None)]
     for seed in config.seeds:
         settings += [("independent", None, seed, None)]
@@ -189,6 +196,11 @@ def run_comparison(config: Comparison, output: str | Path) -> dict:
                               (assumption is None or assumption.name == config.parametric.trace_assumption))
                 trace_ids = set((0, count // 2, count - 1) if method == "historical_replay" else range(min(count, 3))) if trace_case else set()
                 terminal, drawdowns = [], []
+                panel = EvaluationPanel(count, target, config.evaluation, capital,
+                                        inflation if config.parametric else None) if config.evaluation else None
+                if panel:
+                    max_panel_bytes = max(max_panel_bytes, panel.wealth.nbytes)
+                case_start = len(outcomes)
                 sampler = Sampler(method, length) if method not in {"historical_replay", "lognormal"} else None
                 mean = assumption.daily_mean(model) if assumption else None
                 for offset in range(0, count, config.batch_size):
@@ -206,6 +218,7 @@ def run_comparison(config: Comparison, output: str | Path) -> dict:
                         raise ValueError("Compounded wealth exceeds numeric range.")
                     if price_index is not None and not np.isfinite(wealth / price_index).all():
                         raise ValueError("Deflated wealth exceeds numeric range.")
+                    evaluation_stats = panel.add(wealth) if panel else None
                     peaks = np.maximum.accumulate(wealth, axis=1)
                     ratios = np.divide(wealth, peaks, out=np.ones_like(wealth), where=peaks > 0)
                     maximum_dd = np.min(ratios - 1, axis=1)
@@ -219,6 +232,8 @@ def run_comparison(config: Comparison, output: str | Path) -> dict:
                         if price_index is not None:
                             outcome.update(real_terminal_value=float(wealth[row_id, -1] / price_index[-1]),
                                            real_total_return=float(wealth[row_id, -1] / price_index[-1] / capital - 1))
+                        if evaluation_stats is not None:
+                            outcome.update({key: values[row_id] for key, values in evaluation_stats.items()})
                         outcomes.append(outcome)
                         if path_id in trace_ids:
                             draw = draws[row_id] if draws else None
@@ -248,11 +263,31 @@ def run_comparison(config: Comparison, output: str | Path) -> dict:
                                     for key, value in zip(("p05", "median", "p95"), quantiles)})
                     summary["fraction_real_terminal_below_initial"] = float(np.mean(np.asarray(terminal) / price_index[-1] < capital))
                 summaries.append(summary)
+                if panel:
+                    series, risk = panel.finish(case_id, independent=method != "historical_replay")
+                    series.to_csv(output / "wealth_percentiles.csv", mode="w" if percentile_rows == 0 else "a",
+                                  header=percentile_rows == 0, index=False, lineterminator="\n")
+                    percentile_rows += len(series)
+                    if window_id == 0 and horizon == config.trace_horizon and (seed is None or seed == config.seeds[0]) and (length is None or length == config.trace_block_length):
+                        selected_series.append(series)
+                    case_outcomes = pd.DataFrame(outcomes[case_start:])
+                    for prefix in ("nominal", "real") if config.parametric else ("nominal",):
+                        for metric in ("max_drawdown", "longest_underwater_days"):
+                            for suffix, value in zip(("p05", "median", "p95"), np.quantile(case_outcomes[f"{prefix}_{metric}"], [0.05, 0.5, 0.95], method="linear")):
+                                risk[f"{prefix}_{metric}_{suffix}"] = float(value)
+                        status = case_outcomes[f"{prefix}_max_drawdown_recovery_status"]
+                        risk[f"{prefix}_unrecovered_fraction"] = float((status == "unrecovered").mean())
+                        risk[f"{prefix}_no_drawdown_fraction"] = float((status == "no_drawdown").mean())
+                        recovered = case_outcomes.loc[status == "recovered", f"{prefix}_max_drawdown_observed_duration_days"]
+                        risk[f"{prefix}_recovered_duration_median"] = float(recovered.median()) if len(recovered) else None
+                    evaluation_summaries.append({**metadata, **risk})
     tables = {"summary.csv": pd.DataFrame(summaries), "outcomes.csv": pd.DataFrame(outcomes),
               "traces.csv": pd.DataFrame(traces), "dependence.csv": pd.DataFrame(diagnostics),
               "correlations.csv": pd.DataFrame(correlations)}
     if config.parametric:
         tables["mean_assumptions.csv"] = pd.DataFrame(mean_rows)
+    if config.evaluation:
+        tables["risk_summary.csv"] = pd.DataFrame(evaluation_summaries)
     for filename, table in tables.items():
         table.to_csv(output / filename, index=False, lineterminator="\n")
     manifest = {"schema_version": 1, "model": "stage_1b_joint_daily_v1", "code": code_manifest(),
@@ -274,8 +309,17 @@ def run_comparison(config: Comparison, output: str | Path) -> dict:
                         price_index="Assumed constant annual rate; exp(log1p(rate) * elapsed_calendar_days / 365.25). Not observed CPI.",
                         scope="Common nominal currency and assumed purchasing power; no dated flows, FX or retirement rules.",
                         interpretation="Separate conditional generators/assumptions; demonstration rates are not forecasts. No model averaging.")
+    if config.evaluation:
+        manifest.update(model="stage_1d_evaluation_v1", evaluation=config.evaluation.manifest(),
+                        evaluation_cases=len(evaluation_summaries), percentile_rows=percentile_rows,
+                        max_exact_panel_bytes=max_panel_bytes,
+                        sampling_error="Wilson score/fraction MCSE and mean MCSE conditional on fitted generated paths; replay descriptive only.")
     (output / "manifest.json").write_text(json.dumps(manifest, indent=2, allow_nan=False) + "\n", encoding="utf-8", newline="\n")
     from financial_simulations.reporting.comparison import write_comparison_plots
 
     write_comparison_plots(output, tables, config, scenario)
+    if config.evaluation:
+        from financial_simulations.reporting.evaluation import write_evaluation_plots
+
+        write_evaluation_plots(output, tables, pd.concat(selected_series, ignore_index=True), config, scenario)
     return manifest

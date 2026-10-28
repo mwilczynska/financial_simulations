@@ -116,6 +116,30 @@ CPI, Australian inflation or an AUD conversion. See
 
 ## Reproduce the checks
 
+Stage 1D's first evaluation/reporting pass is available:
+
+```powershell
+.\.venv\Scripts\python.exe -m financial_simulations compare scenarios/examples/evaluation.toml --output output/stage1d
+.\.venv\Scripts\python.exe scripts/validate_stage1b.py --experiment scenarios/examples/evaluation.toml --output output/stage1d
+```
+
+The example's explicit toy target is to preserve opening purchasing power.
+It retains the 40/20/20/20 portfolio and the Stage 1C demonstration assumption
+grid. Daily calendar account marks produce nominal/real pointwise percentile
+bands, terminal empirical distributions and drawdown/recovery metrics. Open
+recoveries keep their censored status and observed lower-bound durations.
+
+New PNGs are `wealth_percentiles_nominal.png`, `wealth_percentiles_real.png`,
+`terminal_distribution.png`, `target_shortfall.png` and `drawdown_recovery.png`.
+Detailed CSVs include `wealth_percentiles.csv`, `risk_summary.csv` and the
+expanded path outcomes. Confidence intervals quantify conditional simulation
+sampling error; overlapping replay windows receive descriptive statistics.
+They do not cover parameter uncertainty or disagreement between generators.
+
+Read [evaluation methodology](docs/methodology/evaluation.md) and
+[validation](docs/validation/stage-1d.md). Paired multi-portfolio reporting,
+rolling holdouts and source-segment sensitivity remain further Stage 1D work.
+
 The unit suite uses only small synthetic fixtures; companion data is not needed.
 The integration script below needs both sibling checkouts and Parquet support:
 

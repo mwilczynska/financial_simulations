@@ -1,8 +1,9 @@
 # Calendar-day evaluation and reporting (Stage 1D)
 
-Date: 2026-10-28. Status: evaluation kernel and synthetic checks implemented;
-runner integration and PNG reporting are in progress. This does not establish
-completion of all Stage 1D validation, including rolling holdout studies.
+Date: 2026-10-28. Status: the initial evaluation/reporting pass is implemented
+for the existing single-portfolio, no-flow comparison. This does not establish
+completion of all Stage 1D work, including paired multi-portfolio reporting,
+rolling holdout studies and source-segment sensitivity.
 
 ## Purpose, inputs and conventions
 
@@ -14,7 +15,8 @@ nor changes market draws when reporting settings change. The currently
 supported comparison has no dated flows or additional fees; the existing
 fund/proxy returns retain their embedded expenses.
 
-Input wealth includes the opening mark and every observed return. Between
+Input wealth includes the same stated opening capital in every path and every
+observed return. A mismatched opening value is rejected. Between
 observations, repeat the last account value on calendar days. These are account
 marks, not invented observed zero-return rows. Apply the explicit assumed
 price index on every calendar date before computing real drawdowns. An assumed
@@ -101,7 +103,10 @@ Do not substitute overlap counts for independent sample size.
 Synthetic checks cover deterministic quantiles, exact target equality, closed
 and censored recoveries, repeated high-water marks, total loss, calendar-weekend
 deflation, Wilson reference values and extremes, and panel-memory/input errors.
-Integration, artifact reconciliation and visual review remain in progress.
+Runner tests verify unchanged market outcomes when evaluation is enabled,
+byte-identical reports across batch sizes, agreement with the full calendar-day
+ledger including weekends, valid PNG output and no PDF generation. See
+[executed evidence](../validation/stage-1d.md).
 Multi-portfolio paired comparisons, rolling holdout exercises and observed-data
 segment sensitivity remain further Stage 1D work; retirement rules remain later.
 
@@ -109,3 +114,41 @@ The drawdown/target definitions and reporting choices above are engineering
 conventions. The [NIST Wilson interval reference](https://www.itl.nist.gov/div898/handbook/prc/section2/prc241.htm),
 consulted 2026-10-28, supports the score-interval formula. It does not validate
 financial independence assumptions or the market model.
+
+## Configuration, outputs and report selection
+
+An optional `[evaluation]` section adds the five explicit settings described
+above. A real target requires the existing `[parametric]` inflation assumptions;
+a nominal-only evaluation can run on Stage 1B empirical cases. Earlier examples
+without evaluation retain their existing outputs and generator streams.
+The [evaluation example](../../scenarios/examples/evaluation.toml) keeps the
+Stage 1C demonstration grid and the user's selected portfolio, with the toy
+target of preserving opening real wealth, zero real target growth, 95%
+confidence and a 128 MiB exact-panel limit.
+
+Each case writes every calendar day's nominal/real p05, median and p95,
+observation flag/index and target curves to `wealth_percentiles.csv`.
+`outcomes.csv` adds pathwise nominal/real drawdown dates, recovery statuses,
+observed episode durations and open-episode flags. `risk_summary.csv` stores
+terminal targets, miss/gap statistics, conditional Monte Carlo precision,
+drawdown/duration quantiles and recovery fractions. The recovered-only median
+duration excludes unfinished episodes and no-drawdown paths; it must not be
+read as the full population's recovery median.
+
+Exact target-day count is preserved; an unavailable complete replay produces
+no percentile/risk rows, retaining its explicit missing-case summary. The
+manifest records evaluation settings, row/case counts and the largest exact
+panel allocation. Portfolio weights, assumptions, source hashes and the
+simulation code manifest remain available from the comparison.
+
+The percentile, terminal-CDF and drawdown PNGs show the first calibration
+window, configured trace horizon/block length and first generated seed, plus
+all complete replays at that setting. All Gaussian assumptions remain separate.
+The shortfall PNG includes all windows/horizons/seeds. Full CSVs cover every
+available case. Wealth facets share a scale and distinguish pointwise bands
+from realizable paths; the existing sample-path PNG remains separate.
+
+The terminal plot is an empirical CDF, without arbitrary histogram bin choices.
+The drawdown plot's depth/duration bars are path percentiles, whereas the target
+plot's bars are conditional Monte Carlo confidence intervals. Caption this
+distinction explicitly. All plots are generated directly from Python as PNGs.

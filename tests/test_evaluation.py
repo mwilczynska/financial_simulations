@@ -62,6 +62,9 @@ def test_wilson_known_example_extremes_and_sampling_precision():
     assert high == pytest.approx(0.209803515)
     assert wilson_interval(0, 100, 0.95)[1] > 0
     assert wilson_interval(100, 100, 0.95)[0] < 1
+    for n in (1, 3, 17, 64, 100, 512, 10000):
+        assert wilson_interval(0, n, 0.95)[0] == 0
+        assert wilson_interval(n, n, 0.95)[1] == 1
     wide = wilson_interval(50, 100, 0.95)
     narrow = wilson_interval(200, 400, 0.95)
     assert narrow[1] - narrow[0] < wide[1] - wide[0]
@@ -69,7 +72,7 @@ def test_wilson_known_example_extremes_and_sampling_precision():
 
 def test_evaluation_error_boundaries_and_memory_guard():
     dates = (date(2020, 1, 1), date(2020, 1, 2))
-    for change in ({"target_basis": "other"}, {"target_multiple": 0}, {"confidence": 1},
+    for change in ({"target_basis": "other"}, {"target_basis": []}, {"target_multiple": 0}, {"confidence": 1},
                    {"target_annual_growth": -1}, {"max_panel_mb": True}):
         with pytest.raises(ValueError):
             settings(**change)
@@ -83,6 +86,18 @@ def test_evaluation_error_boundaries_and_memory_guard():
     with pytest.raises(ValueError):
         panel.add([[0, 1]])
     with pytest.raises(ValueError):
+        panel.add([[200, 100]])
+    with pytest.raises(ValueError):
         drawdown_statistics([[100, 90]], dates[::-1])
     with pytest.raises(ValueError):
         wilson_interval(11, 10, 0.95)
+
+
+def test_growing_target_uses_elapsed_calendar_time_and_large_mean_is_stable():
+    dates = (date(2020, 1, 1), date(2021, 1, 1))
+    panel = EvaluationPanel(2, dates, settings(target_multiple=2, target_annual_growth=0.05), 1e300)
+    panel.add([[1e300, 0.8e300], [1e300, 1.2e300]])
+    _, result = panel.finish(1, independent=True)
+    assert result["terminal_target"] == pytest.approx(2e300 * 1.05 ** (366 / 365.25))
+    assert result["terminal_mean_in_target_units"] == pytest.approx(1e300)
+    assert result["terminal_mean_mcse"] == pytest.approx(0.2e300)

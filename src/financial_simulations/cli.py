@@ -18,7 +18,7 @@ def main(argv=None) -> int:
     reconcile.add_argument("scenario")
     reconcile.add_argument("--optimiser-root", required=True)
     reconcile.add_argument("--output", required=True)
-    compare = commands.add_parser("compare", help="Compare daily replay and joint bootstrap sensitivities.")
+    compare = commands.add_parser("compare", help="Compare daily generators, assumptions and optional target/risk evaluation.")
     compare.add_argument("experiment")
     compare.add_argument("--output", required=True)
     args = parser.parse_args(argv)

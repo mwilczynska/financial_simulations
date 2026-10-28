@@ -21,7 +21,7 @@ class EvaluationSettings:
     max_panel_mb: int
 
     def __post_init__(self):
-        if self.target_basis not in {"nominal", "real"}:
+        if not isinstance(self.target_basis, str) or self.target_basis not in {"nominal", "real"}:
             raise ValueError("Target basis must be nominal or real.")
         if rate(self.target_multiple, "target_multiple") <= 0:
             raise ValueError("Target multiple must be positive.")
@@ -57,7 +57,9 @@ def wilson_interval(misses, paths, confidence):
     denominator = 1 + z * z / paths
     centre = (p + z * z / (2 * paths)) / denominator
     radius = z * np.sqrt(p * (1 - p) / paths + z * z / (4 * paths * paths)) / denominator
-    return max(0.0, float(centre - radius)), min(1.0, float(centre + radius))
+    # Exact boundary limits also prevent roundoff from excluding p=0 or p=1.
+    return (0.0 if misses == 0 else max(0.0, float(centre - radius)),
+            1.0 if misses == paths else min(1.0, float(centre + radius)))
 
 
 def _mean_and_mcse(values, independent):
@@ -121,6 +123,7 @@ class EvaluationPanel:
             raise ValueError("Evaluation dates must be sorted, unique and nonempty.")
         if rate(capital, "capital") <= 0:
             raise ValueError("Evaluation requires positive opening capital.")
+        self.capital = float(capital)
         if paths * len(observations) * 8 > settings.max_panel_mb * 1024 ** 2:
             raise ValueError("Exact evaluation panel exceeds max_panel_mb; raise the explicit limit or reduce the experiment.")
         self.wealth = np.empty((paths, len(observations)))
@@ -141,7 +144,7 @@ class EvaluationPanel:
         values = np.asarray(wealth, dtype=float)
         if (values.ndim != 2 or values.shape[1] != self.wealth.shape[1] or not len(values)
                 or self.filled + len(values) > len(self.wealth) or not np.isfinite(values).all()
-                or (values < 0).any() or (values[:, 0] <= 0).any()):
+                or (values < 0).any() or (values[:, 0] != self.capital).any()):
             raise ValueError("Invalid evaluation batch or path count.")
         self.wealth[self.filled:self.filled + len(values)] = values
         self.filled += len(values)

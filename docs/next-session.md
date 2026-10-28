@@ -2,13 +2,23 @@
 
 Updated: 2026-10-28. The user authorised Stage 1B after the Stage 1A closeout.
 
-The user has now authorised the next section, Stage 1D. Its evaluation kernel
-is implemented: exact pointwise nominal/real quantiles on calendar account
-marks, explicit growing targets, drawdown/recovery with censoring and conditional
-Monte Carlo error. Continue runner integration, PNG reports and companion-data
-validation. Read [evaluation methodology](methodology/evaluation.md) and
+The user has now authorised Stage 1D. Its first evaluation/reporting pass is
+implemented: exact pointwise nominal/real quantiles on calendar account marks,
+explicit growing targets, drawdown/recovery with censoring, conditional Monte
+Carlo error, CSV reports and five new Python PNGs. All 79 local tests pass.
+The first companion experiment has 90 cases/54,564 paths, 89 evaluated cases
+and 171,873 calendar-day percentile rows. Its 15 saved paths reconcile with
+the daily ledger. PNGs were visually reviewed, including a header-spacing fix.
+Read [evaluation methodology](methodology/evaluation.md) and
 [ADR 0008](decisions/0008-calendar-evaluation-and-sampling-error.md). Keep the
 default 40/20/20/20 mix and generate PNGs directly from Python, never PDFs.
+
+Run `python scripts/validate_stage1b.py --experiment scenarios/examples/evaluation.toml --output output/stage1d`
+for the experiment and expanded artifact audit. The target of preserving
+opening real wealth is an explicit demonstration, not a personal user goal.
+Kernel checkpoint `8f33304` passed Python 3.11/3.14 hosted CI. The report
+integration checkpoint follows it. Finish clean-code/hosted integration checks
+before continuing further Stage 1D work.
 
 The user has now requested a commit/push and implementation of the next part.
 Stage 1C now implements daily correlated log-return calibration/generation,

@@ -187,3 +187,104 @@ annual_returns = {GLSTOCK = 0.08, GLBOND = 0.03}
     with Image.open(first / "terminal_purchasing_power.png") as image:
         assert image.format == "PNG"
     assert not list(first.glob("*.pdf"))
+
+
+def test_evaluation_reports_are_exact_and_do_not_change_market_paths(tmp_path):
+    from financial_simulations.evaluation import EvaluationSettings, drawdown_statistics
+
+    config = fixture(tmp_path)
+    plain = tmp_path / "plain"
+    run_comparison(config, plain)
+    evaluated = replace(config, evaluation=EvaluationSettings("nominal", 1.0, 0.0, 0.95, 8))
+    first, second = tmp_path / "evaluated", tmp_path / "evaluated-small"
+    manifest = run_comparison(evaluated, first)
+    run_comparison(replace(evaluated, batch_size=1), second)
+    assert manifest["model"] == "stage_1d_evaluation_v1"
+    assert manifest["evaluation_cases"] == 15  # One unavailable replay case stays unavailable.
+    for filename in ("wealth_percentiles.csv", "risk_summary.csv", "outcomes.csv"):
+        assert (first / filename).read_bytes() == (second / filename).read_bytes()
+    old = pd.read_csv(plain / "outcomes.csv")
+    outcomes = pd.read_csv(first / "outcomes.csv")
+    pd.testing.assert_frame_equal(old, outcomes[old.columns])
+    summary = pd.read_csv(first / "summary.csv")
+    series = pd.read_csv(first / "wealth_percentiles.csv")
+    risks = pd.read_csv(first / "risk_summary.csv")
+    for _, case in summary[summary["status"] == "ok"].iterrows():
+        final = series[series["case_id"] == case["case_id"]].iloc[-1]
+        assert final["nominal_median"] == pytest.approx(case["terminal_median"])
+        risk = risks[risks["case_id"] == case["case_id"]].iloc[0]
+        paths = outcomes[outcomes["case_id"] == case["case_id"]]
+        assert risk["misses"] == int((paths["terminal_value"] < 100).sum())
+        assert risk["fraction_below_target"] == pytest.approx(case["fraction_terminal_below_initial"])
+        if case["method"] == "historical_replay":
+            assert pd.isna(risk["fraction_ci_low"]) and pd.isna(risk["terminal_mean_mcse"])
+        else:
+            assert risk["fraction_ci_low"] <= risk["fraction_below_target"] <= risk["fraction_ci_high"]
+    traces = pd.read_csv(first / "traces.csv")
+    for (case_id, path_id), trace in traces.groupby(["case_id", "path_id"]):
+        stats = drawdown_statistics([trace["value"].to_numpy()], trace["target_date"])
+        row = outcomes[(outcomes["case_id"] == case_id) & (outcomes["path_id"] == path_id)].iloc[0]
+        assert row["nominal_max_drawdown"] == pytest.approx(stats["max_drawdown"][0])
+        assert row["nominal_max_drawdown_recovery_status"] == stats["max_drawdown_recovery_status"][0]
+    from PIL import Image
+    for filename in ("wealth_percentiles_nominal.png", "terminal_distribution.png", "target_shortfall.png", "drawdown_recovery.png"):
+        with Image.open(first / filename) as image:
+            assert image.format == "PNG"
+    assert not list(first.glob("*.pdf"))
+
+
+def test_real_calendar_evaluation_reconciles_to_full_daily_ledger(tmp_path):
+    from financial_simulations.evaluation import drawdown_statistics
+    from financial_simulations.markets.assumptions import assumed_price_index
+
+    fixture(tmp_path)
+    experiment = tmp_path / "experiment.toml"
+    original = experiment.read_text(encoding="utf-8")
+    original = original.replace('batch_size = 3', 'batch_size = 3\ncalendar_file = "calendar.csv"')
+    pd.DataFrame({"Date": ["2026-10-23", "2026-10-26", "2026-10-27", "2026-10-28", "2026-10-29", "2026-10-30"]}).to_csv(tmp_path / "calendar.csv", index=False)
+    experiment.write_text(original + '''
+[parametric]
+observations_per_year = 252
+reference_inflation = 0.02
+trace_assumption = "base"
+[[assumptions]]
+name = "base"
+mean_convention = "geometric_growth"
+inflation_annual = 0.04
+rationale = "Synthetic real evaluation"
+annual_returns = {GLSTOCK = 0.05, GLBOND = 0.02}
+[evaluation]
+target_basis = "real"
+target_multiple = 1.0
+target_annual_growth = 0.0
+confidence = 0.95
+max_panel_mb = 8
+''', encoding="utf-8")
+    config = load_comparison(experiment)
+    output = tmp_path / "real-evaluation"
+    manifest = run_comparison(config, output)
+    assert manifest["paths_evaluated"] == 71
+    scenario = load_scenario(config.scenario_file)
+    summary = pd.read_csv(output / "summary.csv").set_index("case_id")
+    traces = pd.read_csv(output / "traces.csv")
+    outcomes = pd.read_csv(output / "outcomes.csv").set_index(["case_id", "path_id"])
+    for (case_id, path_id), group in traces.groupby(["case_id", "path_id"]):
+        target = tuple(t.date() for t in pd.to_datetime(group["target_date"]))
+        returns = group[[f"return_{a}" for a in scenario.portfolio.assets]].iloc[1:].to_numpy()
+        ledger = simulate_portfolio(MarketPath(target, scenario.portfolio.assets, returns), scenario.portfolio, 100).daily
+        dates = tuple(ledger.index.date)
+        real = ledger["value"].to_numpy() / assumed_price_index(dates, summary.loc[case_id, "inflation_annual"])
+        expected = drawdown_statistics([real], dates)
+        row = outcomes.loc[(case_id, path_id)]
+        assert row["real_max_drawdown"] == pytest.approx(expected["max_drawdown"][0])
+        assert row["real_max_drawdown_observed_duration_days"] == expected["max_drawdown_observed_duration_days"][0]
+        assert row["real_max_drawdown_recovery_status"] == expected["max_drawdown_recovery_status"][0]
+    series = pd.read_csv(output / "wealth_percentiles.csv")
+    for _, group in series.groupby("case_id"):
+        assert list(group["is_observation"].iloc[:4]) == [True, False, False, True]
+        assert group["nominal_median"].iloc[0] == group["nominal_median"].iloc[2]
+        assert group["real_median"].iloc[0] > group["real_median"].iloc[2]
+    risks = pd.read_csv(output / "risk_summary.csv")
+    for _, risk in risks.iterrows():
+        assert risk["fraction_below_target"] == pytest.approx(summary.loc[risk["case_id"], "fraction_real_terminal_below_initial"])
+    assert (output / "wealth_percentiles_real.png").is_file()
