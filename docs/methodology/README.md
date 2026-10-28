@@ -5,7 +5,8 @@ Detailed methodology is part of every model deliverable in Financial Simulations
 Current status: Stage 1A data/portfolio adapters, deterministic daily accounting
 and static PNG reporting are implemented and validated with synthetic fixtures
 and local optimiser reconciliation. See [executed evidence](../validation/stage-1a.md).
-Stochastic generators and retirement calculations remain planned.
+Stage 1B empirical replay/bootstrap and its sensitivity runner are implemented;
+parametric generators and retirement calculations remain planned.
 
 ## Document register
 
@@ -14,8 +15,8 @@ Stochastic generators and retirement calculations remain planned.
 | Daily time resolution and accounting | [Daily engine](daily-engine.md): Stage 1A daily core implemented; later generators/rules pending | Trading observations, calendar dates, compounding, scheduled events, costs and daily validation |
 | Data contract and adapters | [Data adapters](data-adapters.md): implemented, fixture-validated | Dataset aliases, strict calendars, currencies, source rows, distributions, embedded fees and input hashes |
 | Deterministic portfolio accounting | [Portfolio accounting](portfolio-accounting.md): implemented and validated | Positions, daily returns, cash flows, rebalancing, retained cash, shortfalls and transaction ordering |
-| Historical replay | [Resampling](resampling.md): core implemented | Complete windows, joint sequences, mapped calendar and overlap limitations |
-| Independent and block bootstrap | [Resampling](resampling.md): core implemented; comparison runner in progress | Joint rows, observation block lengths, circular boundaries and reproducible streams |
+| Historical replay | [Resampling](resampling.md): implemented with comparison runner | Complete windows, joint sequences, mapped calendar and overlap limitations |
+| Independent and block bootstrap | [Resampling](resampling.md): implemented and validated | Joint rows, observation block lengths, circular boundaries, sensitivity and reproducible streams |
 | Parametric Monte Carlo | Planned | Daily calibration, covariance, return support and conversion of annual assumptions |
 | Assumption uncertainty and stresses | Planned | Persistent long-run parameters, scenario grids, parameter sampling and model comparison |
 | Reporting and outcome measures | [Baseline reporting](portfolio-accounting.md): deterministic PNG/CSV/HTML implemented; stochastic measures planned | Daily performance drawdown, account value, allocation, flows and period reconciliation |

@@ -1,6 +1,23 @@
-# Stage 1A closeout and next-session handoff
+# Stage 1B implementation and next-session handoff
 
-Updated: 2026-10-28, following the scheduled closeout review.
+Updated: 2026-10-28. The user authorised Stage 1B after the Stage 1A closeout.
+
+Stage 1B now provides complete-window mapped historical replay, joint independent
+rows, moving blocks, stationary bootstrap and a daily no-flow sensitivity runner.
+The sampler/accounting checkpoint is `245f9e4`; the following runner checkpoint
+contains the rest of this implementation. See
+[methodology](methodology/resampling.md) and [validation](validation/stage-1b.md).
+
+The default comparison uses 2010-2025 and 2016-2025, horizons 252/1260/2520,
+block lengths 21/63/252 and two seeds with 256 stochastic paths each. The first
+run evaluates 90 cases and 33,060 paths, with 12 reconstructible examples.
+The shorter sample has zero complete 2,520-observation replay windows. PNGs
+include terminal intervals, individual paths and return/squared-return dependence.
+No-flow batched accounting matches the full ledger; the full suite has 63 tests.
+
+Use `python scripts/validate_stage1b.py --output output/stage1b` to run the
+experiment and audit saved traces. The account calendar is explicitly a shared
+observed template; an optional target-date CSV can provide another grid.
 
 Stage 1A is implemented: explicit local adapters, daily holdings/cash accounting,
 annual/buy-and-hold policies, dated flows, inspectable CSV/Parquet/HTML outputs
@@ -38,6 +55,6 @@ inspected, and an initial allocation-legend overlap was corrected. See the
 The earlier planned handoff write was interrupted after the implementation had
 already been pushed. This document now supplies the durable project handoff.
 
-No Stage 1B generators, additional fees, Australian inflation/FX, tax, super or
-retirement modelling have been started. Wait for further user instruction before
-starting Stage 1B. Read AGENTS.md and PLAN.md before changing model behaviour.
+Additional fees, Australian inflation/FX, parametric generators, tax, super and
+retirement modelling remain unimplemented. Stage 1C is the next planned stage;
+it has not been started. Read AGENTS.md and PLAN.md before changing behaviour.

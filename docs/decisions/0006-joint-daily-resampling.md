@@ -1,6 +1,6 @@
 # ADR 0006: joint daily sampling, explicit calendars and reproducible path streams
 
-Date: 2026-10-28. Status: accepted; sampling/accounting core implemented and tested.
+Date: 2026-10-28. Status: accepted; core and sensitivity runner implemented and tested.
 
 ## Context and alternatives
 
@@ -35,4 +35,6 @@ financing or Australian tax assumptions enter this comparison.
 
 See [resampling methodology](../methodology/resampling.md) and
 `tests/test_resampling.py`: 16 new cases passed at the initial checkpoint. The
-calibration-window/block-length sensitivity runner remains in progress.
+calibration-window/block-length sensitivity runner is now implemented. The
+[Stage 1B evidence](../validation/stage-1b.md) records 63 tests, complete replay
+counts and reconstruction of saved traces through the full account ledger.

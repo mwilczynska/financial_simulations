@@ -3,8 +3,10 @@
 Planning baseline: 28 October 2026. Status: Stage 1A implemented and validated
 against synthetic cases and the local optimiser. This includes strict data and
 weight adapters, daily accounting, cash flows, annual/buy-and-hold policies,
-static PNG plots and a reproducible baseline report. See
-[validation evidence](docs/validation/stage-1a.md). Later stages remain proposed.
+static PNG plots and a reproducible baseline report. Stage 1B now implements
+joint daily replay/bootstrap and a calibration/block-length sensitivity runner.
+See [Stage 1A evidence](docs/validation/stage-1a.md) and
+[Stage 1B evidence](docs/validation/stage-1b.md). Stages 1C onward remain proposed.
 
 The initial retirement scenario is for one person who remains an Australian tax resident. Couples follow after the single-person model is validated. Account ownership, dates of birth and access conditions should be represented individually from the start so that adding a partner does not require replacing the engine.
 
@@ -120,8 +122,11 @@ extension; PDF generation is excluded by user instruction. See the
 
 ### 1B. Historical replay and dependence-preserving bootstrap
 
-Implementation in progress: joint samplers, complete-window checks and daily
-batch accounting are fixture-validated. See [resampling](docs/methodology/resampling.md).
+Implemented: joint samplers, complete-window checks, reconciled daily batch
+accounting, configurable sensitivity comparison and PNG reports. The first
+nominal USD experiment uses strict modern calendars, an observed account-date
+template and no dated cash flows. See [resampling](docs/methodology/resampling.md)
+and [executed validation](docs/validation/stage-1b.md) for this supported scope.
 
 Implement:
 

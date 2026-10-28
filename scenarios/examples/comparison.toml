@@ -1,0 +1,21 @@
+[comparison]
+scenario = "baseline.toml"
+# Counts of daily return observations, not exact calendar-year horizons.
+horizons = [252, 1260, 2520]
+paths = 256
+seeds = [1729, 2718]
+block_lengths = [21, 63, 252]
+batch_size = 64
+trace_horizon = 1260
+trace_block_length = 63
+# No calendar_file: use the baseline's observed calendar as a shared template.
+
+[[calibration]]
+name = "2010-2025"
+start = "2010-01-01"
+end = "2025-12-31"
+
+[[calibration]]
+name = "2016-2025"
+start = "2016-01-01"
+end = "2025-12-31"

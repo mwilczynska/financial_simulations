@@ -11,7 +11,7 @@ Decision records preserve why Financial Simulations makes a material modelling o
 | [0003](0003-stage-1a-data-contract.md) | 2026-10-28 | Accepted; adapters fixture-validated | Explicit data/weight contracts and strict matching observation calendars |
 | [0004](0004-stage-1a-accounting-conventions.md) | 2026-10-28 | Accepted; implemented and validated | Opening mark, cash execution, annual rebalancing, performance and PNG plots |
 | [0005](0005-default-portfolio-and-tracker-audit.md) | 2026-10-28 | Accepted; default implemented and tracker functions audited | User-selected leveraged default and treatment of existing calculations |
-| [0006](0006-joint-daily-resampling.md) | 2026-10-28 | Accepted; sampling/accounting core tested | Joint rows, complete windows, explicit calendars and path streams |
+| [0006](0006-joint-daily-resampling.md) | 2026-10-28 | Accepted; core and sensitivity runner validated | Joint rows, complete windows, explicit calendars and path streams |
 
 ## When to write a record
 

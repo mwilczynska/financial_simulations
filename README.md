@@ -7,7 +7,10 @@ optimiser adapters, daily holdings/cash accounting, annual rebalancing or
 buy-and-hold, dated contributions/withdrawals, static PNG plots and inspectable
 baseline reports. Synthetic tests and daily reconciliation with the companion
 optimiser are recorded in [validation evidence](docs/validation/stage-1a.md).
-Stochastic generators and Australian retirement rules remain planned.
+Stage 1B is also implemented: joint daily historical replay, independent rows,
+moving blocks and stationary bootstrap, with sample-period/block-length/seed
+sensitivity and traceable PNG reports. Parametric generators and Australian
+retirement rules remain planned.
 
 ## Development
 
@@ -56,6 +59,30 @@ amount; a withdrawal request uses a negative amount. Initial cash is a retained
 reserve. On closed-market dates withdrawals can spend only cash; any shortfall
 is recorded without borrowing or automatic retry. See the
 [accounting methodology](docs/methodology/portfolio-accounting.md) for timing.
+
+## Compare empirical generators (Stage 1B)
+
+```powershell
+.\.venv\Scripts\python.exe -m financial_simulations compare scenarios/examples/comparison.toml --output output/stage1b
+.\.venv\Scripts\python.exe scripts/validate_stage1b.py --output output/stage1b
+```
+
+The first command runs the configurable experiment; the second also reconciles
+every saved example path to the full daily ledger. The default compares the
+40/20/20/20 portfolio over 252, 1,260 and 2,520 daily observations, using two
+calibration windows, three block lengths and two separate seeds. Each stochastic
+setting draws 256 paths per seed. All complete overlapping replay windows are
+counted explicitly; a missing horizon is reported with zero complete windows.
+
+Outputs include `terminal_wealth.png`, `sample_paths.png`, `dependence.png`,
+case/path outcome CSVs, saved source-index traces and an input/code manifest.
+These are nominal USD conditional scenarios. The default uses a shared observed
+accounting-calendar template, not a forecast of future exchange holidays.
+Horizon counts are not exact calendar years. Longer target grids can be supplied
+through an explicit `calendar_file` CSV in the experiment. Dated cash flows,
+inflation/FX factors and retirement rules are outside this comparison runner.
+Read [methodology](docs/methodology/resampling.md) and
+[validation](docs/validation/stage-1b.md) before interpreting the sample percentiles.
 
 ## Reproduce the checks
 

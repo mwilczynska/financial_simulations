@@ -1,8 +1,8 @@
 # Joint daily replay and empirical resampling
 
-Date: 2026-10-28. Status: Stage 1B sampling and no-flow batched accounting are
-implemented and fixture-validated. The comparison runner and sensitivity report
-are in progress. No parametric forecast or retirement model is implemented.
+Date: 2026-10-28. Status: Stage 1B sampling, no-flow batched accounting and the
+sensitivity runner are implemented and validated. No parametric forecast or
+retirement model is implemented. See [executed evidence](../validation/stage-1b.md).
 See [ADR 0006](../decisions/0006-joint-daily-resampling.md).
 
 ## Purpose, inputs and provenance
@@ -115,4 +115,96 @@ guarantees have not been independently reproduced. The engineering choices about
 non-circular moving blocks, shared calendars, integer mean lengths and stream
 keys are this project's explicit conventions, not claims proved by the paper.
 
-2026-10-28: first implemented sampling/accounting checkpoint; runner pending.
+## Comparison configuration and output calculations
+
+The [comparison runner](../../src/financial_simulations/comparison.py) accepts a
+TOML experiment that references an existing Stage 1A portfolio scenario. This
+keeps manual and optimiser-imported weights consistent. The experiment requires
+distinct horizon counts, seeds and block lengths, positive path/batch counts,
+named calibration windows and explicit settings for its saved example traces.
+The no-flow runner requires positive starting investment. Retained initial cash
+is supported; dated contributions and withdrawals are rejected in this runner.
+
+The default [experiment](../../scenarios/examples/comparison.toml) compares the
+user's 40/20/20/20 portfolio over 252, 1,260 and 2,520 observations using 2010-2025
+and 2016-2025 source windows. These horizons are not exact calendar years.
+Moving and stationary block settings are 21, 63 and 252 observations; they are
+sensitivity choices, not calibrated optimal defaults. Two separate seeds, 1729
+and 2718, each generate 256 paths per stochastic setting. Complete replay uses
+every feasible starting observation, not a random subset.
+
+All methods in a horizon use the same target account-date template and daily
+rebalance convention. If its available dates do not cover the horizon, the run
+fails and requires an explicit `calendar_file`: a CSV containing just `Date`,
+with strictly increasing ISO calendar dates, including the opening mark. This
+permits longer hypothetical paths without inventing complete replay evidence.
+The file is hashed, and the used target calendar is saved with every run. The
+caller is responsible for the interpretation of any future exchange calendar.
+
+Each case produces per-path terminal wealth, total return and maximum drawdown.
+With no external flows, `total_return=terminal/(initial_investment+cash)-1` and
+`drawdown[t]=wealth[t]/max(wealth[0:t])-1`; the opening mark is included. Daily
+calendar-only marks cannot change these extrema in the supported no-flow scope.
+Terminal percentiles use NumPy's linear sample-quantile convention at 5%, 50%
+and 95%. The below-initial fraction is a descriptive sample fraction. For replay
+it is over dependent overlapping windows; for bootstrap it is conditional on
+the specified historical empirical process. Neither is an unconditional future
+probability or a retirement success rate. No arbitrary model weights combine
+methods. Seeds remain separate rows and coloured intervals in the report.
+
+Published source diagnostics include Pearson correlations between assets and
+`Corr(r[lag:],r[:-lag])`, separately centred, at lags 1 through 21. The same
+calculation is applied to squared returns. Constant or insufficient series give
+undefined entries, not invented zero correlations. These are descriptive
+dependence diagnostics, not p-values or a block-selection algorithm.
+
+Files generated under the ignored output folder:
+
+- `summary.csv`: case settings, coverage, counts, percentiles, sample fraction
+  below initial wealth and median maximum drawdown. A zero-window replay row has
+  `status=no_complete_window`, zero paths and blank outcome summaries.
+- `outcomes.csv`: all individual path IDs, case IDs and terminal/drawdown metrics.
+- `traces.csv`: twelve default example paths with an opening mark, target dates,
+  source previous/current dates, donor indices, restart/wrap flags and daily wealth.
+  Replay examples use first/middle/last starts; stochastic examples use path IDs
+  0, 1 and 2 of the first seed, without selecting by their outcomes.
+- `dependence.csv`, `correlations.csv`, `target_calendar.csv` and `manifest.json`.
+  The manifest includes full source file hashes/quality counts, requested/actual
+  coverage, scenario/configuration hashes, effective settings, source-code hash,
+  Git state, dependency versions and the stream recipe. Other paths' full daily
+  indices are regenerated from this recipe rather than all persisted in memory.
+- `terminal_wealth.png`, `sample_paths.png`, `dependence.png`, generated directly
+  by Matplotlib. Terminal intervals are sample percentiles, not confidence
+  intervals. Sample lines are individual paths, not percentile histories. Log
+  wealth axes are labelled; no PDFs or interactive plotting are generated.
+
+The runner retains only one batch's daily wealth/positions plus scalar outcomes
+and selected traces. Batch size affects memory use, not daily frequency or donor
+draws. The report does not model additional expenses, financing changes,
+inflation, FX, cash-flow schedules, tax, super or retirement adequacy.
+
+## Executed comparison checks and interpretation
+
+The [comparison tests](../../tests/test_comparison.py) add end-to-end CSV/PNG
+checks, exact batch-size invariance, reconstruction through the full ledger,
+explicit future-calendar input, missing replay windows, configuration failures,
+undefined correlations, and a synthetic alternating-return process. In that
+process blocks retain strong negative lag-one dependence and independent rows
+break it, as intended. The complete suite has 63 tests at this checkpoint.
+
+The default local run evaluates 90 cases and 33,060 paths. In the shorter
+calibration window, 2,513 source returns provide no complete 2,520-observation
+replay. All twelve saved example paths have been reconciled observation by
+observation to Stage 1A's full calendar ledger. See the validation record for
+tolerances and the reproducible integration command.
+
+256 paths per seed provide exploratory sample quantiles with considerable tail
+sampling variation. Two seeds expose some numerical variation, not parameter or
+model uncertainty. Longer blocks preserve more observed runs but may reduce
+effective variety; there is no guarantee they produce more conservative results.
+The modern matched-calendar sample does not resolve long-history, country or
+selection bias. In particular, these outputs do not establish a sustainable
+spending rate for the leveraged default portfolio.
+
+Revision history: 2026-10-28, sampling core followed by implemented sensitivity
+runner, trace reconciliation and visually inspected PNG output.

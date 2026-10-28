@@ -18,8 +18,17 @@ def main(argv=None) -> int:
     reconcile.add_argument("scenario")
     reconcile.add_argument("--optimiser-root", required=True)
     reconcile.add_argument("--output", required=True)
+    compare = commands.add_parser("compare", help="Compare daily replay and joint bootstrap sensitivities.")
+    compare.add_argument("experiment")
+    compare.add_argument("--output", required=True)
     args = parser.parse_args(argv)
     try:
+        if args.command == "compare":
+            from financial_simulations.comparison import load_comparison, run_comparison
+
+            manifest = run_comparison(load_comparison(args.experiment), args.output)
+            print(json.dumps({key: manifest[key] for key in ("model", "cases", "paths_evaluated", "trace_paths")}, indent=2))
+            return 0
         scenario = load_scenario(args.scenario)
         if args.command == "run":
             manifest = run_scenario(scenario, args.output, parquet=args.parquet)

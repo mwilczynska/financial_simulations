@@ -6,8 +6,10 @@ Status: Stage 1A implements and validates the daily data contract, explicit
 opening mark, calendar-day account ledger, dated cash flows and portfolio
 accounting. See [implemented accounting conventions](portfolio-accounting.md),
 [data adapters](data-adapters.md) and [executed validation](../validation/stage-1a.md).
-Generators, calibration, new leveraged-fund construction, additional cost
-accrual and Australian retirement rules below remain design requirements.
+Stage 1B [joint empirical generators](resampling.md) and their no-flow sensitivity
+runner are also implemented. Parametric calibration, new leveraged-fund
+construction, additional cost accrual and Australian retirement rules below
+remain design requirements.
 
 Decision record: [ADR 0001: retain daily returns throughout](../decisions/0001-daily-returns-throughout.md).
 
