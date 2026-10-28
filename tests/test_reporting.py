@@ -41,6 +41,17 @@ def test_annualisation_uses_opening_date_and_elapsed_calendar_days():
     assert period_summary(result, "annual")["partial_period"].tolist() == [False, True]
 
 
+def test_short_period_annualisation_overflow_does_not_lose_valid_results():
+    market = MarketPath((date(2020, 1, 2), date(2020, 1, 3)), ("GLSTOCK",), [[10.0]])
+    result = simulate_portfolio(market, PortfolioSpec({"GLSTOCK": 1}), 100)
+    stats = summary_statistics(result)
+    assert stats["final_value"] == 1100
+    assert stats["time_weighted_return"] == 10
+    assert stats["annualised_time_weighted_return"] is None
+    assert stats["annualised_return_status"] == "not_representable"
+    assert json.loads(json.dumps(stats, allow_nan=False))["final_value"] == 1100
+
+
 def test_cli_produces_portable_inspectable_artifacts(tmp_path, capsys):
     data = tmp_path / "data"
     data.mkdir()

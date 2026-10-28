@@ -30,7 +30,8 @@ projects and local processed data; the unit suite uses only synthetic fixtures.
 
 ## Synthetic validation
 
-39 tests passed locally. Coverage includes:
+43 tests passed locally after the scheduled closeout review. The initial
+implementation checkpoint passed 39 tests. Coverage includes:
 
 - Source dates, opening anchor, immutable daily return arrays, explicit aliases,
   currency rejection and provenance/hash preservation.
@@ -44,6 +45,11 @@ projects and local processed data; the unit suite uses only synthetic fixtures.
 - Period accounting reconciliation, flow-adjusted performance, leap-year
   annualisation, partial periods and CLI-generated files.
 - HTML escaping/local links and valid, nonempty PNGs. No PDF output is created.
+- A finite one-day +1,000% synthetic path retains wealth/period-return results
+  when its annualisation exceeds floating-point range. The annualised summary
+  is null with an explicit status and still serialises as strict JSON.
+- Malformed weights provided as a scalar/list/null produce an input validation
+  error rather than an attribute traceback from a missing mapping interface.
 
 Test files: [adapters](../../tests/test_adapters.py),
 [accounting](../../tests/test_accounting.py),
@@ -123,6 +129,8 @@ settlement, currency conversion, Australian inflation/tax, super and retirement
 rules remain separate work. See [data adapters](../methodology/data-adapters.md)
 and [accounting](../methodology/portfolio-accounting.md) for supported conventions.
 
-The GitHub Actions workflow is configured for synthetic tests on Python 3.11 and
-3.14. Local success is the evidence recorded here; hosted CI results must be
-checked independently after pushing.
+The initial implementation commit `cd68aac` passed hosted synthetic tests on
+both Python 3.11 and 3.14 in
+[GitHub Actions run 40732786508](https://github.com/mwilczynska/financial_simulations/actions/runs/40732786508).
+The scheduled closeout added four boundary regressions, bringing the local suite
+to 43 tests. Hosted results for later commits must be checked independently.

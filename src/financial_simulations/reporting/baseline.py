@@ -40,6 +40,16 @@ def summary_statistics(result: PortfolioResult) -> dict:
     daily = result.daily
     growth = (1 + daily["performance_return"].fillna(0.0)).cumprod().to_numpy()
     years = (daily.index[-1] - daily.index[0]).days / 365.25
+    annualised, annualised_status = None, "zero_elapsed_days"
+    if years > 0:
+        # A finite short-period path can have an unrepresentable annualisation.
+        # Preserve its actual returns/wealth and explicitly leave this summary null.
+        with np.errstate(over="ignore", invalid="ignore"):
+            candidate = float(growth[-1] ** (1 / years) - 1)
+        if np.isfinite(candidate):
+            annualised, annualised_status = candidate, "finite"
+        else:
+            annualised_status = "not_representable"
     return {
         "currency": result.portfolio.currency, "basis": "nominal; supplied total returns; no additional fees or tax",
         "opening_date": daily.index[0].date().isoformat(), "last_date": daily.index[-1].date().isoformat(),
@@ -50,7 +60,8 @@ def summary_statistics(result: PortfolioResult) -> dict:
         "withdrawals_paid": float(daily["withdrawals_paid"].sum()),
         "shortfall": float(daily["shortfall"].sum()),
         "time_weighted_return": float(growth[-1] - 1),
-        "annualised_time_weighted_return": float(growth[-1] ** (1 / years) - 1) if years > 0 else None,
+        "annualised_time_weighted_return": annualised,
+        "annualised_return_status": annualised_status,
         "max_time_weighted_drawdown": float(np.min(growth / np.maximum.accumulate(growth) - 1)),
     }
 

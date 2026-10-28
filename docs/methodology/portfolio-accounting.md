@@ -116,7 +116,11 @@ produces a -100% time-weighted chain even if later external capital is added.
 
 Annualised time-weighted return uses the opening mark and actual elapsed dates:
 `growth ** (365.25 / elapsed_calendar_days) - 1`. It is undefined for zero elapsed
-days. No implicit 252-observation year is used. Maximum drawdown is the minimum
+days. A mathematically defined annualisation outside the floating-point range
+is also reported as null, with `annualised_return_status=not_representable`;
+the actual period return and account values remain unchanged. Zero duration is
+identified separately as `zero_elapsed_days`; finite results are labelled
+`finite`. No implicit 252-observation year is used. Maximum drawdown is the minimum
 of `performance_index / running_max(performance_index) - 1`, including its opening
 one. It is a performance drawdown, not a drawdown distorted by contributions.
 

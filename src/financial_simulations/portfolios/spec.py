@@ -1,9 +1,9 @@
 """Long-only, fully invested target weights; cash is a separate ledger balance."""
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from math import fsum, isfinite
 from types import MappingProxyType
-from typing import Mapping
 
 from financial_simulations.data.registry import resolve_asset
 
@@ -15,6 +15,8 @@ class PortfolioSpec:
     currency: str = "USD"
 
     def __post_init__(self) -> None:
+        if not isinstance(self.weights, Mapping):
+            raise ValueError("Weights must be a mapping from asset identifiers to numeric fractions.")
         canonical = {}
         for identifier, value in self.weights.items():
             asset = resolve_asset(identifier)

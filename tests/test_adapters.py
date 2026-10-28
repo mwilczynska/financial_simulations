@@ -92,6 +92,12 @@ def test_invalid_portfolios_fail(weights):
         PortfolioSpec(weights)
 
 
+@pytest.mark.parametrize("weights", [None, "invalid table", []])
+def test_malformed_weight_tables_are_input_errors(weights):
+    with pytest.raises(ValueError, match="mapping"):
+        PortfolioSpec(weights)
+
+
 def test_aliases_currency_and_path_boundaries():
     assert resolve_asset("GOLDPM2x").identifier == "GOLD2X"
     assert resolve_asset("USLCAP3x").identifier == "USLCAP3X"
