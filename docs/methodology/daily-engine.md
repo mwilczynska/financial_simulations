@@ -2,7 +2,12 @@
 
 Date: 2026-10-28.
 
-Status: daily frequency is an accepted requirement. Calendar mapping, event ordering, storage and implementation details below are design requirements or proposed conventions awaiting implementation and validation. There is no implemented engine or executed validation evidence yet.
+Status: Stage 1A implements and validates the daily data contract, explicit
+opening mark, calendar-day account ledger, dated cash flows and portfolio
+accounting. See [implemented accounting conventions](portfolio-accounting.md),
+[data adapters](data-adapters.md) and [executed validation](../validation/stage-1a.md).
+Generators, calibration, new leveraged-fund construction, additional cost
+accrual and Australian retirement rules below remain design requirements.
 
 Decision record: [ADR 0001: retain daily returns throughout](../decisions/0001-daily-returns-throughout.md).
 
@@ -81,7 +86,9 @@ For personal tax, calculate nominal AUD amounts using the applicable dated rules
 
 ## Worked examples
 
-These are proposed validation fixtures, calculated independently here; they have not been run through an implementation.
+These independent calculations are now executed fixtures in
+`tests/test_accounting.py`. The leverage example validates compounding supplied
+daily-reset returns; constructing a financed leveraged fund remains unimplemented.
 
 ### Compounding and report reconciliation
 
@@ -131,7 +138,10 @@ The initial implementation must provide evidence for:
 - Daily extrema/drawdown calculations and reconciliation of every monthly/annual summary to the corresponding daily results.
 - Traceable failures and accessible-cash shortfalls, without drawing on preserved super or unconfigured borrowing.
 
-Record actual test identifiers, tolerances, implementation revision and results here as they become available.
+The [Stage 1A validation record](../validation/stage-1a.md) identifies executed
+tests, numerical tolerances and historical accounting comparisons. Covariance,
+sampling, financing accrual and retirement-account validations above remain
+future work; the Stage 1A results do not establish those properties.
 
 ## Computational consequences and limitations
 
@@ -144,3 +154,5 @@ Daily resolution preserves the chosen time structure; it does not remove histori
 ## Revision history
 
 - 2026-10-28: Initial design following the explicit requirement to retain daily returns throughout the simulation and retirement accounting pipeline.
+- 2026-10-28: Linked the implemented Stage 1A conventions and executed evidence;
+  retained proposed status for later generators, costs and retirement rules.

@@ -6,9 +6,11 @@ Decision records preserve why Financial Simulations makes a material modelling o
 
 | Record | Date | Status | Decision |
 | --- | --- | --- | --- |
-| [0001](0001-daily-returns-throughout.md) | 2026-10-28 | Accepted requirement; implementation pending | Retain daily returns and daily account evolution throughout |
+| [0001](0001-daily-returns-throughout.md) | 2026-10-28 | Accepted requirement; Stage 1A implemented and validated | Retain daily returns and daily account evolution throughout |
 | [0002](0002-methodology-and-decision-records.md) | 2026-10-28 | Accepted documentation workflow | Maintain detailed methodology and referenced reasons with the code |
 | [0003](0003-stage-1a-data-contract.md) | 2026-10-28 | Accepted; adapters fixture-validated | Explicit data/weight contracts and strict matching observation calendars |
+| [0004](0004-stage-1a-accounting-conventions.md) | 2026-10-28 | Accepted; implemented and validated | Opening mark, cash execution, annual rebalancing, performance and PNG plots |
+| [0005](0005-default-portfolio-and-tracker-audit.md) | 2026-10-28 | Accepted; default implemented and tracker functions audited | User-selected leveraged default and treatment of existing calculations |
 
 ## When to write a record
 

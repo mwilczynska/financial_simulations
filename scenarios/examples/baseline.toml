@@ -1,0 +1,19 @@
+[run]
+name = "Optimised CURRENT: 40/20/20/20 daily baseline"
+start = "2010-01-01"
+end = "2025-12-31"
+initial_value = 100000.0
+currency = "USD"
+rebalance = "annual"
+
+[data]
+# Relative to this file, not the process working directory.
+root = "../../../financial_datasets/data/processed"
+format = "csv"
+
+[portfolio.weights]
+# User-selected default from portfolio_plot17.py, not a new optimisation claim.
+USLCAP3x = 0.4
+ITT3x = 0.2
+GOLDPM2x = 0.2
+COMM = 0.2

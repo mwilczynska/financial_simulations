@@ -2,22 +2,23 @@
 
 Detailed methodology is part of every model deliverable in Financial Simulations. Documents develop with the code and explain both the calculations and the reasons for the chosen approach.
 
-Current status: Stage 1A data and portfolio adapters are implemented and validated
-against synthetic fixtures. Portfolio accounting is in progress; stochastic
-generators and retirement calculations remain planned.
+Current status: Stage 1A data/portfolio adapters, deterministic daily accounting
+and static PNG reporting are implemented and validated with synthetic fixtures
+and local optimiser reconciliation. See [executed evidence](../validation/stage-1a.md).
+Stochastic generators and retirement calculations remain planned.
 
 ## Document register
 
 | Topic | Document/status | Scope |
 | --- | --- | --- |
-| Daily time resolution and accounting | [Daily engine](daily-engine.md): accepted frequency requirement; proposed implementation details | Trading observations, calendar dates, compounding, scheduled events, costs and daily validation |
+| Daily time resolution and accounting | [Daily engine](daily-engine.md): Stage 1A daily core implemented; later generators/rules pending | Trading observations, calendar dates, compounding, scheduled events, costs and daily validation |
 | Data contract and adapters | [Data adapters](data-adapters.md): implemented, fixture-validated | Dataset aliases, strict calendars, currencies, source rows, distributions, embedded fees and input hashes |
-| Deterministic portfolio accounting | Planned | Positions, daily returns, cash flows, rebalancing, cash and transaction ordering |
+| Deterministic portfolio accounting | [Portfolio accounting](portfolio-accounting.md): implemented and validated | Positions, daily returns, cash flows, rebalancing, retained cash, shortfalls and transaction ordering |
 | Historical replay | Planned | Start windows, complete horizons, joint sequences and interpretation of overlapping windows |
 | Independent and block bootstrap | Planned | Joint daily sampling, block-length units/selection, stationary blocks, boundary handling and diagnostics |
 | Parametric Monte Carlo | Planned | Daily calibration, covariance, return support and conversion of annual assumptions |
 | Assumption uncertainty and stresses | Planned | Persistent long-run parameters, scenario grids, parameter sampling and model comparison |
-| Reporting and outcome measures | Planned | Daily drawdowns, wealth distributions, shortfall definitions, spending cuts and simulation error |
+| Reporting and outcome measures | [Baseline reporting](portfolio-accounting.md): deterministic PNG/CSV/HTML implemented; stochastic measures planned | Daily performance drawdown, account value, allocation, flows and period reconciliation |
 | Australian personal tax | Planned | Dated rules, income components, AUD cost bases, gains/losses, credits and payment timing |
 | Super accumulation and contributions | Planned | Eligibility, contribution history, caps, fund-return conventions and costs |
 | Super access and retirement pensions | Planned | Release conditions, access dates, transfer records, minimum payments and mixed withdrawals |

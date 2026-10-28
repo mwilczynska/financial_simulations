@@ -1,0 +1,35 @@
+[run]
+name = "Synthetic-size deposits and withdrawals on a daily ledger"
+start = "2020-01-01"
+end = "2021-01-08"
+initial_value = 1000.0
+initial_cash = 20.0
+currency = "USD"
+rebalance = "buy_and_hold"
+
+[data]
+root = "../../../financial_datasets/data/processed"
+
+[portfolio.weights]
+GLSTOCK = 0.6
+GLBOND = 0.4
+
+[[cash_flows]]
+date = "2020-01-03"
+amount = 100.0
+timing = "after_return"
+
+[[cash_flows]]
+# Closed-market withdrawal can use only the existing cash reserve.
+date = "2020-01-04"
+amount = -30.0
+
+[[cash_flows]]
+# This stays in cash until the next observation closes.
+date = "2020-01-05"
+amount = 50.0
+
+[[cash_flows]]
+date = "2020-01-06"
+amount = -40.0
+timing = "before_return"

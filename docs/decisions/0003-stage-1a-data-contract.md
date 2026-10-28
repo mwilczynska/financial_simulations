@@ -50,5 +50,5 @@ USD nominal results cannot be represented as Australian real-spending outcomes.
 
 See [data adapters](../methodology/data-adapters.md) and
 `tests/test_adapters.py`: 18 synthetic tests passed on 2026-10-28, including
-Parquet equivalence. Portfolio-accounting and optimiser reconciliation evidence
-will be added with the remainder of Stage 1A.
+Parquet equivalence. The subsequent [Stage 1A validation](../validation/stage-1a.md)
+records the expanded suite and portfolio-accounting/optimiser reconciliation.

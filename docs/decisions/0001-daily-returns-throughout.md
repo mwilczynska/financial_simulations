@@ -2,7 +2,8 @@
 
 Date: 2026-10-28.
 
-Status: accepted user requirement; implementation pending.
+Status: accepted user requirement; Stage 1A daily accounting implemented and
+validated. Generators and retirement modules remain pending.
 
 ## Context
 
@@ -37,4 +38,8 @@ Event ordering, future-calendar mapping and concrete accrual conventions require
 
 ## Implementation and validation
 
-The [project plan](../../PLAN.md) and [literature review](../literature-review.md) have been updated. The [daily-engine methodology](../methodology/daily-engine.md) specifies the current requirements, worked examples and proposed validation cases. Simulation code and executed test evidence remain pending.
+The [project plan](../../PLAN.md) and [literature review](../literature-review.md)
+record the requirement. The [daily-engine methodology](../methodology/daily-engine.md)
+links the implemented Stage 1A data, accounting and report conventions and the
+[executed evidence](../validation/stage-1a.md). Statistical calibration,
+replay/resampling and retirement modules remain pending.

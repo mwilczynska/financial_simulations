@@ -1,0 +1,17 @@
+[run]
+name = "Equal-weight global four-asset comparator"
+start = "2010-01-01"
+end = "2025-12-31"
+initial_value = 100000.0
+currency = "USD"
+rebalance = "annual"
+
+[data]
+root = "../../../financial_datasets/data/processed"
+format = "csv"
+
+[portfolio.weights]
+GLSTOCK = 0.25
+GLBOND = 0.25
+GOLDPM = 0.25
+COMM = 0.25

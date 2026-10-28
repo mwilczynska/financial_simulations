@@ -1,9 +1,10 @@
 # Financial Simulations: portfolio futures and Australian retirement
 
-Planning baseline: 28 October 2026. Status: Stage 1A implementation in progress.
-The local dataset and portfolio adapters are implemented and fixture-validated;
-portfolio accounting, reports and historical reconciliation are the next checkpoint.
-Later stages remain proposed design.
+Planning baseline: 28 October 2026. Status: Stage 1A implemented and validated
+against synthetic cases and the local optimiser. This includes strict data and
+weight adapters, daily accounting, cash flows, annual/buy-and-hold policies,
+static PNG plots and a reproducible baseline report. See
+[validation evidence](docs/validation/stage-1a.md). Later stages remain proposed.
 
 The initial retirement scenario is for one person who remains an Australian tax resident. Couples follow after the single-person model is validated. Account ownership, dates of birth and access conditions should be represented individually from the start so that adding a partner does not require replacing the engine.
 
@@ -106,6 +107,16 @@ Implement daily deterministic compounding and portfolio accounting first. Includ
 An initial USD nominal example can use current datasets immediately. Australian real-spending interpretation follows once Australian inflation and FX inputs or clearly labelled assumptions are supplied.
 
 Deliverable: a small Python example and report that reproduce a specified historical portfolio case, plus hand-calculated examples of compounding and cash flows.
+
+Implemented in package 0.1.0 with examples under `scenarios/examples/`. The
+four-asset baseline uses 2010-2025, when the inspected source calendars align.
+Earlier mixed calendars fail explicitly pending a reviewed alignment policy.
+The first reporting pass generates wealth, drawdown and allocation PNGs directly
+from Python and reviews those images visually. Interactive plots are a later
+extension; PDF generation is excluded by user instruction. See the
+[adapter method](docs/methodology/data-adapters.md),
+[accounting method](docs/methodology/portfolio-accounting.md) and
+[Stage 1A validation](docs/validation/stage-1a.md).
 
 ### 1B. Historical replay and dependence-preserving bootstrap
 

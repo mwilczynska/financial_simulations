@@ -58,6 +58,12 @@ def test_mismatched_calendars_fail(tmp_path):
         load_datasets(tmp_path, ["GLSTOCK", "GLBOND"], "2020-01-01", "2020-01-07")
 
 
+def test_price_total_return_difference_is_not_added_as_income(tmp_path):
+    write_dataset(tmp_path, **{"Close": [100, 100, 100], "Price Return": [np.nan, 0, 0]})
+    loaded = load_datasets(tmp_path, ["GLSTOCK"], "2020-01-01", "2020-01-06")
+    assert np.prod(1 + loaded.path.returns[:, 0]) == pytest.approx(0.99)
+
+
 def test_parquet_and_csv_equivalence(tmp_path):
     pytest.importorskip("pyarrow")
     frame = write_dataset(tmp_path)
