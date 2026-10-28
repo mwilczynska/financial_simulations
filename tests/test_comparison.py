@@ -288,3 +288,62 @@ max_panel_mb = 8
     for _, risk in risks.iterrows():
         assert risk["fraction_below_target"] == pytest.approx(summary.loc[risk["case_id"], "fraction_real_terminal_below_initial"])
     assert (output / "wealth_percentiles_real.png").is_file()
+
+
+def test_garch_cases_share_shocks_reconcile_and_label_deflator_twins(tmp_path):
+    from financial_simulations.reporting.comparison import _label
+
+    fixture(tmp_path)
+    experiment = tmp_path / "experiment.toml"
+    grid = '''
+[parametric]
+observations_per_year = 252
+reference_inflation = 0.02
+trace_assumption = "base"
+[volatility]
+model = "garch_fhs"
+[[assumptions]]
+name = "base"
+mean_convention = "geometric_growth"
+inflation_annual = 0.02
+rationale = "Synthetic base"
+annual_returns = {GLSTOCK = 0.08, GLBOND = 0.03}
+[[assumptions]]
+name = "high_inflation"
+mean_convention = "geometric_growth"
+inflation_annual = 0.04
+rationale = "Same nominal inputs"
+annual_returns = {GLSTOCK = 0.08, GLBOND = 0.03}
+'''
+    experiment.write_text(experiment.read_text(encoding="utf-8") + grid, encoding="utf-8")
+    config = load_comparison(experiment)
+    first, second = tmp_path / "garch", tmp_path / "garch-other"
+    manifest = run_comparison(config, first)
+    run_comparison(replace(config, batch_size=1), second)
+    assert manifest["model"] == "stage_1c_joint_daily_garch_fhs_v1"
+    for filename in ("summary.csv", "outcomes.csv", "traces.csv", "calibration.json"):
+        assert (first / filename).read_bytes() == (second / filename).read_bytes()
+    summary = pd.read_csv(first / "summary.csv")
+    garch = summary[summary["method"] == "garch_fhs"]
+    assert len(garch) and set(garch["nominal_paths_match"].dropna()) == {"base"}
+    twin = garch[garch["assumption"] == "high_inflation"].iloc[0]
+    assert _label(twin) == "GARCH-FHS: high inflation (deflator only; nominal = base)"
+    outcomes = pd.read_csv(first / "outcomes.csv").merge(summary, on="case_id")
+    for _, group in outcomes[outcomes["method"] == "garch_fhs"].groupby(["window", "horizon_observations", "path_id"]):
+        assert group["terminal_value"].nunique() == 1
+    traces = pd.read_csv(first / "traces.csv")
+    scenario = load_scenario(config.scenario_file)
+    garch_traces = traces[traces["method"] == "garch_fhs"]
+    assert len(garch_traces) and garch_traces["donor_index"].isna().all()
+    for _, trace in garch_traces.groupby(["case_id", "path_id"]):
+        target = tuple(t.date() for t in pd.to_datetime(trace["target_date"]))
+        returns = trace[[f"return_{a}" for a in scenario.portfolio.assets]].iloc[1:].to_numpy()
+        ledger = simulate_portfolio(MarketPath(target, scenario.portfolio.assets, returns), scenario.portfolio, 100)
+        np.testing.assert_allclose(ledger.daily.loc[pd.to_datetime(target), "value"], trace["value"], atol=1e-12)
+    calibration = json.loads((first / "calibration.json").read_text(encoding="utf-8"))
+    assert calibration[0]["garch_fhs"]["model"] == "garch11_variance_targeted_fhs_v1"
+    bad = experiment.read_text(encoding="utf-8").replace('mean_convention = "geometric_growth"\ninflation_annual = 0.04',
+                                                           'mean_convention = "expected_compounded_return"\ninflation_annual = 0.04')
+    experiment.write_text(bad, encoding="utf-8")
+    with pytest.raises(ValueError, match="historical or geometric_growth"):
+        load_comparison(experiment)

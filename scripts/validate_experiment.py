@@ -26,7 +26,8 @@ def main():
     scenario = load_scenario(config.scenario_file)
     window = config.windows[0]
     source = load_datasets(scenario.data_root, scenario.portfolio.assets, window["start"], window["end"],
-                           currency=scenario.portfolio.currency, file_format=scenario.file_format).path
+                           currency=scenario.portfolio.currency, file_format=scenario.file_format,
+                           calendar_policy=scenario.calendar_policy).path
     output = Path(args.output)
     traces = pd.read_csv(output / "traces.csv")
     summary = pd.read_csv(output / "summary.csv")
@@ -35,8 +36,8 @@ def main():
     outcome_index = outcomes.set_index(["case_id", "path_id"])
     max_error, count = 0.0, 0
     for (case_id, path_id), group in traces.groupby(["case_id", "path_id"]):
-        gaussian = group["method"].iloc[0] == "lognormal"
-        if gaussian:
+        generated = group["method"].iloc[0] in ("lognormal", "garch_fhs")
+        if generated:
             returns = group[[f"return_{a}" for a in source.assets]].iloc[1:].to_numpy()
             if group["donor_index"].notna().any() or group["source_date"].notna().any():
                 raise AssertionError("Generated returns must not claim historical donor dates.")
@@ -77,10 +78,10 @@ def main():
                 raise AssertionError("Historical replay includes an incomplete or missing window.")
     paired = 0
     if config.parametric:
-        gaussian = summary[summary["method"] == "lognormal"]
+        generated = summary[summary["method"].isin(["lognormal", "garch_fhs"])]
         assumption_by_name = {a.name: a for a in config.parametric.assumptions}
         # Audit every identical nominal specification, regardless of its scenario name.
-        for _, cases in gaussian.groupby(["window", "horizon_observations", "seed"]):
+        for _, cases in generated.groupby(["window", "horizon_observations", "seed", "method"]):
             for i, left in enumerate(cases.itertuples()):
                 a = assumption_by_name[left.assumption]
                 for right in list(cases.itertuples())[i + 1:]:

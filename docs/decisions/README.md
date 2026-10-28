@@ -12,6 +12,11 @@ Decision records preserve why Financial Simulations makes a material modelling o
 | [0004](0004-stage-1a-accounting-conventions.md) | 2026-10-28 | Accepted; implemented and validated | Opening mark, cash execution, annual rebalancing, performance and PNG plots |
 | [0005](0005-default-portfolio-and-tracker-audit.md) | 2026-10-28 | Accepted; default implemented and tracker functions audited | User-selected leveraged default and treatment of existing calculations |
 | [0006](0006-joint-daily-resampling.md) | 2026-10-28 | Accepted; core and sensitivity runner validated | Joint rows, complete windows, explicit calendars and path streams |
+| [0007](0007-daily-parametric-assumptions.md) | 2026-10-28 | Accepted; implemented and validated | Daily Gaussian log returns and persistent scenario assumptions |
+| [0008](0008-calendar-evaluation-and-sampling-error.md) | 2026-10-28 | Accepted; initial reporting pass validated | Calendar-day evaluation, targets, censored recovery and sampling error |
+| [0009](0009-common-date-calendar-policy.md) | 2026-10-28 | Accepted; fixture-validated | Opt-in common-date calendars and per-return source provenance |
+| [0010](0010-batched-cash-flow-accounting.md) | 2026-10-28 | Accepted; reconciled to the full ledger | Batched many-path accounting with dated cash flows |
+| [0011](0011-garch-filtered-historical-simulation.md) | 2026-10-28 | Accepted; synthetic validation | GARCH(1,1) filtered historical simulation as the heavy-tail generator |
 
 ## When to write a record
 

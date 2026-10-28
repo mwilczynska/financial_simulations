@@ -13,7 +13,7 @@ Read [evaluation methodology](methodology/evaluation.md) and
 [ADR 0008](decisions/0008-calendar-evaluation-and-sampling-error.md). Keep the
 default 40/20/20/20 mix and generate PNGs directly from Python, never PDFs.
 
-Run `python scripts/validate_stage1b.py --experiment scenarios/examples/evaluation.toml --output output/stage1d`
+Run `python scripts/validate_experiment.py --experiment scenarios/examples/evaluation.toml --output output/stage1d`
 for the experiment and expanded artifact audit. The target of preserving
 opening real wealth is an explicit demonstration, not a personal user goal.
 Kernel checkpoint `8f33304` and report checkpoint `9b57ed2` passed Python
@@ -37,7 +37,7 @@ visually reviewed; no PDFs were created. Read [parametric methodology](methodolo
 [ADR 0007](decisions/0007-daily-parametric-assumptions.md) and
 [Stage 1C validation](validation/stage-1c.md).
 
-Run `python scripts/validate_stage1b.py --experiment scenarios/examples/monte_carlo.toml --output output/stage1c`
+Run `python scripts/validate_experiment.py --experiment scenarios/examples/monte_carlo.toml --output output/stage1c`
 to reproduce the comparison and audits. The validator supports both stages.
 The core checkpoint is `e48498a` and the integration checkpoint is `e69401f`.
 Both passed hosted Python 3.11/3.14 CI. Forward rates are demonstration inputs,
@@ -70,7 +70,7 @@ The shorter sample has zero complete 2,520-observation replay windows. PNGs
 include terminal intervals, individual paths and return/squared-return dependence.
 No-flow batched accounting matches the full ledger; the full suite has 63 tests.
 
-Use `python scripts/validate_stage1b.py --output output/stage1b` to run the
+Use `python scripts/validate_experiment.py --output output/stage1b` to run the
 experiment and audit saved traces. The account calendar is explicitly a shared
 observed template; an optional target-date CSV can provide another grid.
 

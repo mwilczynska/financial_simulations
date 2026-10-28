@@ -17,6 +17,7 @@ from financial_simulations.markets.assumptions import ParametricSettings, assume
 from financial_simulations.markets.parametric import fit_lognormal
 from financial_simulations.markets.resampling import (Sampler, complete_window_count, historical_draw,
                                                       integer, sample_indices)
+from financial_simulations.markets.volatility import MEAN_CONVENTIONS, VolatilitySettings, load_volatility
 from financial_simulations.portfolios.batch import compound_paths
 from financial_simulations.runner import code_manifest
 from financial_simulations.scenario import _keys, load_scenario
@@ -37,17 +38,22 @@ class Comparison:
     manifest: dict
     parametric: ParametricSettings | None = None
     evaluation: EvaluationSettings | None = None
+    volatility: VolatilitySettings | None = None
 
 
 def load_comparison(path: str | Path) -> Comparison:
     path = Path(path).resolve()
     raw = path.read_bytes()
     config = tomllib.loads(raw.decode("utf-8"))
-    _keys(config, {"comparison", "calibration", "parametric", "assumptions", "evaluation"}, {"comparison", "calibration"}, "experiment")
+    _keys(config, {"comparison", "calibration", "parametric", "assumptions", "evaluation", "volatility"},
+          {"comparison", "calibration"}, "experiment")
     if ("parametric" in config) != ("assumptions" in config):
         raise ValueError("Supply parametric and assumptions together.")
     parametric = load_assumptions(config["parametric"], config["assumptions"]) if "parametric" in config else None
     evaluation = load_evaluation(config["evaluation"]) if "evaluation" in config else None
+    volatility = load_volatility(config["volatility"]) if "volatility" in config else None
+    if volatility and (parametric is None or any(a.mean_convention not in MEAN_CONVENTIONS for a in parametric.assumptions)):
+        raise ValueError("A volatility model requires parametric assumptions using historical or geometric_growth means.")
     if evaluation and evaluation.target_basis == "real" and parametric is None:
         raise ValueError("Real evaluation requires parametric settings with explicit inflation assumptions.")
     options, windows = config["comparison"], config["calibration"]
@@ -83,7 +89,7 @@ def load_comparison(path: str | Path) -> Comparison:
                       trace_horizon, trace_length,
                       (path.parent / options["calendar_file"]).resolve() if "calendar_file" in options else None,
                       {"file": path.name, "sha256": sha256(raw).hexdigest(), "options": options,
-                       "calibration": canonical_windows}, parametric, evaluation)
+                       "calibration": canonical_windows}, parametric, evaluation, volatility)
 
 
 def autocorrelation(values, lag: int) -> float | None:
@@ -96,12 +102,24 @@ def autocorrelation(values, lag: int) -> float | None:
     return float(left @ right / scale) if scale > 0 else None
 
 
+def nominal_twins(assumptions) -> dict:
+    """Map each assumption to the first earlier one with identical nominal means."""
+    twins = {}
+    for i, case in enumerate(assumptions):
+        for earlier in assumptions[:i]:
+            if (earlier.mean_convention, earlier.annual_returns) == (case.mean_convention, case.annual_returns):
+                twins[case.name] = earlier.name
+                break
+    return twins
+
+
 def run_comparison(config: Comparison, output: str | Path) -> dict:
     scenario = load_scenario(config.scenario_file)
     if scenario.cash_flows or scenario.initial_value <= 0:
         raise ValueError("Generator comparison requires positive opening investment and no dated cash flows.")
     base = load_datasets(scenario.data_root, scenario.portfolio.assets, scenario.start, scenario.end,
-                         currency=scenario.portfolio.currency, file_format=scenario.file_format)
+                         currency=scenario.portfolio.currency, file_format=scenario.file_format,
+                           calendar_policy=scenario.calendar_policy)
     if config.calendar_file is None:
         dates = base.path.dates
         calendar = {"policy": "shared_observed_accounting_template; not a future exchange-calendar forecast",
@@ -129,13 +147,18 @@ def run_comparison(config: Comparison, output: str | Path) -> dict:
         settings += [(method, length, seed, None) for method in ("moving_block", "stationary") for length in config.block_lengths]
         if config.parametric:
             settings += [("lognormal", None, seed, case) for case in config.parametric.assumptions]
+        if config.volatility:
+            settings += [("garch_fhs", None, seed, case) for case in config.parametric.assumptions]
     capital = scenario.initial_value + scenario.initial_cash
+    twins = nominal_twins(config.parametric.assumptions) if config.parametric else {}
     case_id = 0
     for window_id, window in enumerate(config.windows):
         loaded = load_datasets(scenario.data_root, scenario.portfolio.assets, window["start"], window["end"],
-                               currency=scenario.portfolio.currency, file_format=scenario.file_format)
+                               currency=scenario.portfolio.currency, file_format=scenario.file_format,
+                           calendar_policy=scenario.calendar_policy)
         source = loaded.path
         model = fit_lognormal(source, config.parametric.observations_per_year) if config.parametric else None
+        garch = config.volatility.fit(source, config.parametric.observations_per_year) if config.volatility else None
         if model:
             assumptions = []
             for case in config.parametric.assumptions:
@@ -155,7 +178,8 @@ def run_comparison(config: Comparison, output: str | Path) -> dict:
                                       "daily_simple_mean": float(simple_mean[i]),
                                       "inflation_annual": case.inflation_annual})
             calibrations.append({"window": window["name"], "source_observations": len(source.returns),
-                                 **model.manifest(), "assumption_parameters": assumptions})
+                                 **model.manifest(), "assumption_parameters": assumptions,
+                                 **({"garch_fhs": garch.manifest()} if garch else {})})
         n = len(source.returns)
         if max(config.block_lengths) > n:
             raise ValueError(f"Moving block length exceeds source observations in {window['name']}.")
@@ -186,7 +210,8 @@ def run_comparison(config: Comparison, output: str | Path) -> dict:
                     price_index = assumed_price_index(target, inflation)
                     metadata.update(assumption=assumption.name if assumption else "empirical_reference",
                                     mean_convention=assumption.mean_convention if assumption else "empirical_rows",
-                                    inflation_annual=inflation)
+                                    inflation_annual=inflation,
+                                    nominal_paths_match=twins.get(assumption.name) if assumption else None)
                 if count == 0:
                     summaries.append({**metadata, "status": "no_complete_window"})
                     continue
@@ -201,11 +226,14 @@ def run_comparison(config: Comparison, output: str | Path) -> dict:
                 if panel:
                     max_panel_bytes = max(max_panel_bytes, panel.wealth.nbytes)
                 case_start = len(outcomes)
-                sampler = Sampler(method, length) if method not in {"historical_replay", "lognormal"} else None
-                mean = assumption.daily_mean(model) if assumption else None
+                sampler = Sampler(method, length) if method not in {"historical_replay", "lognormal", "garch_fhs"} else None
+                mean = assumption.daily_mean(garch if method == "garch_fhs" else model) if assumption else None
                 for offset in range(0, count, config.batch_size):
                     ids = list(range(offset, min(count, offset + config.batch_size)))
-                    if assumption:
+                    if method == "garch_fhs":
+                        draws = None
+                        returns = garch.draw_batch(horizon, seed=seed, path_ids=ids, mean=mean)
+                    elif assumption:
                         draws = None
                         returns = np.stack([model.draw(horizon, seed=seed, path_id=i, mean=mean) for i in ids])
                     else:
@@ -309,6 +337,8 @@ def run_comparison(config: Comparison, output: str | Path) -> dict:
                         price_index="Assumed constant annual rate; exp(log1p(rate) * elapsed_calendar_days / 365.25). Not observed CPI.",
                         scope="Common nominal currency and assumed purchasing power; no dated flows, FX or retirement rules.",
                         interpretation="Separate conditional generators/assumptions; demonstration rates are not forecasts. No model averaging.")
+    if config.volatility:
+        manifest.update(model=manifest["model"].replace("_v1", "_garch_fhs_v1"), volatility=config.volatility.manifest())
     if config.evaluation:
         manifest.update(model="stage_1d_evaluation_v1", evaluation=config.evaluation.manifest(),
                         evaluation_cases=len(evaluation_summaries), percentile_rows=percentile_rows,

@@ -170,6 +170,37 @@ their actual opening/closing values at `rtol=1e-11, atol=1e-8`. Returns compound
 daily performance rather than dividing balances distorted by external flows.
 Partial periods are labelled. The plots and CSV/Parquet use the full daily path.
 
+## Batched many-path accounting with dated flows
+
+`simulate_paths(returns, dates, portfolio, initial_value, cash_flows,
+initial_cash=...)` in [batch.py](../../src/financial_simulations/portfolios/batch.py)
+runs P paths with returns shaped (P, observations, assets) through the event
+order above, vectorised across paths. Every path shares one observation
+calendar and one dated flow schedule. The engine steps through *marks*: the
+sorted union of observation dates and flow dates. Calendar days with neither
+cannot change state, so they carry the previous mark, exactly as in the full
+ledger. Per-path arrays hold cash, invested value, total value and withdrawals
+paid at each mark. Shortfall is the path-independent requested amount minus
+the amount paid. `calendar_values()` expands values to every calendar day.
+
+Each operation mirrors `simulate_portfolio`: trading-date deposits buy target
+weights, and closed-date deposits wait as pending cash until the next
+observation close. Withdrawals take cash first, which also caps pending cash.
+On observation dates they then sell holdings proportionally, never borrowing.
+Annual rebalancing happens on a year's first observation before its return.
+After-return flows precede the sweep. A path that loses everything records
+shortfalls for later withdrawals and can be recapitalised by later deposits.
+See [ADR 0010](../decisions/0010-batched-cash-flow-accounting.md).
+
+The full single-path ledger remains the reference. `tests/test_batch_flows.py`
+generates random calendars with weekends, about 8% random holidays and a year
+boundary. It uses 25 random before/after-return flows plus a same-date
+deposit/withdrawal pair and an oversized withdrawal, under both policies. It
+requires agreement with the full ledger at `rtol=1e-12` for every path on every
+calendar day, and for cash, payments, shortfalls, contributions and
+rebalancing flags at every mark. State-dependent withdrawal policies are not
+yet supported.
+
 ## Executed validation
 
 Local validation on 2026-10-28 uses Python 3.14.0, NumPy 2.5.4, pandas 3.1.0,
@@ -202,8 +233,9 @@ companion optimiser and no equivalence of all metrics is claimed.
 
 ## Limitations, decisions and references
 
-Only strict matching source calendars and a common USD reporting currency are
-currently supported. As-of data, file/source reconstruction and shared missing
+Strict matching calendars are the default; the opt-in common-date policy
+(see the adapter method) can supply longer histories. A common USD reporting
+currency is required. As-of data, file/source reconstruction and shared missing
 days remain limitations described in the adapter method. There is no borrowing,
 shorting, transaction settlement, FX, Australian inflation, personal tax, super,
 extra fees, adaptive strategy or stochastic model. Those remain separate stages.

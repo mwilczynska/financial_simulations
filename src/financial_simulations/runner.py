@@ -47,7 +47,8 @@ def code_manifest() -> dict:
 
 def run_scenario(scenario: Scenario, output: str | Path, *, parquet: bool = False) -> dict:
     loaded = load_datasets(scenario.data_root, scenario.portfolio.assets, scenario.start,
-                           scenario.end, currency=scenario.portfolio.currency, file_format=scenario.file_format)
+                           scenario.end, currency=scenario.portfolio.currency, file_format=scenario.file_format,
+                           calendar_policy=scenario.calendar_policy)
     result = simulate_portfolio(loaded.path, scenario.portfolio, scenario.initial_value,
                                 scenario.cash_flows, initial_cash=scenario.initial_cash)
     output = Path(output)

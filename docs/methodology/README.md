@@ -5,21 +5,24 @@ Detailed methodology is part of every model deliverable in Financial Simulations
 Current status: Stage 1A data/portfolio adapters, deterministic daily accounting
 and static PNG reporting are implemented and validated with synthetic fixtures
 and local optimiser reconciliation. See [executed evidence](../validation/stage-1a.md).
-Stage 1B empirical replay/bootstrap and its sensitivity runner are implemented;
-parametric generators and retirement calculations remain planned.
+Stage 1B empirical replay/bootstrap, the Stage 1C Gaussian benchmark and
+assumption grid, the GARCH filtered-historical-simulation generator, batched
+cash-flow accounting and Stage 1D evaluation are implemented. Retirement
+calculations remain planned.
 
 ## Document register
 
 | Topic | Document/status | Scope |
 | --- | --- | --- |
 | Daily time resolution and accounting | [Daily engine](daily-engine.md): Stage 1A daily core implemented; later generators/rules pending | Trading observations, calendar dates, compounding, scheduled events, costs and daily validation |
-| Data contract and adapters | [Data adapters](data-adapters.md): implemented, fixture-validated | Dataset aliases, strict calendars, currencies, source rows, distributions, embedded fees and input hashes |
-| Deterministic portfolio accounting | [Portfolio accounting](portfolio-accounting.md): implemented and validated | Positions, daily returns, cash flows, rebalancing, retained cash, shortfalls and transaction ordering |
+| Data contract and adapters | [Data adapters](data-adapters.md): implemented, fixture-validated | Dataset aliases, strict and opt-in common-date calendars, per-return provenance, currencies, source rows, distributions, embedded fees and input hashes |
+| Deterministic portfolio accounting | [Portfolio accounting](portfolio-accounting.md): implemented and validated, including batched many-path flows | Positions, daily returns, cash flows, rebalancing, retained cash, shortfalls and transaction ordering |
 | Historical replay | [Resampling](resampling.md): implemented with comparison runner | Complete windows, joint sequences, mapped calendar and overlap limitations |
 | Independent and block bootstrap | [Resampling](resampling.md): implemented and validated | Joint rows, observation block lengths, circular boundaries, sensitivity and reproducible streams |
-| Parametric Monte Carlo | Planned | Daily calibration, covariance, return support and conversion of annual assumptions |
-| Assumption uncertainty and stresses | Planned | Persistent long-run parameters, scenario grids, parameter sampling and model comparison |
-| Reporting and outcome measures | [Baseline reporting](portfolio-accounting.md): deterministic PNG/CSV/HTML implemented; stochastic measures planned | Daily performance drawdown, account value, allocation, flows and period reconciliation |
+| Parametric Monte Carlo | [Parametric](parametric.md): implemented and validated | Daily calibration, covariance, return support and conversion of annual assumptions |
+| Volatility clustering and heavy tails | [Volatility](volatility.md): implemented | GARCH(1,1) variance targeting and filtered historical simulation |
+| Assumption uncertainty and stresses | [Parametric](parametric.md): persistent scenario grid implemented; parameter sampling planned | Persistent long-run parameters, scenario grids, parameter sampling and model comparison |
+| Reporting and outcome measures | [Baseline reporting](portfolio-accounting.md) and [evaluation](evaluation.md): implemented | Daily performance drawdown, account value, allocation, flows, percentiles, targets, recovery, paired portfolios, holdouts and source segments |
 | Australian personal tax | Planned | Dated rules, income components, AUD cost bases, gains/losses, credits and payment timing |
 | Super accumulation and contributions | Planned | Eligibility, contribution history, caps, fund-return conventions and costs |
 | Super access and retirement pensions | Planned | Release conditions, access dates, transfer records, minimum payments and mixed withdrawals |

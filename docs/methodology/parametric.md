@@ -81,7 +81,9 @@ check under known model inputs, not validation of a market distribution.
 Historical means are noisy, and calibration windows may include reconstructed
 or synthetic fund history. This model does not reproduce jumps, regimes,
 serial dependence, changing covariance or uncertain long-run parameters.
-Outer parameter sampling, heavy tails, FX and retirement rules are deferred.
+Outer parameter sampling, FX and retirement rules are deferred. Volatility
+clustering and empirical heavy tails are available separately through the
+[GARCH filtered historical simulation](volatility.md) generator.
 
 ## Persistent assumptions and assumed purchasing power
 

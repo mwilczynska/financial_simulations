@@ -36,7 +36,7 @@ expected deflator relationship. Existing Stage 1A/1B tests remain passing.
 Run:
 
 ```powershell
-python scripts/validate_stage1b.py --experiment scenarios/examples/monte_carlo.toml --output output/stage1c
+python scripts/validate_experiment.py --experiment scenarios/examples/monte_carlo.toml --output output/stage1c
 ```
 
 The validator now supports both comparison stages. Generated evidence and

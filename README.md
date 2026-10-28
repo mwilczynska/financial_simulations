@@ -69,7 +69,7 @@ is recorded without borrowing or automatic retry. See the
 
 ```powershell
 .\.venv\Scripts\python.exe -m financial_simulations compare scenarios/examples/comparison.toml --output output/stage1b
-.\.venv\Scripts\python.exe scripts/validate_stage1b.py --output output/stage1b
+.\.venv\Scripts\python.exe scripts/validate_experiment.py --output output/stage1b
 ```
 
 The first command runs the configurable experiment; the second also reconciles
@@ -93,7 +93,7 @@ Read [methodology](docs/methodology/resampling.md) and
 
 ```powershell
 .\.venv\Scripts\python.exe -m financial_simulations compare scenarios/examples/monte_carlo.toml --output output/stage1c
-.\.venv\Scripts\python.exe scripts/validate_stage1b.py --experiment scenarios/examples/monte_carlo.toml --output output/stage1c
+.\.venv\Scripts\python.exe scripts/validate_experiment.py --experiment scenarios/examples/monte_carlo.toml --output output/stage1c
 ```
 
 The second command runs the experiment and independently reconciles its saved
@@ -124,7 +124,7 @@ Stage 1D's first evaluation/reporting pass is available:
 
 ```powershell
 .\.venv\Scripts\python.exe -m financial_simulations compare scenarios/examples/evaluation.toml --output output/stage1d
-.\.venv\Scripts\python.exe scripts/validate_stage1b.py --experiment scenarios/examples/evaluation.toml --output output/stage1d
+.\.venv\Scripts\python.exe scripts/validate_experiment.py --experiment scenarios/examples/evaluation.toml --output output/stage1d
 ```
 
 The example's explicit toy target is to preserve opening purchasing power.

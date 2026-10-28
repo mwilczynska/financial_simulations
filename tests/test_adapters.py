@@ -14,9 +14,10 @@ from financial_simulations.portfolios.spec import PortfolioSpec
 def write_dataset(root, asset="GLSTOCK", dates=None, levels=None, **changes):
     dates = dates or ["2020-01-02", "2020-01-03", "2020-01-06"]
     levels = levels or [100.0, 110.0, 99.0]
+    returns = [np.nan, *(b / a - 1 for a, b in zip(levels, levels[1:]))]
     frame = pd.DataFrame({"Date": dates, "Adj Close": levels,
-                          "Total Return": [np.nan, 0.1, -0.1], "Close": levels,
-                          "Price Return": [np.nan, 0.1, -0.1],
+                          "Total Return": returns, "Close": levels,
+                          "Price Return": returns,
                           "Source": "synthetic fixture", "Quality Flag": "synthetic",
                           "Source Notes": "Small hand-calculated data, not copied source data."})
     for column, value in changes.items():
@@ -107,3 +108,34 @@ def test_aliases_currency_and_path_boundaries():
         MarketPath((date(2020, 1, 2), date(2020, 1, 3)), ("GLSTOCK",), [[-1.1]])
     with pytest.raises(ValueError, match="sorted"):
         MarketPath((date(2020, 1, 2), date(2020, 1, 2)), ("GLSTOCK",), [[0]])
+
+
+def test_common_dates_recompute_spanning_returns_without_filling(tmp_path):
+    write_dataset(tmp_path, dates=["2020-01-02", "2020-01-03", "2020-01-06", "2020-01-07"],
+                  levels=[100.0, 110.0, 99.0, 99.0])
+    write_dataset(tmp_path, "GLBOND", dates=["2020-01-02", "2020-01-06", "2020-01-07", "2020-01-08"],
+                  levels=[50.0, 55.0, 44.0, 44.0],
+                  **{"Quality Flag": ["model_x", "model_x", "observed_y", "observed_y"]})
+    loaded = load_datasets(tmp_path, ["GLSTOCK", "GLBOND"], "2020-01-01", "2020-01-08",
+                           calendar_policy="common_dates")
+    assert loaded.path.dates == (date(2020, 1, 2), date(2020, 1, 6), date(2020, 1, 7))
+    # GLSTOCK's first kept interval compounds two observed source returns: 1.1 * 0.9 - 1.
+    np.testing.assert_allclose(loaded.path.returns, [[-0.01, 0.1], [0.0, -0.2]], atol=1e-15)
+    assert loaded.provenance["source_steps_GLSTOCK"].tolist() == [2, 1]
+    assert loaded.provenance["source_steps_GLBOND"].tolist() == [1, 1]
+    # Unrecognised fixture flags stay unclassified; a splice interval is mixed.
+    assert loaded.provenance["provenance_GLBOND"].tolist() == ["reconstructed", "mixed"]
+    assert loaded.provenance["provenance"].tolist() == ["mixed", "mixed"]
+    assert loaded.manifest["source_dates_not_kept"] == {"GLSTOCK": 1, "GLBOND": 0}
+    assert loaded.manifest["multi_observation_intervals"] == 1
+    with pytest.raises(ValueError, match="calendar policy"):
+        load_datasets(tmp_path, ["GLSTOCK"], "2020-01-01", "2020-01-08", calendar_policy="union")
+
+
+def test_quality_flag_classification_uses_reviewed_prefixes():
+    from financial_simulations.data.datasets import classify_quality_flag
+
+    assert classify_quality_flag("observed_upro_etf_adjusted_total_return") == "observed"
+    assert classify_quality_flag("model_3x_daily_reset_synthetic") == "reconstructed"
+    assert classify_quality_flag("backcalculated_gsci_daily") == "reconstructed"
+    assert classify_quality_flag("synthetic") == "unclassified"

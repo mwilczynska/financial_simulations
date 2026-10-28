@@ -18,8 +18,12 @@ def _label(row):
         return "Complete replay"
     if method == "independent":
         return "Independent rows"
-    if method == "lognormal":
-        return "Lognormal: " + row["assumption"].replace("_", " ")
+    if method in ("lognormal", "garch_fhs"):
+        label = ("Lognormal: " if method == "lognormal" else "GARCH-FHS: ") + row["assumption"].replace("_", " ")
+        twin = row.get("nominal_paths_match")
+        if isinstance(twin, str) and twin:
+            label += f" (deflator only; nominal = {twin.replace('_', ' ')})"
+        return label
     prefix = "Moving" if method == "moving_block" else "Stationary"
     return f"{prefix} L={int(row['block_length'])}"
 
@@ -104,7 +108,10 @@ def write_comparison_plots(output: Path, tables: dict, config, scenario):
         methods = ["historical_replay", "independent", "moving_block", "stationary"]
         if config.parametric:
             methods.append("lognormal")
-            axes[-1].set_visible(False)
+        if getattr(config, "volatility", None):
+            methods.append("garch_fhs")
+        for ax in axes[len(methods):]:
+            ax.set_visible(False)
         for ax, method in zip(axes, methods):
             subset = traces[traces["method"] == method] if not traces.empty else traces
             for color_id, (path_id, group) in enumerate(subset.groupby("path_id")):
@@ -117,8 +124,8 @@ def write_comparison_plots(output: Path, tables: dict, config, scenario):
                 ax.yaxis.set_minor_locator(NullLocator())
                 ax.yaxis.set_minor_formatter(NullFormatter())
             ax.yaxis.set_major_formatter(FuncFormatter(lambda x, _: f"{x:,.0f}"))
-            title = method.replace("_", " ").title()
-            if method == "lognormal":
+            title = "GARCH-FHS" if method == "garch_fhs" else method.replace("_", " ").title()
+            if method in ("lognormal", "garch_fhs"):
                 title += ": " + config.parametric.trace_assumption.replace("_", " ")
             ax.set_title(title)
             ax.set_xlabel("Return observation")

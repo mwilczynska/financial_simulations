@@ -3,6 +3,8 @@
 Date: 2026-10-28. Status: implemented for Stage 1A in package 0.1.0; validated
 with synthetic fixtures. Historical accounting reconciliation is a subsequent
 Stage 1A check. See [ADR 0003](../decisions/0003-stage-1a-data-contract.md).
+The opt-in common-date policy and per-return provenance were added for Stage
+1D; see [ADR 0009](../decisions/0009-common-date-calendar-policy.md).
 
 ## Purpose and supported scope
 
@@ -76,13 +78,46 @@ noise inside that tolerance is divided out. Negative, nonfinite, duplicate-alias
 or materially non-unit weights fail. Asset-level leveraged funds can be held
 long-only; this does not implement portfolio borrowing or reconstruct leverage.
 
+## Common-date policy and per-return provenance
+
+`calendar_policy = "common_dates"` in a scenario's `[data]` table, or in a
+Stage 1D study, selects the dates every requested asset observes within the
+window. Each file's published returns are first checked against its own
+adjacent levels, as above. Kept levels are then taken from each file, and
+returns are recomputed between consecutive kept levels:
+`r[k] = A[t_k] / A[t_(k-1)] - 1`. If an asset has an observation between two
+kept dates (another asset's holiday), its return covers both source
+intervals. It is never split, filled or dropped. `strict` remains the default.
+
+`provenance` holds one row per return with, for each asset:
+`source_steps_<asset>` (source observations spanned, 1 under strict) and
+`provenance_<asset>`. The class comes from the quality flag of every source row
+the interval touches, both endpoints included. The `observed_` prefix gives
+`observed`, `model_` or `backcalculated_` gives `reconstructed`, and anything
+else gives `unclassified`. An interval touching more than one class is
+`mixed`. The joint `provenance` column is the shared class, or `mixed`. The
+manifest counts joint classes, and under `common_dates` also dropped source
+dates per asset and multi-observation intervals.
+
+In the local snapshot audited on 2026-10-28, the four default series share
+14,029 of 14,488 distinct dates. The other 459, all between 1970 and 2005,
+appear in only some files. Every series is reconstructed before 2006-02-07,
+and observed from 2009-06-26 (the last to switch is `USLCAP3X`, the UPRO
+ETF). Rows in between are mixed. These are snapshot facts, recomputed on
+every load.
+
 ## Worked example
 
 Three levels `[100, 110, 99]` on Thursday, Friday and Monday produce two returns,
 `[+0.10, -0.10]`. The opening Thursday is a valuation, not a zero-return sample.
 Saturday and Sunday are account calendar dates, not extra source observations.
-If a second asset has a Tuesday mark instead of Monday, the loader fails. It
-does not reinterpret Friday-to-Tuesday performance as a shared Monday return.
+If a second asset has a Tuesday mark instead of Monday, the strict loader
+fails. It does not reinterpret Friday-to-Tuesday performance as a shared Monday
+return. Under `common_dates`, levels `[100, 110, 99, 99]` on Thursday, Friday,
+Monday and Tuesday for one asset, and `[50, 55, 44, 44]` on Thursday, Monday,
+Tuesday and Wednesday for another, keep Thursday, Monday and Tuesday. The first
+asset's Thursday-to-Monday return is 99/100 - 1 = -1%, spanning two source
+steps; the second asset's is +10% in one step.
 
 ## Validation and reproducibility
 
@@ -103,8 +138,9 @@ below `5.2e-11`, well inside the chosen validation tolerance.
 - Strict equality cannot identify a day absent from every source or establish
   whether an absence was a closure, lost quote or publication issue. A formal
   exchange-calendar and missing-observation audit remains future work.
-- Early mixed calendars are rejected. Supporting them requires a separately
-  documented valuation/alignment policy that preserves source observations.
+- Early mixed calendars are rejected under the default strict policy. The
+  opt-in common-date policy accepts them, at the cost of some multi-day
+  intervals that generators treat as ordinary rows.
 - There is no AUD conversion, Australian inflation, tax-income decomposition,
   quality-filtered sampling, statistical calibration or generator yet.
 - The loader validates the selected interval, not every historical row outside
@@ -132,4 +168,5 @@ and numeric-only portfolio import are engineering choices; no paper is claimed
 to establish their unique correctness. These choices favour an auditable first
 baseline while leaving unsupported calendars and tax semantics explicit.
 
-Revision history: 2026-10-28, initial implemented adapters and fixture evidence.
+Revision history: 2026-10-28, initial implemented adapters and fixture evidence;
+added the opt-in common-date policy and per-return provenance (ADR 0009).

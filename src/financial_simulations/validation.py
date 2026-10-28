@@ -37,7 +37,8 @@ def reconcile_optimiser(scenario: Scenario, optimiser_root: str | Path, output: 
         module.CUSTOM_DATASETS[ticker]["path"] = scenario.data_root / resolve_asset(asset).filename
         tickers.append(ticker)
     loaded = load_datasets(scenario.data_root, scenario.portfolio.assets, scenario.start, scenario.end,
-                           currency=scenario.portfolio.currency, file_format=scenario.file_format)
+                           currency=scenario.portfolio.currency, file_format=scenario.file_format,
+                           calendar_policy=scenario.calendar_policy)
     reference_prices = module.load_prices(tickers, scenario.start, scenario.end)
     if tuple(t.date() for t in reference_prices.index) != loaded.path.dates:
         raise ValueError("The reference and this loader selected different observation dates.")

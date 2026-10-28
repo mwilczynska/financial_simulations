@@ -19,7 +19,7 @@ and retains every daily deflator mark. Earlier Stage 1A/1B/1C tests still pass.
 
 ## Companion-data experiment and visual review
 
-Run `python scripts/validate_stage1b.py --experiment scenarios/examples/evaluation.toml --output output/stage1d`.
+Run `python scripts/validate_experiment.py --experiment scenarios/examples/evaluation.toml --output output/stage1d`.
 The example retains the selected 40/20/20/20 portfolio, annual rebalancing,
 illustrative USD 100,000 opening capital, two calibration windows, three
 observation horizons, two seeds and the Stage 1C demonstration grid. Its toy

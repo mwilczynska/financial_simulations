@@ -23,6 +23,7 @@ class Scenario:
     portfolio: PortfolioSpec
     cash_flows: tuple[CashFlow, ...]
     manifest: dict
+    calendar_policy: str = "strict"
 
 
 def _keys(table: dict, allowed: set[str], required: set[str], context: str) -> None:
@@ -41,7 +42,7 @@ def load_scenario(path: str | Path) -> Scenario:
     run, data, portfolio = config["run"], config["data"], config["portfolio"]
     _keys(run, {"name", "start", "end", "initial_value", "initial_cash", "currency", "rebalance"},
           {"name", "start", "end", "initial_value", "currency", "rebalance"}, "run")
-    _keys(data, {"root", "format"}, {"root"}, "data")
+    _keys(data, {"root", "format", "calendar_policy"}, {"root"}, "data")
     _keys(portfolio, {"weights", "optimiser"}, set(), "portfolio")
     if ("weights" in portfolio) == ("optimiser" in portfolio):
         raise ValueError("Choose exactly one manual weights table or optimiser selection.")
@@ -69,8 +70,8 @@ def load_scenario(path: str | Path) -> Scenario:
         "initial_value": run["initial_value"], "initial_cash": run.get("initial_cash", 0.0),
         "weights": dict(spec.weights), "rebalance": spec.rebalance,
         "cash_flows": [{**asdict(flow), "date": flow.date.isoformat()} for flow in flows],
-        "portfolio_source": source,
+        "portfolio_source": source, "calendar_policy": data.get("calendar_policy", "strict"),
     }
     return Scenario(run["name"], (path.parent / data["root"]).resolve(), data.get("format", "csv"),
                     start, end, run["initial_value"], run.get("initial_cash", 0.0), spec,
-                    tuple(flows), manifest)
+                    tuple(flows), manifest, data.get("calendar_policy", "strict"))

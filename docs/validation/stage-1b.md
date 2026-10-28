@@ -24,7 +24,7 @@ draws and broad tolerances. They test implementation, not financial stationarity
 Run from the project root in the installed development environment:
 
 ```powershell
-python scripts/validate_stage1b.py --output output/stage1b
+python scripts/validate_experiment.py --output output/stage1b
 ```
 
 The [experiment](../../scenarios/examples/comparison.toml) references the user's
