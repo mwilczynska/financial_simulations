@@ -153,17 +153,22 @@ MONTHS = ("January", "February", "March", "April", "May", "June", "July", "Augus
           "November", "December")
 
 
-def birth_date_input(current):
+def date_fields(label, current, name, first_year, last_year):
     """Year, month and day fields: typing a year is quicker than paging a calendar back decades."""
     import calendar
 
-    st.markdown("Date of birth")
+    st.markdown(label)
     y, m, d = st.columns([1, 1.8, 0.9])
-    year = int(y.number_input("Year", 1930, 2010, current.year, 1, key=key("born_year")))
-    month = MONTHS.index(m.selectbox("Month", MONTHS, index=current.month - 1, key=key("born_month"))) + 1
+    year = int(y.number_input("Year", first_year, last_year, min(max(current.year, first_year), last_year), 1,
+                              key=key(f"{name}_year")))
+    month = MONTHS.index(m.selectbox("Month", MONTHS, index=current.month - 1, key=key(f"{name}_month"))) + 1
     last = calendar.monthrange(year, month)[1]
-    day = int(d.number_input("Day", 1, last, min(current.day, last), 1, key=key("born_day")))
+    day = int(d.number_input("Day", 1, last, min(current.day, last), 1, key=key(f"{name}_day")))
     return date(year, month, day).isoformat()
+
+
+def birth_date_input(current):
+    return date_fields("Date of birth", current, "born", 1930, 2010)
 
 
 def inputs_you(plan):
@@ -260,13 +265,13 @@ def inputs_investments(plan):
         except ValueError as exc:
             st.warning(str(exc))
     st.subheader("Portfolio outside super")
-    saving = st.radio("Contributions from pay until retirement", ["surplus", "fixed"],
+    saving = st.radio("Yearly additions from your pay until retirement", ["surplus", "fixed"],
                       index=["surplus", "fixed"].index(plan["outside"]["saving"]), horizontal=True, key=key("saving"),
-                      format_func={"surplus": "Invest everything left after tax and spending",
-                                   "fixed": "Invest a fixed amount each year"}.get)
+                      format_func={"surplus": "Add everything left after tax and spending",
+                                   "fixed": "Add a fixed amount each year"}.get)
     plan["outside"]["saving"] = saving
     if saving == "fixed":
-        plan["outside"]["contribution_per_year"] = money("Contribution to outside investments per year",
+        plan["outside"]["contribution_per_year"] = money("Yearly addition to outside investments",
                                                          plan["outside"]["contribution_per_year"], "outside_contribution",
                                                          help="Invested in equal amounts each fortnightly payday. Leftover pay stays in cash.")
         plan["outside"]["contribution_indexed"] = st.checkbox(
@@ -279,13 +284,16 @@ def inputs_investments(plan):
         plan["outside"]["cash"] = money("Cash today", plan["outside"]["cash"], "cash")
     with b:
         plan["outside"]["cash_buffer"] = money("Cash buffer kept uninvested", plan["outside"]["cash_buffer"], "buffer")
+    plan["outside"]["cash_interest"] = percent("Interest on cash %/yr", plan["outside"]["cash_interest"], "cash_interest",
+                                               low=-5, high=20, step=0.25,
+                                               help="Assumed nominal rate on all outside cash, credited daily and taxed as income.")
     plan["outside"]["investment_balance"] = money("Investments today", plan["outside"]["investment_balance"], "outside_value")
     with st.expander("Opening tax position for outside investments"):
         st.caption("One aggregate cost base and acquisition date are allocated across the portfolio. This is an approximation if you bought at different times or prices.")
         plan["outside"]["opening_cost_base"] = money("Total cost base", plan["outside"]["opening_cost_base"], "outside_basis")
-        acquired = st.date_input("Acquisition date used for the opening portfolio", date.fromisoformat(plan["outside"]["opening_acquired"]),
-                                 date(1900, 1, 1), date.fromisoformat(plan["plan"]["start_date"]), key=key("acquired"), format="YYYY-MM-DD")
-        plan["outside"]["opening_acquired"] = acquired.isoformat()
+        plan["outside"]["opening_acquired"] = date_fields("Acquisition date used for the opening portfolio",
+                                                          date.fromisoformat(plan["outside"]["opening_acquired"]), "acquired",
+                                                          1950, date.fromisoformat(plan["plan"]["start_date"]).year)
     plan["outside"]["weights"] = weights_editor("Outside-super portfolio", plan["outside"]["weights"], names, "outw")
     plan["outside"]["rebalance"] = rebalance_choice(plan["outside"]["rebalance"], "outside_rebalance",
                                                     "Outside super each rebalance sells overweight holdings, which realises capital gains tax.")
@@ -294,9 +302,15 @@ def inputs_investments(plan):
     with a:
         plan["super"]["balance"] = money("Super balance today", plan["super"]["balance"], "super")
     with b:
-        plan["super"]["total_super_balance_prior_30_june"] = money("Total super balance at last 30 June",
-                                                                   plan["super"]["total_super_balance_prior_30_june"], "tsb",
-                                                                   help="Sets this year's contribution caps.")
+        same = st.checkbox("Balance at last 30 June was the same", plan["super"]["total_super_balance_prior_30_june"]
+                           == plan["super"]["balance"], key=key("tsb_same"),
+                           help="The total super balance on the previous 30 June sets this year's contribution caps "
+                                "(carry-forward and non-concessional). Untick only if it differed from today's balance.")
+        if same:
+            plan["super"]["total_super_balance_prior_30_june"] = plan["super"]["balance"]
+        else:
+            plan["super"]["total_super_balance_prior_30_june"] = money(
+                "Total super balance at last 30 June", plan["super"]["total_super_balance_prior_30_june"], "tsb")
     plan["super"]["weights"] = weights_editor("Inside-super portfolio", plan["super"]["weights"], names, "supw")
     plan["super"]["rebalance"] = rebalance_choice(plan["super"]["rebalance"], "super_rebalance",
                                                   "Inside super the switch is modelled without tax (funds are assumed not to realise gains).")
@@ -340,6 +354,9 @@ def inputs_assumptions(plan):
     with b:
         plan["assumptions"]["wage_growth_annual"] = percent("Wage growth %/yr", plan["assumptions"]["wage_growth_annual"], "wages",
                                                             low=-10, high=20, help="Indexes contribution caps and MLS thresholds.")
+    plan["assumptions"]["planning_age"] = int(st.number_input(
+        "Plan retirement income to age", 60, 110, int(plan["assumptions"]["planning_age"]), 1, key=key("planning_age"),
+        help="Sustainable withdrawal rates test whether the portfolios last from retirement to this age."))
     st.caption("Tax and super rules are sourced for 2026-27; later years apply enacted changes and project indexed "
                "thresholds with these assumptions (see docs/rules/au-projection.md).")
     st.subheader("Market simulation")
@@ -474,7 +491,7 @@ def balances_chart(daily):
                         legend=alt.Legend(orient="bottom", title=None)),
         order=alt.Order("order:Q"),
         tooltip=[alt.Tooltip("Date:T", format="%b %Y"), "Account:N", alt.Tooltip("balance:Q", format="$,.0f")],
-    ).properties(height=320))
+    ).properties(height=440))
 
 
 def band_chart(frame, title, *, log=False, symlog=False, color="#126a63", percent=False, x="Date:T", marks=None):
@@ -512,7 +529,7 @@ def band_chart(frame, title, *, log=False, symlog=False, color="#126a63", percen
     outer = base.mark_area(opacity=0.13, color=color).encode(x=xs, y=y, y2="P95:Q", tooltip=tooltip)
     inner = base.mark_area(opacity=0.27, color=color).encode(x=xs, y="P25:Q", y2="P75:Q", tooltip=tooltip)
     median = base.mark_line(color=color, strokeWidth=2).encode(x=xs, y="P50:Q", tooltip=tooltip)
-    chart = zoomable(alt.layer(outer, inner, median).properties(height=330))
+    chart = zoomable(alt.layer(outer, inner, median).properties(height=460))
     if marks is not None:
         if x != "Date:T":  # keep event labels inside the financial-year domain
             field = x.split(":")[0]
@@ -557,7 +574,7 @@ def ending_wealth_chart(calculated, marks_text=True):
     rules = alt.Chart(points).mark_rule(strokeDash=[4, 3], color="#5f6b73").encode(y="Ending wealth:Q")
     labels = alt.Chart(points).mark_text(align="left", x=8, dy=-8, fontSize=12, fontWeight="bold", color="#19353a").encode(
         y="Ending wealth:Q", text="Label:N")
-    return zoomable(alt.layer(dots, rules, labels).properties(height=340))
+    return zoomable(alt.layer(dots, rules, labels).properties(height=460))
 
 
 def overlay_histogram(frame, field, title, *, series=("Outside super", "Inside super"), log=False, percent=True, money=False):
@@ -582,7 +599,7 @@ def overlay_histogram(frame, field, title, *, series=("Outside super", "Inside s
         x=f"median({value}):Q", color=alt.Color("Portfolio:N", scale=scale_for(series), legend=None),
         tooltip=["Portfolio:N", alt.Tooltip(f"median({field}):Q", title="Median",
                                             format="$,.0f" if (money or log) else ".1%" if percent else ",.2f")])
-    return zoomable(alt.layer(bars, rules).properties(height=250))
+    return zoomable(alt.layer(bars, rules).properties(height=340))
 
 
 def run_with_progress(valid):
@@ -620,13 +637,18 @@ def allocation_pie(weights, tickers):
     scale = alt.Scale(domain=labels, range=[colour[t] for t in weights["Ticker"]])
     base = alt.Chart(weights).encode(theta=alt.Theta("Weight:Q", stack=True), order=alt.Order("Weight:Q", sort="descending"))
     slices = base.mark_arc(innerRadius=45, outerRadius=95, stroke="#ffffff", strokeWidth=2).encode(
-        color=alt.Color("Label:N", scale=scale, sort=labels,
-                        legend=alt.Legend(title=None, orient="bottom", columns=2, labelFontSize=13, symbolSize=180,
-                                          labelLimit=200)),
+        color=alt.Color("Label:N", scale=scale, sort=labels, legend=None),
         tooltip=["Ticker:N", alt.Tooltip("Weight:Q", format=".1%")])
     text = base.mark_text(radius=70, fontSize=12, fontWeight="bold", color="#ffffff").encode(
         text=alt.Text("Weight:Q", format=".0%"))
-    return (slices + text).properties(height=300)
+    return (slices + text).properties(height=220)
+
+
+def allocation_legend(weights, tickers):
+    """The donut's key as coloured text, so legends of different lengths do not shift the charts."""
+    colour = {t: TICKER_COLOURS[i % len(TICKER_COLOURS)] for i, t in enumerate(tickers)}
+    return " &nbsp; ".join(f"<span style='color:{colour[t]}'>&#9632;</span> {t} {w:.0%}"
+                           for t, w in zip(weights["Ticker"], weights["Weight"]))
 
 
 def section_portfolios(run):
@@ -639,11 +661,12 @@ def section_portfolios(run):
     for column, (title, section) in zip(cols, (("Outside super", "outside"), ("Inside super", "super"))):
         with column:
             balance = plan["outside"]["investment_balance"] if section == "outside" else plan["super"]["balance"]
-            st.markdown(f"**{title}** · {compact(balance)} invested · "
-                        f"{'rebalanced every January' if plan[section]['rebalance'] == 'annual' else 'buy and hold'}")
+            st.markdown(f"**{title}** · {compact(balance)}")
+            st.caption("Rebalanced every January" if plan[section]["rebalance"] == "annual" else "Buy and hold")
             weights = pd.DataFrame([{"Ticker": t, "Weight": w, "Label": f"{t} {w:.0%}"}
                                     for t, w in plan[section]["weights"].items()])
             st.altair_chart(allocation_pie(weights, tickers), width="stretch")
+            st.markdown(allocation_legend(weights, tickers), unsafe_allow_html=True)
             stats = run.portfolios.summary.set_index("Portfolio").loc[title]
             st.markdown(f"Historical CAGR **{share(stats['CAGR'])}** · volatility **{share(stats['Volatility'])}** · "
                         f"max drawdown **{share(stats['Maximum drawdown'])}**",
@@ -697,7 +720,7 @@ def section_history(run):
         y=alt.Y("Growth of 100:Q", scale=alt.Scale(type="log"), title="Growth of $100 · log scale", axis=alt.Axis(format="$,.0f")),
         color=alt.Color("Portfolio:N", scale=scale_for(names), legend=alt.Legend(orient="bottom", title=None)),
         tooltip=[alt.Tooltip("Date:T", format="%b %Y"), "Portfolio:N", alt.Tooltip("Growth of 100:Q", format="$,.0f")]
-    ).properties(height=330))
+    ).properties(height=460))
     st.altair_chart(growth, width="stretch")
     st.caption("$100 invested at the start of the shared history, valued at each month end. On a log scale equal "
                "vertical distances are equal percentage changes, so a straight line means steady compound growth "
@@ -707,7 +730,7 @@ def section_history(run):
         y=alt.Y("Drawdown:Q", title="Below previous peak", axis=alt.Axis(format=".0%")),
         color=alt.Color("Portfolio:N", scale=scale_for(names), legend=alt.Legend(orient="bottom", title=None)),
         tooltip=[alt.Tooltip("Date:T", format="%b %Y"), "Portfolio:N", alt.Tooltip("Drawdown:Q", format=".1%")]
-    ).properties(height=230))
+    ).properties(height=320))
     st.altair_chart(drawdown, width="stretch")
     st.caption("How far each portfolio sat below its previous high at each month end (0% = at a new high). Deep and "
                "long dips are what a retiree has to live through while still withdrawing.")
@@ -717,10 +740,72 @@ def section_history(run):
             x=alt.X("Year:O", title=None, axis=alt.Axis(labelAngle=-90, values=[y for y in yearly["Year"].unique() if y % 5 == 0])),
             xOffset="Portfolio:N", y=alt.Y("Return:Q", title="Calendar-year return", axis=alt.Axis(format=".0%")),
             color=alt.Color("Portfolio:N", scale=scale_for(names), legend=alt.Legend(orient="bottom", title=None)),
-            tooltip=["Year:O", "Portfolio:N", alt.Tooltip("Return:Q", format=".1%")]).properties(height=260)
+            tooltip=["Year:O", "Portfolio:N", alt.Tooltip("Return:Q", format=".1%")]).properties(height=360)
         st.altair_chart(bars, width="stretch")
         st.caption("Return in each full calendar year. The spread between good and bad years is the sequence risk a "
                    "retirement plan has to absorb.")
+
+
+def withdrawal_rates_section(plan, portfolios, names):
+    """Two retirement withdrawal rates per portfolio path, with an explanation of what each answers."""
+    outcomes = portfolios.outcomes
+    st.subheader("How much could each portfolio pay out each year?")
+    end = portfolios.planning_end
+    if end is None:
+        st.info("Retirement starts too close to the planning age for withdrawal rates; raise the planning age on the "
+                "Assumptions tab.")
+        return
+    years = (end - portfolios.retirement_start).days / 365.25
+    age = plan["assumptions"]["planning_age"]
+    growth, cpi = plan["spending"]["annual_growth"], plan["assumptions"]["cpi_annual"]
+    rows = []
+    for title in names:
+        part = outcomes.loc[outcomes["Portfolio"] == title]
+        rows.append({"Portfolio": title,
+                     f"Lasts to age {age}: cautious (5th pct)": share(part["Sustainable withdrawal rate"].quantile(0.05)),
+                     f"Lasts to age {age}: median": share(part["Sustainable withdrawal rate"].median()),
+                     "Lasts indefinitely: cautious (5th pct)": share(part["Perpetual withdrawal rate"].quantile(0.05)),
+                     "Lasts indefinitely: median": share(part["Perpetual withdrawal rate"].median())})
+    st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+    a, b = st.columns(2)
+    with a:
+        st.altair_chart(overlay_histogram(outcomes, "Sustainable withdrawal rate", f"Rate that lasts to age {age}"),
+                        width="stretch")
+    with b:
+        st.altair_chart(overlay_histogram(outcomes, "Perpetual withdrawal rate", "Rate that lasts indefinitely"),
+                        width="stretch")
+    with st.expander("What these withdrawal rates mean", expanded=True):
+        st.markdown(f"""
+A **withdrawal rate** is the first year's withdrawal as a percentage of the portfolio on the day you retire. Each
+later year withdraws the same amount grown by your spending growth ({growth:.1%} a year), so the money keeps its
+buying power. Example: a 4% rate on \\$1,000,000 is \\$40,000 in the first year, about \\${40000 * (1 + growth):,.0f}
+in the second, and so on. Withdrawals are taken monthly.
+
+The planner tests every simulated market path from your retirement date ({portfolios.retirement_start}) for
+{years:.0f} years, to age {age}. These paths are separate from the tax-ledger paths, because the ledger stops before
+Age Pension age. For each path it solves two questions exactly:
+
+1. **Lasts to age {age}.** The highest rate at which the portfolio is spent down to exactly $0 on the last day.
+   Nothing is left over, so this is the most aggressive way to read the result.
+2. **Lasts indefinitely.** The highest rate that still leaves the portfolio worth at least what it started with in
+   real terms (grown by {cpi:.1%} CPI) after {years:.0f} years. A portfolio in that state could keep paying the same
+   real income forever, provided future returns were similar. This is the usual meaning of a "safe" or
+   "perpetual" withdrawal rate for money held outside super, and it is always lower than the first rate.
+
+**Reading the numbers.** The *median* is what half the market paths could do. The *cautious* figure is the
+5th percentile, which 95% of paths could sustain. The cautious perpetual rate is the closest equivalent to the
+"4% rule", which was derived for 30-year US stock and bond retirements.
+
+**What is not included.**
+- Tax. Outside super, distributions and capital gains are taxed. Pension-phase super earnings are tax free, but
+  the transfer balance cap limits how much can move into the pension.
+- The Age Pension, fees beyond those already in the return series, and any change in spending as you age.
+- Super access rules. A rate for inside super assumes you could draw on it from retirement.
+
+**Why it can look high.** These portfolios use reconstructed leveraged histories since 1970, which compounded
+strongly. Resampling cannot produce a worse sequence than the worst stretch in that history, and a rate is only
+as reliable as the assumption that the future resembles that history.
+""")
 
 
 def section_future(run):
@@ -772,7 +857,7 @@ block in the source, and they treat every era as equally likely.
                 domain=[float(medians["P50"].min()) * 0.95, float(medians["P50"].max()) * 1.05]), axis=alt.Axis(format="$,.0f")),
         color=alt.Color("Portfolio:N", scale=scale_for(names), legend=alt.Legend(orient="bottom", title=None)),
         tooltip=[alt.Tooltip("Date:T", format="%b %Y"), "Portfolio:N", alt.Tooltip("P50:Q", format="$,.0f")]
-    ).properties(height=230)), width="stretch")
+    ).properties(height=320)), width="stretch")
     st.caption("Median paths side by side, to compare the portfolios' central outcomes on the same draws.")
     dd = fan.rename(columns={"Drawdown P05": "Bad (5th pct)", "Drawdown P50": "Typical (median)"})
     dd = dd.melt("Date", value_vars=["Bad (5th pct)", "Typical (median)"], var_name="Path", value_name="Drawdown")
@@ -780,7 +865,7 @@ block in the source, and they treat every era as equally likely.
         x=alt.X("Date:T", title=None, axis=year_axis(dd)), y=alt.Y("Drawdown:Q", title="Below previous peak", axis=alt.Axis(format=".0%")),
         strokeDash=alt.StrokeDash("Path:N", legend=alt.Legend(orient="bottom", title=None)), color=alt.value(PALETTE[selected]),
         tooltip=[alt.Tooltip("Date:T", format="%b %Y"), "Path:N", alt.Tooltip("Drawdown:Q", format=".1%")]
-    ).properties(height=210)), width="stretch")
+    ).properties(height=300)), width="stretch")
     st.caption(f"{selected}: how far below its running peak the portfolio sits at each month end, for the median "
                "path and for the worst 5% of paths at that date.")
 
@@ -798,13 +883,7 @@ block in the source, and they treat every era as equally likely.
         st.caption("Compound growth per year over the whole horizon on each path.")
         st.altair_chart(overlay_histogram(outcomes, "Maximum drawdown", "Maximum drawdown"), width="stretch")
         st.caption("Deepest peak-to-trough fall on each path. −50% means the portfolio halved at some point.")
-    st.altair_chart(overlay_histogram(outcomes, "Sustainable withdrawal rate", "Sustainable withdrawal rate"),
-                    width="stretch")
-    st.caption(f"The largest first-year withdrawal each path could fund from {portfolios.retirement_start} to the "
-               f"horizon, as a share of the portfolio at that date, rising {plan['spending']['annual_growth']:.1%} a year "
-               "with your spending growth and paid monthly. It is pre-tax and ignores salary, contributions and "
-               "super access rules, and is exact for that path: wealth reaches zero on the last day. A short horizon "
-               "gives high rates; it is not a 30-year 4%-rule figure.")
+    withdrawal_rates_section(plan, portfolios, names)
     table = []
     for title in names:
         part = outcomes.loc[outcomes["Portfolio"] == title]
@@ -813,7 +892,8 @@ block in the source, and they treat every era as equally likely.
                                     "Annualised volatility": ("Annualised volatility", "percent"),
                                     "Maximum drawdown": ("Maximum drawdown", "percent"),
                                     "Longest drawdown (years)": ("Longest drawdown (years)", "number"),
-                                    "Sustainable withdrawal rate": ("Sustainable withdrawal rate", "percent")})
+                                    "Withdrawal rate lasting to the planning age": ("Sustainable withdrawal rate", "percent"),
+                                    "Withdrawal rate lasting indefinitely": ("Perpetual withdrawal rate", "percent")})
         t.insert(0, "Portfolio", title)
         table.append(t)
     table = pd.concat(table)
@@ -829,7 +909,17 @@ block in the source, and they treat every era as equally likely.
 
 
 FLOW_COLOURS = {"Take-home salary": "#126a63", "Super contributions": "#386a98", "Investment returns": "#9a8a2e",
+                "Interest on cash": "#4f8f3a",
                 "Spending": "#b76a42", "Income tax": "#8c2f2f", "Contributions tax": "#c2577a", "Super fund tax": "#8363a0"}
+
+
+def flow_domain(frame, field, extra=()):
+    """A y domain that fits diverging stacked bars (positives and negatives stack separately) and any lines."""
+    by_year = frame.groupby("FY ending")[field]
+    top = max([float(by_year.apply(lambda v: v[v > 0].sum()).max()), *[float(np.nanmax(e)) for e in extra], 0.0])
+    low = min([float(by_year.apply(lambda v: v[v < 0].sum()).min()), *[float(np.nanmin(e)) for e in extra], 0.0])
+    pad = 0.08 * (top - low or 1.0)
+    return [low - pad, top + pad]
 
 
 def typical_flows_section(annual, marks, paths):
@@ -852,8 +942,10 @@ def typical_flows_section(annual, marks, paths):
     order = [f for f in FLOW_COLOURS if f in set(stats["Flow"])]
     domain = [int(annual["FY ending"].min()) - 0.6, int(annual["FY ending"].max()) + 0.6]
     x = alt.X("FY ending:Q", axis=fy_axis(annual), scale=alt.Scale(domain=domain, nice=False))
+    y_domain = flow_domain(stats, "Median", (net["P25"], net["P75"]))
     bars = alt.Chart(stats).mark_bar(size=16).encode(
-        x=x, y=alt.Y("Median:Q", stack=True, title="Median AUD per year", axis=alt.Axis(format="$,.0f")),
+        x=x, y=alt.Y("Median:Q", stack=True, title="Median AUD per year", axis=alt.Axis(format="$,.0f"),
+                     scale=alt.Scale(domain=y_domain, nice=False)),
         color=alt.Color("Flow:N", sort=order, scale=alt.Scale(domain=order, range=[FLOW_COLOURS[f] for f in order]),
                         legend=alt.Legend(orient="bottom", title=None, columns=2, labelLimit=220)),
         tooltip=[alt.Tooltip("Period:N", title="Year"), "Flow:N", alt.Tooltip("Median:Q", format="$,.0f"),
@@ -867,7 +959,7 @@ def typical_flows_section(annual, marks, paths):
                                     alt.Tooltip("P25:Q", title="25th percentile", format="$,.0f"),
                                     alt.Tooltip("P75:Q", title="75th percentile", format="$,.0f")])
     zero = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(color="#5f6b73").encode(y="y:Q")
-    st.altair_chart(with_milestones(alt.layer(bars, zero, spread, line).properties(height=380), marks, "Position:Q"),
+    st.altair_chart(with_milestones(alt.layer(bars, zero, spread, line).properties(height=500), marks, "Position:Q"),
                     width="stretch")
     st.caption(f"Each bar is the **median across all {paths} calculated paths** of that flow in that year: take-home "
                "salary, super contributions and investment returns above zero; spending, income tax, contributions tax "
@@ -963,10 +1055,13 @@ does not cover (excluded, with the reason shown). Returns are the USD histories 
     else:
         rate_chart = band_chart(quantile_bands(retired, "FY ending", "Withdrawal rate"), "Withdrawal rate", percent=True,
                                 color="#b76a42", x="FY ending:Q", marks=marks)
-        safe = run.portfolios.outcomes.loc[run.portfolios.outcomes["Portfolio"] == "Combined", "Sustainable withdrawal rate"]
-        if safe.notna().any():
-            reference = pd.DataFrame([{"Rate": float(safe.quantile(0.05)), "Label": f"5th-pct sustainable rate {safe.quantile(0.05):.1%}"},
-                                      {"Rate": float(safe.median()), "Label": f"Median sustainable rate {safe.median():.1%}"}])
+        combined = run.portfolios.outcomes.loc[run.portfolios.outcomes["Portfolio"] == "Combined"]
+        age = plan["assumptions"]["planning_age"]
+        if combined["Sustainable withdrawal rate"].notna().any():
+            lasting = float(combined["Perpetual withdrawal rate"].quantile(0.05))
+            to_age = float(combined["Sustainable withdrawal rate"].quantile(0.05))
+            reference = pd.DataFrame([{"Rate": lasting, "Label": f"Cautious rate that lasts indefinitely {lasting:.1%}"},
+                                      {"Rate": to_age, "Label": f"Cautious rate that lasts to age {age} {to_age:.1%}"}])
             rate_chart = alt.layer(rate_chart, alt.Chart(reference).mark_rule(color="#8c2f2f", strokeDash=[2, 2]).encode(y="Rate:Q"),
                                    alt.Chart(reference).mark_text(align="left", x=6, dy=10, fontSize=11, color="#8c2f2f").encode(
                                        y="Rate:Q", text="Label:N"))
@@ -984,11 +1079,11 @@ the same spending became a bigger share of it.
 **How to use it.**
 - A rate that stays roughly flat means wealth is keeping pace with spending; a rate that climbs year after year
   means wealth is shrinking relative to spending, which is the warning sign.
-- Compare it with the red dotted lines: the **sustainable withdrawal rate** of the combined portfolio (section 3),
-  the highest starting rate that the market paths could fund until {run.result.daily.index[-1].date()} without
-  running out. Staying below the 5th-percentile line is a cautious target.
-- The common "4% rule" is for 30-year retirements; this plan's horizon stops before Age Pension age, so higher rates
-  can still be sustainable here.
+- Compare it with the red dotted lines, both from the combined portfolio in section 3 and both the 5th percentile
+  (95% of market paths manage it): the rate that **lasts indefinitely** (keeps the portfolio's real value) and the
+  rate that spends it down to zero at the planning age. Staying below the lower line is the cautious choice.
+- Those lines are pre-tax, while this chart includes tax paid, so a rate here near a line leaves less margin than
+  it appears.
 
 **Limits.** Tax paid includes tax on investment income and capital gains; super that is not yet accessible counts in
 total wealth; spending grows at {plan['spending']['annual_growth']:.1%} a year.
@@ -1003,7 +1098,7 @@ total wealth; spending grows at {plan['spending']['annual_growth']:.1%} a year.
             y=alt.Y("Paths with a shortfall:Q", axis=alt.Axis(format=".0%"),
                     scale=alt.Scale(domain=[0, max(0.1, float(stress["Paths with a shortfall"].max()) * 1.2)])),
             tooltip=[alt.Tooltip("Period:N", title="Year"), alt.Tooltip("Paths with a shortfall:Q", format=".1%")])
-        st.altair_chart(with_milestones(bars.properties(height=260), marks, "Position:Q"), width="stretch")
+        st.altair_chart(with_milestones(bars.properties(height=360), marks, "Position:Q"), width="stretch")
         st.caption("Share of paths that could not pay all spending in each year. Shortfalls often cluster just before "
                    "super becomes accessible, when only outside money can pay.")
     with b:
@@ -1092,8 +1187,10 @@ def section_ledger(run):
     order = [f for f in colours if f in set(shown["Flow"])]
     x = alt.X("FY ending:Q", axis=fy_axis(household), scale=alt.Scale(
         domain=[int(household["FY ending"].min()) - 0.6, int(household["FY ending"].max()) + 0.6], nice=False))
+    y_domain = flow_domain(shown, "AUD", (household["Net change"],))
     bars = alt.Chart(shown).mark_bar(size=16).encode(
-        x=x, y=alt.Y("sum(AUD):Q", title="AUD per year", axis=alt.Axis(format="$,.0f")),
+        x=x, y=alt.Y("sum(AUD):Q", title="AUD per year", axis=alt.Axis(format="$,.0f"),
+                     scale=alt.Scale(domain=y_domain, nice=False)),
         color=alt.Color("Flow:N", sort=order, scale=alt.Scale(domain=order, range=[colours[f] for f in order]),
                         legend=alt.Legend(orient="bottom", title=None, columns=2, labelLimit=220)),
         order=alt.Order("Flow:N"),
@@ -1104,7 +1201,7 @@ def section_ledger(run):
                                          alt.Tooltip("Net change:Q", title="Net change in wealth", format="$,.0f"),
                                          alt.Tooltip("Closing:Q", title="Wealth at end", format="$,.0f")])
     zero = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(color="#5f6b73").encode(y="y:Q")
-    st.altair_chart(with_milestones(alt.layer(bars, zero, line).properties(height=380), marks, "Position:Q"), width="stretch")
+    st.altair_chart(with_milestones(alt.layer(bars, zero, line).properties(height=500), marks, "Position:Q"), width="stretch")
     st.caption("Every dollar that changed your total wealth in each year, for this path. Above zero: take-home salary, "
                "employer and salary-sacrifice contributions into super, and investment returns in good years. Below zero: "
                "spending, income tax, the 15% contributions tax, super fund tax and investment losses in bad years. The black "
@@ -1126,7 +1223,7 @@ def section_ledger(run):
                 y=alt.Y("sum(AUD):Q", title=account, axis=alt.Axis(format="$,.0f")),
                 color=alt.Color("Flow:N", legend=alt.Legend(orient="right", title=None, labelLimit=220)),
                 tooltip=[alt.Tooltip("Period:N", title="Year"), "Flow:N", alt.Tooltip("AUD:Q", format="$,.0f")])
-            st.altair_chart(with_milestones(alt.layer(chart, zero).properties(height=200), marks, "Position:Q"),
+            st.altair_chart(with_milestones(alt.layer(chart, zero).properties(height=280), marks, "Position:Q"),
                             width="stretch")
         st.caption("Transfers only, excluding investment growth. Outside investments receive your leftover pay and are "
                    "sold to pay spending and tax; super receives contributions (after the 15% tax), pays fund tax and "
@@ -1166,7 +1263,7 @@ def section_ledger(run):
                     int(part["FY ending"].min()) - 0.5, int(part["FY ending"].max()) + 0.5])),
                 y=alt.Y("AUD:Q", axis=alt.Axis(format="$,.0f")),
                 color=alt.Color("Measure:N", legend=alt.Legend(orient="bottom", title=None)),
-                tooltip=["Year:N", "Measure:N", alt.Tooltip("AUD:Q", format="$,.0f")]).properties(height=260))
+                tooltip=["Year:N", "Measure:N", alt.Tooltip("AUD:Q", format="$,.0f")]).properties(height=360))
             st.altair_chart(with_milestones(chart, marks, "Position:Q"), width="stretch")
     st.caption("Left: income, realised gains and tax assessed each year. Right: concessional contributions against the "
                "cap available, which includes carried-forward unused cap when your balance allows it.")
@@ -1177,7 +1274,7 @@ def section_ledger(run):
         st.altair_chart(alt.Chart(pension).mark_bar().encode(
             x=alt.X("FY ending:O", title=YEAR_TITLE), xOffset="Measure:N", y=alt.Y("AUD:Q", axis=alt.Axis(format="$,.0f")),
             color=alt.Color("Measure:N", scale=alt.Scale(range=["#c9b8da", "#8363a0"]), legend=alt.Legend(orient="bottom", title=None)),
-            tooltip=["Year:N", "Measure:N", alt.Tooltip("AUD:Q", format="$,.0f")]).properties(height=240), width="stretch")
+            tooltip=["Year:N", "Measure:N", alt.Tooltip("AUD:Q", format="$,.0f")]).properties(height=340), width="stretch")
         st.caption("The legislated minimum (a percentage of the 1 July balance that rises with age) against what was "
                    "paid. Payments above the minimum happen when spending needs them.")
     outstanding = result.outstanding
@@ -1248,7 +1345,8 @@ def main():
     start_ledger_workers(st.session_state.plan["market"]["retirement_paths"])
     run_requested_plan()
     plan = st.session_state.plan
-    tabs = st.tabs(["You", "Investments", "Retirement", "Assumptions", "Results"])
+    # A keyed, tracked tab set keeps the open tab when a widget on it reruns the app.
+    tabs = st.tabs(["You", "Investments", "Retirement", "Assumptions", "Results"], key="main_tabs", on_change="rerun")
     with tabs[0]:
         inputs_you(plan)
     with tabs[1]:

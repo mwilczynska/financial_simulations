@@ -75,9 +75,9 @@ Schema version 2 uses:
 | `[plan]` | Name, start date from 2026-07-01, requested years |
 | `[person]` and `[employment]` | Birth date, retirement age, cover, salary, `salary_sacrifice_per_year`, `salary_sacrifice_percent` (fraction of salary, added to the dollar amount), payday |
 | `assets` | Selected local ticker codes |
-| `[outside]` | Cash, cash buffer, `investment_balance`, `opening_cost_base`, `opening_acquired`, `weights`, `rebalance`, `saving` (`surplus` or `fixed`), `contribution_per_year`, `contribution_indexed` |
+| `[outside]` | Cash, cash buffer, `cash_interest`, `investment_balance`, `opening_cost_base`, `opening_acquired`, `weights`, `rebalance`, `saving` (`surplus` or `fixed`), `contribution_per_year`, `contribution_indexed` |
 | `[super]` | Balance, prior 30 June total super balance, `weights`, `rebalance` |
-| `[spending]`, `[pension]`, `[assumptions]` | Spending, pension transfer and projected-rule assumptions |
+| `[spending]`, `[pension]`, `[assumptions]` | Spending, pension transfer, projected-rule assumptions and `planning_age` |
 | `[market]` | Portfolio path count, retirement path count, seed, mean block length |
 
 `outside.weights` and `super.weights` each sum to one. They represent the
@@ -159,12 +159,22 @@ divided by the prior year-end mark minus one; partial years are excluded.
 Monthly and yearly values summarize daily compounding. For example, +10%
 then -10% turns $100 into $99, a -1% total return.
 
-The **sustainable withdrawal rate** of a path is the largest first-year
-withdrawal it could fund. It is expressed as a fraction of the portfolio's
-value at the retirement date, or at plan start if that is later.
-Withdrawals are paid monthly at each month end, one twelfth of the annual
-amount. The annual amount rises by the plan's spending growth every
-12 months, and the portfolio must not run out before the horizon. Let
+Withdrawal rates use a separate set of `paths` draws of the same sampler
+([ADR 0021](../decisions/0021-cash-interest-and-withdrawal-rates.md)). Each
+draw runs from the retirement date (or plan start, if later) to the day
+before the birthday at `assumptions.planning_age` (default 95). The tax
+ledger's horizon stops before Age Pension age, about nine years for the
+example. Measured over that horizon, the median rate came out near 15%:
+correct arithmetic, but not a retirement-length answer. Two rates are solved
+per path and portfolio. Both are pre-tax and ignore the Age Pension, salary,
+contributions and super access.
+
+The **rate that lasts to the planning age** (`Sustainable withdrawal rate`)
+is the largest first-year withdrawal the path could fund, as a fraction of
+the portfolio's value at the start of the window. Withdrawals are paid
+monthly at each month end, one twelfth of the annual amount. The annual
+amount rises by the plan's spending growth every 12 months, and the
+portfolio must not run out before the end. Let
 `G_k` be the growth factor from retirement to the `k`-th month end.
 Proportional sales leave each later month's growth factor unchanged, so
 remaining wealth is nonnegative exactly while
@@ -172,10 +182,21 @@ remaining wealth is nonnegative exactly while
 positive, so the horizon binds and
 `rate = 1 / sum_k (1 + g) ** floor(k / 12) / (12 * G_k)`. In a flat market
 over two years with 10% growth, `rate = 12 / (12 + 13.2) = 0.476`. The rate
-is pre-tax and ignores salary, contributions and super access. It depends
-strongly on the remaining horizon, which ends before Age Pension age, so it
-is not comparable with 30-year "4% rule" studies. The rate is undefined
-with fewer than 12 month ends.
+spends the portfolio to exactly zero on the last day.
+
+The **rate that lasts indefinitely** (`Perpetual withdrawal rate`) instead
+requires the portfolio to end the window worth at least its starting value
+grown by CPI over the window's `T` years. Ending wealth is
+`G_T * (1 - rate * S)`, where `S` is the sum above. The condition gives
+`rate = (1 - (1 + cpi) ** T / G_T) / S`, floored at zero for paths that lose
+real value even without withdrawals. Earlier months are then automatically
+positive. In a market compounding at 5% a year, with 2.5% CPI and spending
+growth, the test checks that ending wealth equals `1.025 ** 30` of the
+start after 30 years. This keep-the-real-capital rate is the usual meaning
+of a perpetual or "safe" rate for an outside-super portfolio. Its
+5th percentile is the closest analogue of the 4% rule, which was derived
+from 30-year US retirements. Both rates are undefined with fewer than 12
+month ends.
 
 The first `retirement_paths` of those same joint draws run through the
 [daily tax ledger](retirement-ledger.md). USD source returns are explicitly

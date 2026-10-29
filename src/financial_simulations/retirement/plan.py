@@ -143,11 +143,11 @@ def normalize_plan(raw: dict) -> dict:
                "person": {"date_of_birth", "retirement_age", "private_hospital_cover"},
                "employment": {"annual_salary", "salary_sacrifice_per_year", "salary_sacrifice_percent", "first_payday"},
                "outside": {"cash", "cash_buffer", "investment_balance", "opening_cost_base", "opening_acquired", "weights",
-                           "rebalance", "saving", "contribution_per_year", "contribution_indexed"},
+                           "rebalance", "saving", "contribution_per_year", "contribution_indexed", "cash_interest"},
                "super": {"balance", "weights", "rebalance", "total_super_balance_prior_30_june"},
                "spending": {"annual", "annual_growth"},
                "pension": {"start_age", "transfer_all", "amount"},
-               "assumptions": {"cpi_annual", "wage_growth_annual"},
+               "assumptions": {"cpi_annual", "wage_growth_annual", "planning_age"},
                "market": {"paths", "retirement_paths", "seed", "block_length"}}
     for name, table in (("plan", meta), ("person", person), ("employment", employment), ("outside", outside),
                         ("super", super_), ("spending", spending), ("pension", pension),
@@ -194,7 +194,8 @@ def normalize_plan(raw: dict) -> dict:
                        "rebalance": c.choice(outside, "rebalance", "outside", "annual", REBALANCE),
                        "saving": c.choice(outside, "saving", "outside", "surplus", SAVING),
                        "contribution_per_year": c.number(outside, "contribution_per_year", "outside", 0.0, low=0, high=1e8),
-                       "contribution_indexed": c.flag(outside, "contribution_indexed", "outside", True)}
+                       "contribution_indexed": c.flag(outside, "contribution_indexed", "outside", True),
+                       "cash_interest": c.number(outside, "cash_interest", "outside", 0.03, low=-0.05, high=0.2)}
     if (plan["outside"]["opening_acquired"] and plan["plan"]["start_date"]
             and plan["outside"]["opening_acquired"] > plan["plan"]["start_date"]):
         c.problems.append("outside.opening_acquired: must be on or before plan.start_date")
@@ -211,7 +212,8 @@ def normalize_plan(raw: dict) -> dict:
                        "transfer_all": c.flag(pension, "transfer_all", "pension", True),
                        "amount": c.number(pension, "amount", "pension", 0.0, low=0, high=1e9)}
     plan["assumptions"] = {"cpi_annual": c.number(assumptions, "cpi_annual", "assumptions", 0.025, low=-0.1, high=0.2),
-                           "wage_growth_annual": c.number(assumptions, "wage_growth_annual", "assumptions", 0.035, low=-0.1, high=0.2)}
+                           "wage_growth_annual": c.number(assumptions, "wage_growth_annual", "assumptions", 0.035, low=-0.1, high=0.2),
+                           "planning_age": c.number(assumptions, "planning_age", "assumptions", 95, low=60, high=110, integer=True)}
     plan["market"] = {"paths": c.number(market, "paths", "market", 1000, low=16, high=5000, integer=True),
                       "retirement_paths": c.number(market, "retirement_paths", "market", 100, low=1, high=2000, integer=True),
                       "seed": c.number(market, "seed", "market", 20261028, low=0, high=2147483647, integer=True),
@@ -340,7 +342,7 @@ def build_inputs(plan: dict, *, market=None, returns=None):
         outside_contribution_per_payday=(plan["outside"]["contribution_per_year"] / 26 if plan["outside"]["saving"] == "fixed"
                                          else None),
         outside_contribution_growth=plan["assumptions"]["cpi_annual"] if plan["outside"]["contribution_indexed"] else 0.0,
-        stop_investing_at_retirement=True)
+        stop_investing_at_retirement=True, cash_interest=plan["outside"]["cash_interest"])
     years = project_rulesets(load_ruleset("2026-27"), financial_year_of(end),
                              ProjectionAssumptions(plan["assumptions"]["cpi_annual"], plan["assumptions"]["wage_growth_annual"]))
     return path, scenario, years, notes

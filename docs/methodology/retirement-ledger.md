@@ -30,6 +30,10 @@ touches must fall in a supplied rule year, or the run stops with
 
 Asset unit prices start at 1. On each day:
 
+0. **Interest.** With `cash_interest = r` (annual effective), outside cash at
+   the previous close earns `cash * ((1 + r) ** (1 / 365.25) - 1)` every
+   calendar day. It is credited to cash, reported in the daily `interest`
+   flow and assessed as interest income. Market P&L excludes it.
 1. **Market return.** On an observation day, each price is multiplied by
    (1 + daily total return).
 2. **Distributions.** At the last observation of each calendar quarter, each
@@ -126,7 +130,7 @@ transfers between the person's accounts.
 | Fund realised gains | None | Simplification: overstates net fund returns when funds turn over assets |
 | Rebalancing | Optional per account (`outside_rebalance`, `super_rebalance`; ledger default off, planner default annual). On the first return observation of a calendar year, accounts reset to target weights at pre-return values. Outside sales are CGT events labelled `purpose = rebalance`; super switches are untaxed | [ADR 0018](../decisions/0018-planner-annual-rebalancing.md); untaxed super switching overstates fund returns |
 | Parcel selection | Oldest first within asset | Engineering choice; specific identification is allowed in law |
-| Interest on cash | Nil | Simplification; with investing stopped at retirement, unspent retirement cash earns nothing |
+| Interest on cash | `cash_interest` (ledger default 0; planner default 3% a year, an assumption), credited daily, taxable | [ADR 0021](../decisions/0021-cash-interest-and-withdrawal-rates.md); no bank interest calendar, deposit rate curve or term deposits |
 | Outside contributions | Surplus sweep (ledger default) or a fixed per-payday amount, optionally indexed each 1 July; the planner stops new investing at retirement | User requirement, [ADR 0020](../decisions/0020-outside-contributions-stop-at-retirement.md) |
 | Default weights | Opening holdings' proportions; error if none | Prevents silently investing in an arbitrary asset |
 | Opening TSB at the prior 30 June | Opening super value unless supplied | Input; supply the true value for cap tests |

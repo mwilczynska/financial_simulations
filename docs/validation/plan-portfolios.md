@@ -236,3 +236,38 @@ desktop was at about 96% CPU from other programs during the check, so
 absolute times are not representative.
 
 After the user asked whether the money in and out chart should use medians, the retirement section gained a typical-year version. It shows the median of each flow across all calculated paths, with interquartile tooltips and the median net change with whiskers. A test checks that each path's yearly flow columns sum to its net change. The single-path chart in section 5 remains, labelled as one path.
+
+## Interest, withdrawal rates over a retirement, and layout fixes (2026-10-29)
+
+On the invented default, 300 draws from retirement (2027-09-15) to age 95
+gave these rates that spend the portfolio to zero:
+
+| Portfolio | 5th percentile | Median |
+| --- | --- | --- |
+| Combined | 4.9% | 9.5% |
+| Inside super | 3.9% | 7.6% |
+| Outside super | 4.8% | 11.1% |
+
+The earlier median of about 15% was measured over only the 8.8 years to
+the ledger horizon. Each run now also reports the rate that keeps real
+capital (ADR 0021).
+
+Tests cover:
+
+- daily interest compounding and its assessment;
+- the perpetual-rate identity;
+- the default planning age.
+
+The browser review found and fixed:
+
+- **Tab reset.** Choosing a radio option on the Results tab returned the app
+  to the first tab. The tab set is now keyed and tracked.
+- **Pie alignment.** Donuts shifted with legend length. They now share one
+  plot size, with a text legend underneath.
+- **Clipped flow axis.** Negative stacked flows could be clipped. Both money
+  in and out charts now set a y domain covering positive and negative stacks
+  and the net line.
+
+Also changed: chart heights increased by about 30–40%; the acquisition date
+uses year, month and day fields; the prior-30-June total super balance
+defaults to today's balance unless unticked.

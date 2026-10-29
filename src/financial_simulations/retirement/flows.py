@@ -18,7 +18,7 @@ from financial_simulations.rules.au.superannuation import access_date, birthday
 
 
 HOUSEHOLD = (("salary", "Take-home salary", 1), ("employer_contributions", "Super contributions", 1),
-             ("market_pnl", "Investment returns", 1), ("spending_paid", "Spending", -1),
+             ("market_pnl", "Investment returns", 1), ("interest", "Interest on cash", 1), ("spending_paid", "Spending", -1),
              ("tax_paid", "Income tax", -1), ("contributions_tax", "Contributions tax", -1),
              ("fund_tax", "Super fund tax", -1))
 

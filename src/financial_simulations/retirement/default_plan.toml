@@ -19,6 +19,8 @@ salary_sacrifice_per_year = 10400.0
 [outside]
 cash = 15000.0
 cash_buffer = 10000.0
+# Assumed nominal interest on cash (annual, taxable).
+cash_interest = 0.03
 investment_balance = 450000.0
 opening_cost_base = 330000.0
 opening_acquired = "2015-03-02"
@@ -47,6 +49,8 @@ transfer_all = true
 [assumptions]
 cpi_annual = 0.025
 wage_growth_annual = 0.035
+# Sustainable withdrawal rates cover retirement up to this age (portfolio only; no tax ledger).
+planning_age = 95
 
 [market]
 paths = 1000

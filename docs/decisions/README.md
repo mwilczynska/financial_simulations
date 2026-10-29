@@ -26,6 +26,7 @@ Decision records preserve why Financial Simulations makes a material modelling o
 | [0018](0018-planner-annual-rebalancing.md) | 2026-10-28 | Accepted; implemented and locally validated | Annual rebalancing per account in the planner and tax ledger |
 | [0019](0019-retirement-path-results.md) | 2026-10-28 | Accepted; implemented and locally validated | Keep depleted retirement paths, cap whole-balance pension transfers, more paths and results |
 | [0020](0020-outside-contributions-stop-at-retirement.md) | 2026-10-29 | Accepted; implemented and locally validated | Surplus or fixed (optionally indexed) outside contributions that stop at retirement; sacrifice as a percentage |
+| [0021](0021-cash-interest-and-withdrawal-rates.md) | 2026-10-29 | Accepted; implemented and locally validated | Interest on cash; withdrawal rates to a planning age, and a rate that lasts indefinitely |
 
 ## When to write a record
 

@@ -281,3 +281,13 @@ def test_fixed_outside_contributions_and_no_new_investing_after_retirement():
     late = indexed.events[(indexed.events["event"] == "buy") & (indexed.events["account"] == "outside")
                           & (pd.to_datetime(indexed.events["date"]) >= pd.Timestamp("2027-07-01"))]
     assert late["amount"].tolist() == pytest.approx([103.0] * len(late)) and len(late) >= 2
+
+
+def test_cash_earns_daily_interest_that_is_taxed_and_reconciles():
+    result = run_ledger(market(), scenario_with(Person("1985-01-01"), outside_cash=100000, cash_buffer=100000,
+                                                outside_contribution_per_payday=0.0, cash_interest=0.04), YEARS)
+    days = len(result.daily)
+    # With nothing swept into investments, cash compounds daily at 4% a year.
+    assert result.daily["total"].iloc[-1] == pytest.approx(100000 * 1.04 ** (days / 365.25))
+    interest = result.daily["interest"].sum()
+    assert result.annual[0]["assessment"].taxable_income == pytest.approx(int(interest), abs=1)

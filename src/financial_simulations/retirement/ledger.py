@@ -151,6 +151,7 @@ class LedgerScenario:
     outside_contribution_per_payday: float | None = None
     outside_contribution_growth: float = 0.0  # applied each 1 July, like spending growth
     stop_investing_at_retirement: bool = False
+    cash_interest: float = 0.0  # annual effective rate on outside cash, credited daily and taxed as interest
 
 
 @dataclass
@@ -244,6 +245,9 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
         tsb_prior = _value(state.super_acc, state.prices)
     unused, losses_bf, period = dict(scenario.unused_concessional), float(scenario.capital_losses_brought_forward), None
     spending_due, unpaid_tax = [], []
+    if not -0.5 < scenario.cash_interest < 1:
+        raise ValueError("Cash interest must be an annual rate between -50% and 100%.")
+    daily_interest = (1 + scenario.cash_interest) ** (1 / 365.25) - 1
     saving_due = 0.0
     if scenario.outside_contribution_per_payday is not None:
         _money(scenario.outside_contribution_per_payday, "Outside contribution")
@@ -259,7 +263,8 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
         cap = concessional_cap(rules, tsb_prior, unused)
         state.fy = {"rules": rules, "cap": cap, "concessional": 0.0, "non_concessional": 0.0, "labour": 0.0,
                     "sacrifice": 0.0, "unfranked": 0.0, "franked": 0.0, "credits": 0.0, "events": [],
-                    "acc_income": 0.0, "acc_credits": 0.0, "pen_credits": 0.0, "spending": 0.0, "shortfall": 0.0}
+                    "acc_income": 0.0, "acc_credits": 0.0, "pen_credits": 0.0, "spending": 0.0, "shortfall": 0.0,
+                    "interest": 0.0}
         if state.tba is not None:
             pension_value = _value(state.super_pen, state.prices)
             state.pension_minimum = minimum_pension_payment(pension_value, person.born, rules)
@@ -405,10 +410,16 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
             log("cgt_reform_valuation", sum(p.reform_value or 0.0 for p in state.parcels), "outside")
         flows = {k: 0.0 for k in ("market_pnl", "salary", "employer_contributions", "contributions_tax", "spending_paid",
                                   "shortfall", "tax_paid", "tax_unpaid", "fund_tax", "distributions", "pension_payments",
-                                  "lump_sums")}
+                                  "lump_sums", "interest")}
         # Nothing changes overnight, so the opening value is the previous close.
         opening = closing if closing is not None else (state.cash + _value(state.outside_units, state.prices)
                                                        + _value(state.super_acc, state.prices) + _value(state.super_pen, state.prices))
+        if daily_interest and state.cash > 0:
+            # Interest on the previous close's cash, credited every calendar day.
+            interest = state.cash * daily_interest
+            state.cash += interest
+            state.fy["interest"] += interest
+            flows["interest"] = interest
         observation = observations.get(day)
         if day in rebalance_days:
             rebalance()
@@ -416,7 +427,8 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
             for i, asset in enumerate(assets):
                 state.prices[asset] *= 1 + path.returns[observation - 1, i]
             flows["market_pnl"] = (state.cash + _value(state.outside_units, state.prices)
-                                   + _value(state.super_acc, state.prices) + _value(state.super_pen, state.prices)) - opening
+                                   + _value(state.super_acc, state.prices) + _value(state.super_pen, state.prices)
+                                   - opening - flows["interest"])
         if day in quarter_ends:
             for asset in assets:
                 q = income[asset].annual_yield / 4
@@ -544,7 +556,8 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
                 buy_outside(amount)
         if day == rules.end:
             fy = state.fy
-            year = IncomeYear(labour_income=fy["labour"], unfranked_dividends=fy["unfranked"], franked_dividends=fy["franked"],
+            year = IncomeYear(labour_income=fy["labour"], interest=fy["interest"], unfranked_dividends=fy["unfranked"],
+                              franked_dividends=fy["franked"],
                               franking_credits=fy["credits"], capital_events=tuple(fy["events"]),
                               capital_losses_brought_forward=losses_bf, reportable_employer_super=fy["sacrifice"],
                               low_tax_contributions=fy["concessional"],
@@ -583,7 +596,7 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
         outside_value = _value(state.outside_units, state.prices)
         acc_value, pen_value = _value(state.super_acc, state.prices), _value(state.super_pen, state.prices)
         total = state.cash + outside_value + acc_value + pen_value
-        expected = (opening + flows["market_pnl"] + flows["salary"] + flows["employer_contributions"]
+        expected = (opening + flows["market_pnl"] + flows["salary"] + flows["employer_contributions"] + flows["interest"]
                     - flows["contributions_tax"] - flows["spending_paid"] - flows["tax_paid"] - flows["fund_tax"])
         if abs(total - expected) > 1e-6 + 1e-11 * abs(expected):
             raise ArithmeticError(f"Ledger reconciliation failed on {day}: {total} != {expected}.")
@@ -604,7 +617,8 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
                       "franked_distributions": fy["franked"], "unfranked_distributions": fy["unfranked"],
                       "franking_credits": fy["credits"], "capital_gain_events": len(fy["events"]),
                       "net_realised_gains": sum(e.amount for e in fy["events"]),
-                      "concessional_contributions": fy["concessional"], "accumulation_income": fy["acc_income"]}
+                      "concessional_contributions": fy["concessional"], "accumulation_income": fy["acc_income"],
+                      "interest": fy["interest"]}
     outstanding = {"tax_liabilities": [dict(l, due=str(l["due"])) for l in state.liabilities],
                    "unpaid_tax": unpaid_tax,
                    "unassessed_year": unassessed,

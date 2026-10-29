@@ -54,7 +54,7 @@ def test_minimal_plan_gets_documented_defaults():
     plan = normalize_plan({"person": {"date_of_birth": "1980-01-01"}, "assets": ["USLCAP"],
                            "outside": {"weights": {"USLCAP": 1.0}}, "super": {"weights": {"USLCAP": 1.0}}})
     assert plan["plan"]["start_date"] == "2026-07-01" and plan["plan"]["years"] == 10
-    assert plan["assumptions"] == {"cpi_annual": 0.025, "wage_growth_annual": 0.035}
+    assert plan["assumptions"] == {"cpi_annual": 0.025, "wage_growth_annual": 0.035, "planning_age": 95}
     assert plan["outside"]["investment_balance"] == 0 and plan["pension"]["start_age"] == 0
     assert plan["market"]["block_length"] == 63
 
@@ -261,3 +261,19 @@ def test_fixed_outside_contribution_maps_to_paydays_and_stops_at_retirement(proc
     plan["outside"]["saving"] = "sometimes"
     with pytest.raises(PlanError, match="outside.saving: must be one of surplus, fixed"):
         normalize_plan(plan)
+
+
+def test_perpetual_withdrawal_rate_keeps_real_capital():
+    from financial_simulations.retirement.analysis import perpetual_withdrawal_rates
+    import numpy as np
+
+    # 5% a year compounded monthly for 30 years with 2.5% inflation-indexed withdrawals and 2.5% inflation.
+    months = 360
+    values = 100 * 1.05 ** (np.arange(months + 1) / 12)
+    rate = perpetual_withdrawal_rates(values[None, :], 0, 0.025, 0.025, 30)[0]
+    steps = 1.025 ** (np.arange(months) // 12) / 12
+    growth = values[1:] / 100
+    ending = growth[-1] * (1 - rate * (steps / growth).sum())
+    assert ending == pytest.approx(1.025 ** 30)
+    flat = np.full((1, months + 1), 100.0)
+    assert perpetual_withdrawal_rates(flat, 0, 0.0, 0.025, 30)[0] == 0
