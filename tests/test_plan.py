@@ -344,3 +344,18 @@ def test_workers_start_with_one_maths_thread_and_the_parent_environment_is_resto
     with _without_main_module():
         assert all(os.environ[name] == "1" for name in THREAD_LIMITS)
     assert os.environ["OPENBLAS_NUM_THREADS"] == "8"
+
+
+def test_all_paths_chart_draws_a_spread_of_funded_paths_and_every_ruin_path():
+    pytest.importorskip("streamlit")
+    import numpy as np
+    import pandas as pd
+    from financial_simulations.ui.app import SHOWN_PATHS, shown_paths
+
+    months = pd.date_range("2026-07-31", periods=24, freq="ME")
+    rows = [pd.DataFrame({"Date": months, "Path": p, "Status": "depleted" if p % 50 == 0 else "funded",
+                          "Total wealth": np.linspace(1e6, 1e6 + 1000 * p, len(months))}) for p in range(700)]
+    funded, depleted = shown_paths(pd.concat(rows, ignore_index=True))
+    assert len(funded) == SHOWN_PATHS and depleted == list(range(0, 700, 50))
+    # Spread evenly across ending wealth: the lowest and highest funded paths are both drawn.
+    assert min(funded) == 1 and max(funded) == 699

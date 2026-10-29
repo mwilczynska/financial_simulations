@@ -748,112 +748,162 @@ def quantile_bands(frame, by, field):
     return q
 
 
-MAX_LINE_POINTS = 60000
+SHOWN_PATHS = 300  # funded paths drawn; every path that ran out is drawn as well
+GREY, RED, MEDIAN = "#3d3d3d", "#c0392b", "#126a63"
 
 
-def paths_image(paths, first, last, top, wide, opacity):
-    """All paths as translucent lines in a PNG data URL, drawn in the same (linear or symlog) space as the chart."""
+def shown_paths(paths):
+    """Paths to draw: every depleted path, and up to SHOWN_PATHS funded paths spread evenly across ending wealth.
+
+    Spacing by ending-wealth rank keeps the sample's spread the same as the full set's, so the grey density is a
+    fair picture of the distribution while the browser handles a bounded number of lines.
+    """
+    ending = paths.sort_values("Date").groupby("Path").agg(Status=("Status", "first"), End=("Total wealth", "last"))
+    depleted = ending.index[ending["Status"] == "depleted"].tolist()
+    funded = ending.loc[ending["Status"] != "depleted"].sort_values("End")
+    if len(funded) > SHOWN_PATHS:
+        funded = funded.iloc[np.unique(np.linspace(0, len(funded) - 1, SHOWN_PATHS).round().astype(int))]
+    return funded.index.tolist(), depleted
+
+
+def paths_image(paths, funded, depleted, first, last, top, wide):
+    """The drawn paths as one transparent PNG data URL, in the chart's exact (linear or symlog) space.
+
+    Grey funded paths are translucent, so overlaps darken where most paths went; paths that ran out are drawn on top
+    in near-solid red.
+    """
     import base64
     import io
 
     from matplotlib.collections import LineCollection
     from matplotlib.figure import Figure
 
-    fig = Figure(figsize=(16, 8), dpi=100)
+    fig = Figure(figsize=(14, 7), dpi=120)
     fig.patch.set_alpha(0)
     ax = fig.add_axes([0, 0, 1, 1])
     ax.set_axis_off()
     ax.patch.set_alpha(0)
-    start = first.value
-    span = (last.value - start) or 1
+    span = (last - first) or pd.Timedelta(days=1)
 
     def transform(values):
         # Vega's symlog with constant C maps y to sign(y) * log1p(|y| / C); reproduce it so pixels line up.
         return np.sign(values) * np.log1p(np.abs(values) / 1000) if wide else values
 
-    for status, colour, alpha in (("funded", "#4a4a4a", opacity), ("depleted", "#b23a3a", min(0.7, opacity * 3))):
-        part = paths.loc[paths["Status"] == status]
-        if part.empty:
-            continue
-        segments = [np.column_stack(((pd.to_datetime(g["Date"]).astype("int64").to_numpy() - start) / span,
-                                     transform(g["Total wealth"].to_numpy())))
-                    for _, g in part.groupby("Path", sort=False)]
-        ax.add_collection(LineCollection(segments, colors=colour, linewidths=1.1, alpha=alpha))
+    groups = dict(tuple(paths.groupby("Path", sort=False)))
+    # About 45 overlapping grey lines reach full darkness; a few red lines are near solid, many are lighter so
+    # the red does not hide the grey distribution underneath.
+    grey_alpha = float(np.clip(45 / max(len(funded), 1), 0.08, 0.4))
+    red_alpha = float(np.clip(25 / max(len(depleted), 1), 0.3, 0.85))
+    for chosen, colour, alpha, width in ((funded, GREY, grey_alpha, 0.9), (depleted, RED, red_alpha, 1.3)):
+        # Timedelta division, not raw integers: pandas may store the dates in microseconds rather than nanoseconds.
+        segments = [np.column_stack((((pd.to_datetime(groups[p]["Date"]) - first) / span).to_numpy(dtype=float),
+                                     transform(groups[p]["Total wealth"].to_numpy()))) for p in chosen]
+        if segments:
+            ax.add_collection(LineCollection(segments, colors=colour, linewidths=width, alpha=alpha))
     ax.set_xlim(0, 1)
     ax.set_ylim(transform(np.array([0.0]))[0], transform(np.array([top]))[0])
+    from PIL import Image
+
+    rendered = io.BytesIO()
+    fig.savefig(rendered, format="png", transparent=True)
+    # A 256-colour palette keeps the transparency and is several times smaller than full-colour RGBA.
+    rendered.seek(0)
     buffer = io.BytesIO()
-    fig.savefig(buffer, format="png", transparent=True)
+    Image.open(rendered).quantize(256, method=Image.Quantize.FASTOCTREE).save(buffer, format="png", optimize=True)
     return "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode("ascii")
 
 
-def all_paths_chart(paths, marks, outcomes=None):
-    """Every path's total wealth as a faint grey line (overlaps darken); the path nearest the pointer is highlighted.
+def all_paths_chart(paths, marks, outcomes=None, cache_key=None):
+    """Many paths' total wealth: translucent grey lines whose overlaps show the distribution, ruin paths in red.
 
-    All paths are drawn, because their overlap is the distribution. To keep the browser responsive the line layer
-    carries only the four fields it needs, and hovering uses one invisible point per path per year (the nearest
-    point picks the path) instead of every month, which keeps the hover index about twelve times smaller.
+    Speed: the drawn lines are one server-rendered image, cached per result, so the browser never draws hundreds
+    of lines and a rerun does not repaint it. Hover data are the drawn paths only, quarterly for the highlighted
+    line and yearly for the pointer targets, and the chart uses the canvas renderer.
     """
     import altair as alt
 
-    medians = paths.groupby("Date")["Total wealth"].median()  # from every month of every path
-    # Thin the drawn lines in time (never the paths) so a large plan stays under about MAX_LINE_POINTS vertices.
-    months = sorted(paths["Date"].unique())
-    stride = max(1, -(-len(paths) // MAX_LINE_POINTS))
-    shown = set(months[::stride]) | {months[-1]}
-    lines_frame = paths.loc[paths["Date"].isin(shown), ["Date", "Path", "Status", "Total wealth"]]
-    wide = float(lines_frame["Total wealth"].quantile(0.95)) > 20 * max(1000.0, float(medians.max()))
-    count = lines_frame["Path"].nunique()
-    opacity = min(0.45, max(0.04, 15 / count))
-    top = float(paths["Total wealth"].max()) * 1.02 or 1.0
+    medians = paths.groupby("Date")["Total wealth"].median()  # from every path, drawn or not
+    funded, depleted = shown_paths(paths)
+    drawn = paths.loc[paths["Path"].isin(funded + depleted), ["Date", "Path", "Status", "Total wealth"]]
+    wide = float(drawn["Total wealth"].quantile(0.95)) > 20 * max(1000.0, float(medians.max()))
+    # The axis stops just above the 97.5th percentile of the paths' peaks, so a few runaway paths do not squash
+    # the band where most paths sit; about one path in forty is clipped at the top edge.
+    peaks = drawn.groupby("Path")["Total wealth"].max()
+    top = min(float(peaks.max()) * 1.02, float(peaks.quantile(0.975)) * 1.05) or 1.0
+    clipped = int((peaks > top).sum())
     first, last = pd.Timestamp(paths["Date"].min()), pd.Timestamp(paths["Date"].max())
+    cache = st.session_state.setdefault("paths_image_cache", {})
+    cache_key = (cache_key, top, wide)
+    if cache_key[0] is None or cache_key not in cache:
+        cache.clear()  # only the current result's image is kept
+        cache[cache_key] = paths_image(drawn, funded, depleted, first, last, top, wide)
     y_scale = (alt.Scale(type="symlog", constant=1000, domain=[0, top], nice=False) if wide
                else alt.Scale(domain=[0, top], nice=False))
     y_title = "Total wealth, today's dollars" + (" (log-like)" if wide else "")
     y = alt.Y("Total wealth:Q", title=y_title, scale=y_scale, axis=alt.Axis(format="$,.0f"))
-    hover = alt.selection_point(fields=["Path"], on="pointerover", nearest=True, clear="pointerout", empty=False,
-                                name="path_hover")
-    x = alt.X("Date:T", title=None, axis=year_axis(lines_frame), scale=alt.Scale(domain=[first.isoformat(), last.isoformat()]))
-    # Static background: nothing here depends on the hover, so it is drawn once and never re-styled.
-    # Every path is painted once on the server into a transparent image stretched over the chart's exact axes.
-    # The browser then draws one image instead of hundreds of lines, so hovering only redraws one path.
-    image = pd.DataFrame({"url": [paths_image(paths, first, last, top, wide, opacity)], "x": [first], "x2": [last],
-                          "y": [top], "y2": [0.0]})
+    x = alt.X("Date:T", title=None, axis=year_axis(drawn), scale=alt.Scale(domain=[first.isoformat(), last.isoformat()]))
+    # The image's left edge must use the same field name as the shared x encoding ("Date"), or it is never placed.
+    image = pd.DataFrame({"url": [cache[cache_key]], "Date": [first.isoformat()],
+                          "x2": [last.isoformat()], "y": [top], "y2": [0.0]})
     lines = alt.Chart(image).mark_image(aspect=False, align="left", baseline="top").encode(
         x=x, x2="x2:T", y=alt.Y("y:Q", scale=y_scale, title=y_title, axis=alt.Axis(format="$,.0f")), y2="y2:Q", url="url:N")
-    # Only the hovered path is drawn on top, so a hover redraws one line instead of restyling every path.
-    highlight = alt.Chart(lines_frame).transform_filter(hover).mark_line(color="#0b3d45", strokeWidth=3.5).encode(
+    hover = alt.selection_point(fields=["Path"], on="pointerover", nearest=True, clear="pointerout", empty=False,
+                                name="path_hover")
+    # Compact hover data: dates as plain strings, whole dollars, and per-path facts joined in the browser.
+    dates = pd.to_datetime(drawn["Date"])
+
+    def compact_rows(frame):
+        return frame.assign(Date=pd.to_datetime(frame["Date"]).dt.strftime("%Y-%m-%d"),
+                            **{"Total wealth": frame["Total wealth"].round()})
+
+    quarterly = compact_rows(drawn.loc[dates.dt.month.isin([3, 6, 9, 12]) | (dates == dates.max()) | (dates == dates.min()),
+                                       ["Date", "Path", "Total wealth"]])
+    highlight = alt.Chart(quarterly).transform_filter(hover).mark_line(strokeWidth=3.5, color="#0b3d45", clip=True).encode(
         x=x, y=y, detail="Path:N")
-    # Invisible yearly points (each June month end, plus each path's last month) carry the hover and tooltip.
-    dates = pd.to_datetime(paths["Date"])
-    yearly = paths.loc[(dates.dt.month == 6) | (dates == dates.max())]
-    yearly = add_age(yearly)
+    yearly = compact_rows(add_age(drawn.loc[(dates.dt.month == 6) | (dates == dates.max()), ["Date", "Path", "Total wealth"]]))
+    info = drawn.drop_duplicates("Path")[["Path", "Status"]]
     if outcomes is not None:
-        keep = outcomes[["Path", "Ending wealth", "Spending shortfall", "First retired-year withdrawal rate"]]
-        yearly = yearly.merge(keep, on="Path", how="left")
-    extra = [alt.Tooltip(f, format=fmt, title=t) for f, fmt, t in
+        info = info.merge(outcomes[["Path", "Ending wealth", "Spending shortfall", "First shortfall",
+                                    "First retired-year withdrawal rate"]], on="Path", how="left")
+        info = info.assign(**{c: info[c].round() for c in ("Ending wealth", "Spending shortfall")})
+    extra = [alt.Tooltip(f, format=fmt, title=t) if fmt else alt.Tooltip(f, title=t) for f, fmt, t in
              (("Ending wealth:Q", "$,.0f", "Path's ending wealth"), ("Spending shortfall:Q", "$,.0f", "Path's spending shortfall"),
+              ("First shortfall:N", None, "Money first ran short"),
               ("First retired-year withdrawal rate:Q", ".1%", "Path's first retired-year withdrawal rate"))
-             if f.split(":")[0] in yearly]
-    points = alt.Chart(yearly).mark_point(opacity=0, size=80).encode(
+             if f.split(":")[0] in info]
+    points = alt.Chart(yearly).transform_lookup(
+        lookup="Path", from_=alt.LookupData(info, "Path", [c for c in info.columns if c != "Path"])
+    ).mark_point(opacity=0, size=80, clip=True).encode(
         x=x, y=y,
         tooltip=[alt.Tooltip("Path:N", title="Path"), "Status:N", alt.Tooltip("Date:T", format="%b %Y"), *age_tooltip(yearly),
                  alt.Tooltip("Total wealth:Q", title="Wealth on this date", format="$,.0f"), *extra]).add_params(hover)
     median_frame = add_age(medians.reset_index())
-    median = alt.Chart(median_frame).mark_line(color="#126a63", strokeWidth=3).encode(
+    median = alt.Chart(median_frame).mark_line(color=MEDIAN, strokeWidth=3, clip=True).encode(
         x=x, y=y,
         tooltip=[alt.Tooltip("Date:T", format="%b %Y"), *age_tooltip(median_frame),
                  alt.Tooltip("Total wealth:Q", title="Median of all paths", format="$,.0f")])
+    layers = [lines, median, highlight, points]
+    if outcomes is not None and depleted:
+        # A red marker where each ruin path first ran short, at that month's wealth.
+        ruined = outcomes.loc[outcomes["Path"].isin(depleted) & (outcomes["First shortfall"] != ""), ["Path", "First shortfall"]]
+        if not ruined.empty:
+            ruined = ruined.assign(Date=pd.to_datetime(ruined["First shortfall"]) + pd.offsets.MonthEnd(0))
+            ruined = ruined.merge(drawn[["Path", "Date", "Total wealth"]], on=["Path", "Date"], how="left").dropna()
+            ruined = add_age(ruined)
+            layers.append(alt.Chart(ruined).mark_point(shape="cross", size=90, filled=True, color=RED, opacity=0.95).encode(
+                x=x, y=y, tooltip=[alt.Tooltip("Path:N", title="Path"), alt.Tooltip("First shortfall:N", title="Money first ran short"),
+                                   *age_tooltip(ruined)]))
     # One flat layer: nesting a chart that owns a selection inside another layer duplicates its signals.
     ZOOM_COUNT[0] += 1
     zoom = alt.selection_interval(bind="scales", zoom="wheel![event.shiftKey]", name=f"zoom_{ZOOM_COUNT[0]}")
-    layers = [lines.add_params(zoom), median, highlight, points]
+    layers[0] = lines.add_params(zoom)
     if marks is not None and not marks.empty:
         layers += [alt.Chart(marks).mark_rule(strokeDash=[4, 3], color="#5f6b73", strokeWidth=1.3).encode(
                        x="Date:T", tooltip=["Event:N", alt.Tooltip("Date:T", format="%d %b %Y")]),
                    alt.Chart(marks).mark_text(align="left", dx=4, fontSize=11, color="#3c474d").encode(
                        x="Date:T", y=alt.Y("Offset:Q", scale=None), text="Event:N")]
-    # Canvas, not SVG: thousands of lines and hover cells as SVG elements made each hover take about two seconds.
-    return alt.layer(*layers).properties(height=620, usermeta={"embedOptions": {"renderer": "canvas"}})
+    chart = alt.layer(*layers).properties(height=620, usermeta={"embedOptions": {"renderer": "canvas"}})
+    return chart, len(funded), len(depleted), clipped
 
 
 def ending_wealth_chart(calculated, marks_text=True):
@@ -1518,15 +1568,30 @@ does not cover (excluded, with the reason shown). Returns are the USD histories 
                   "the median. " if wide else "")
                + "Total wealth includes super that may not yet be accessible.")
     if getattr(run, "wealth_paths", None) is not None:
-        st.subheader("Wealth over time on every path")
+        st.subheader("Wealth over time across many paths")
         ruin_statistics(run, calculated, marks)
-        st.altair_chart(all_paths_chart(run.wealth_paths, marks, calculated), width="stretch")
-        st.caption(f"All {len(calculated)} calculated paths are drawn. "
-                   + f"Each faint grey line is one path's total wealth at each month end "
-                   "(today's dollars). Lines are translucent, so where many paths overlap the grey darkens: the darkest areas are "
-                   "where most paths went. The teal line is the median at each month; red lines are depleted paths. Point at "
-                   "a line to highlight that whole path and see its value, your age, and its ending wealth, shortfall and "
-                   "withdrawal rate; the path number can be opened in section 5.")
+        chart, grey, red, clipped = all_paths_chart(run.wealth_paths, marks, calculated, cache_key=id(run))
+        total = run.wealth_paths["Path"].nunique()
+        st.markdown(f"<span style='color:{GREY}'>&#9644;</span> {grey} of {total - red} paths that never ran out "
+                    f"&nbsp; <span style='color:{RED}'>&#9644; &#10010;</span> all {red} paths that ran out, and where "
+                    f"they first ran short &nbsp; <span style='color:{MEDIAN}'>&#9644;</span> median of all {total} paths",
+                    unsafe_allow_html=True)
+        st.altair_chart(chart, width="stretch")
+        st.caption(("Every calculated path is drawn. " if grey + red == total else
+                    f"{grey} of the {total - red} paths that never ran out are drawn, spread evenly from the lowest to "
+                    "the highest ending wealth so they show the same spread as all of them; every path that ran out is "
+                    "drawn. ")
+                   + (f"The {clipped} highest paths run off the top: the axis stops there so the band where most paths "
+                      "sit stays readable; the ending-wealth chart below shows them in full. "
+                      if clipped else "")
+                   + "Each grey line is one path's total wealth at each month end, in today's dollars. The lines are "
+                   "translucent, so where many paths overlap the grey darkens: the darkest band is where most paths went. "
+                   "Red lines are paths that ran out of money, and a red cross marks where each first could not pay "
+                   "spending or tax. A cross can sit well above \\$0, because total wealth includes super that was not yet "
+                   "accessible: those paths ran out of outside money while waiting for super. The teal "
+                   "line is the median of all paths at each month. Point at a line to highlight that path and see its "
+                   "value, your age, its ending wealth, shortfall and first retired-year withdrawal rate; the path "
+                   "number can be opened in section 5.")
     st.subheader("Ending wealth on every path")
     ending_statistics(run, calculated)
     st.altair_chart(ending_wealth_chart(calculated), width="stretch")

@@ -356,13 +356,27 @@ positions them.
      Above the ending-wealth chart, in today's dollars: the share of paths
      ending below their starting wealth, the share ending below half of it,
      the median and the 5th percentile;
-   - **wealth over time on every path**: each calculated path's month-end
-     total wealth as a translucent grey line, so overlapping paths darken and
-     density shows. Depleted paths are red, and a teal line marks the monthly
-     median. The data are `PlanRun.wealth_paths`. Pointing at the chart
-     highlights the nearest path: invisible points carry a Vega-Lite nearest
-     selection on `Path`. The tooltip gives date, age, value and the path's
-     ending wealth, shortfall and first retired-year withdrawal rate;
+   - **wealth over time across many paths** (`PlanRun.wealth_paths`):
+     - **What is drawn.** Every depleted path, and up to 300 funded paths
+       chosen at evenly spaced ending-wealth ranks, so the sample keeps the
+       full set's spread.
+     - **Colours.** Funded paths are translucent grey, with opacity
+       `clip(45 / n, 0.08, 0.4)`, so overlaps darken where most paths went.
+       Depleted paths are red on top, with opacity `clip(25 / n, 0.3, 0.85)`,
+       so many red lines do not hide the grey. A red cross marks each
+       depleted path's first shortfall. It can sit above $0 when super was
+       not yet accessible. A teal line is the median of all paths, drawn or
+       not.
+     - **Axis.** The y axis stops at 1.05 times the 97.5th percentile of the
+       drawn paths' peaks. The caption says how many paths are clipped.
+     - **Speed.** The lines are one matplotlib PNG reduced to a 256-colour
+       palette, cached in the session per result and axis range. Its left
+       edge uses the shared `Date` field, so it lines up with the axes. The
+       browser draws only the median, the hovered path (quarterly points)
+       and yearly invisible pointer targets. Per-path tooltip facts are
+       joined in the browser with a lookup. The chart uses the canvas
+       renderer. Measured in the in-app browser on a 500-path run, a hover
+       took about 12 ms to handle;
    - every path's ending wealth, sorted. Hovering gives the exact value,
      the account split and any shortfall; labelled
      10th, median and 90th percentile lines; depleted paths in red;
