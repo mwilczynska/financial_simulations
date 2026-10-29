@@ -358,9 +358,13 @@ positions them.
        planning age is below the median first retired-year withdrawal rate.
        It is pre-tax and portfolio-only, and labelled as such.
 
-     Above the ending-wealth chart, in today's dollars: the share of paths
-     ending below their starting wealth, the share ending below half of it,
-     the median and the 5th percentile;
+     Above the ending-wealth chart, in today's dollars:
+     - the share of paths ending below their starting wealth, and below half
+       of it;
+     - the median and the 5th percentile of ending wealth;
+     - withdrawal-rate percentiles (median, 90th, 95th and 5th). The measure
+       is each path's median withdrawal rate over its full retired years,
+       ranked across paths;
    - **wealth over time across many paths** (`PlanRun.wealth_paths`):
      - **What is drawn.** Every depleted path, and up to 300 funded paths
        chosen at evenly spaced ending-wealth ranks, so the sample keeps the
@@ -411,10 +415,30 @@ positions them.
      an expanded explanation of how to read them;
    - the share of paths with a shortfall each year;
    - pension payment bands;
-   - an outcome percentile table, and every path in a formatted table.
-5. **One path in full.** The median-ending path by default, or the 10th or
-   90th percentile, worst, best or any numbered path, re-run on demand. It
-   shows:
+   - an outcome percentile table, and every path in a formatted table. The
+     table is sorted from the worst ending wealth to the best and tagged with
+     each path's ending-wealth percentile, `(rank + 0.5) / n x 100`.
+5. **One path in full.** The median-ending path by default.
+   - **Averaged groups.** The picker also offers groups averaged across their
+     paths: the worst 1%, 5% and 10%, the middle 10% (45th to 55th
+     percentile), the best 10% and the best 1%. Groups are ranked by ending
+     wealth, and each has at least one path. A group's view averages:
+     - month-end balances by account (from `PlanRun.path_series`, each path's
+       stored account series);
+     - each year's flows, net change and additions (from the
+       `retirement_annual` rows);
+     - its outcomes, including wealth at retirement and when super becomes
+       accessible, the share that ran out, the shortfall, Age Pension and
+       the withdrawal rate.
+
+     No ledger is re-run, so it is immediate. The group view says when a
+     group has fewer than five paths. Averages smooth timing, and the view
+     says so.
+   - **Single paths.** The picker lists every path from the worst to the
+     best, each tagged with its ending-wealth percentile. A single path is
+     re-run on demand. Its metrics include wealth at the start, at
+     retirement, when super becomes accessible and at the horizon. The view
+     shows:
    - balances by account, and the largest fall in total wealth;
    - **money in and out each year**, from `household_flows`: take-home
      salary, super contributions and investment returns against spending,

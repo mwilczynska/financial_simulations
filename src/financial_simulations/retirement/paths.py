@@ -75,6 +75,7 @@ def _summarise(path: int, result: LedgerResult, retire: date, cpi: float):
     retired_rates = [r["Withdrawal rate"] for r in rows if r["Full retired year"] and np.isfinite(r["Withdrawal rate"])]
     spending = _retirement_spending(result, nominal, rows, retire, first, cpi)
     at_retirement = daily.loc[daily.index.date <= retire, "total"]
+    accessible = daily.index[daily["super_accessible"].astype(bool)]
     unpaid = sum(item["amount"] / step(int(item["financial_year"][:4]) + 1) for item in result.outstanding["unpaid_tax"])
     shortfall = float(daily["shortfall"].sum())
     pension_start = daily.index[daily["pension"] > 0]
@@ -85,6 +86,9 @@ def _summarise(path: int, result: LedgerResult, retire: date, cpi: float):
                "Ending outside wealth": float(outside.iloc[-1]),
                "Ending super and pension": float(daily["accumulation"].iloc[-1] + daily["pension"].iloc[-1]),
                "Wealth at retirement": float(at_retirement.iloc[-1]) if len(at_retirement) else np.nan,
+               # Total wealth on the first day super can be withdrawn, when that falls after the start.
+               "Wealth when super accessible": (float(daily["total"].loc[accessible[0]])
+                                                if len(accessible) and accessible[0] > daily.index[0] else np.nan),
                "Largest fall in wealth": float((daily["total"] / daily["total"].cummax() - 1).min()),
                "Spending paid": float(daily["spending_paid"].sum()), "Spending shortfall": shortfall,
                "Shortfall years": int(sum(r["Shortfall"] > 0 for r in rows)),

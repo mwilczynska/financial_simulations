@@ -1481,6 +1481,17 @@ def ending_statistics(run, calculated):
              help=f"Share of paths whose ending wealth, in today's dollars, was below the starting {compact(start)}.")
     b.metric("Ended below half of the start", share(float((real < 0.5 * start).mean())))
     c.metric("Median ending wealth", compact(float(real.median())))
+    rates = calculated["Median withdrawal rate"].dropna()
+    if not rates.empty:
+        w = st.columns(4)
+        for column, (label, q, why) in zip(w, (("Withdrawal rate: median path", 0.5, "half of paths drew more"),
+                                                ("Withdrawal rate: 90th percentile", 0.9, "one path in ten drew more"),
+                                                ("Withdrawal rate: 95th percentile", 0.95, "one path in twenty drew more"),
+                                                ("Withdrawal rate: 5th percentile", 0.05, "the gentlest paths"))):
+            column.metric(label, share(float(rates.quantile(q))),
+                          help="Each path's median withdrawal rate over its full retired years (spending plus tax, less "
+                               f"Age Pension, over wealth on 1 July), ranked across paths: {why}. High rates are the bad "
+                               "paths: wealth shrank, so the same spending took a bigger share.")
     d.metric("Bad case: 5th percentile", compact(float(real.quantile(0.05))),
              help="One path in twenty ended lower than this.")
 
@@ -1504,8 +1515,9 @@ def spending_section(plan, annual, calculated, marks):
                  help=f"{spending['retirement_percent']:.1%} of each path's total wealth on your retirement date, in today's "
                       f"dollars. 5th to 95th percentile: {dollars(float(starts.quantile(0.05)))} to "
                       f"{dollars(float(starts.quantile(0.95)))}.")
-        b.metric("Range of starting spending", f"{dollars(float(starts.quantile(0.05)))} – {dollars(float(starts.quantile(0.95)))}",
-                 help="5th to 95th percentile across paths: the dollar amount your percentage produced.")
+        b.metric("Starting spending, bad case", dollars(float(starts.quantile(0.05))),
+                 help="The 5th percentile across paths: one path in twenty started retirement spending less than this, "
+                      "because markets did badly before you retired. The full range is in the note below.")
     else:
         a.metric("Starting spending", dollars(float(starts.median())),
                  help="Your first retired-year spending in today's dollars (the same on every path).")
@@ -1786,6 +1798,9 @@ total wealth; spending rises with inflation{"" if not plan['spending']['real_cha
                "and another row's 5th percentile usually come from different paths.")
     with st.expander(f"Every path ({len(paths)})"):
         table = paths.drop(columns=["Ending wealth, nominal"], errors="ignore")
+        ranks = ending_percentiles(calculated)
+        table.insert(2, "Ending wealth percentile", table["Path"].map(ranks))
+        table = table.sort_values("Ending wealth percentile", na_position="last")
         for field in ("First retired-year withdrawal rate", "Highest withdrawal rate", "Median withdrawal rate",
                       "Largest fall in wealth"):
             if field in table:
@@ -1796,11 +1811,123 @@ total wealth; spending rises with inflation{"" if not plan['spending']['real_cha
         st.dataframe(table, width="stretch", hide_index=True, column_config={
             "Path": st.column_config.NumberColumn("Path", format="%d", pinned=True),
             "Status": st.column_config.TextColumn("Status", pinned=True),
+            "Ending wealth percentile": st.column_config.NumberColumn(
+                "Percentile", format="%.0f", pinned=True,
+                help="Where this path's ending wealth ranks among calculated paths: 1 is near the worst, 99 near the best."),
             **{field: money_column(field) for field in money},
             **{field: percent_column(field) for field in ("First retired-year withdrawal rate", "Highest withdrawal rate",
                                                           "Median withdrawal rate", "Largest fall in wealth")}})
-        st.caption("Amounts are in today's dollars. Path numbers are positions in the shared draw sequence (path 0 is the first draw), not ranks. "
+        st.caption("Amounts are in today's dollars, sorted from the worst ending wealth to the best. Path numbers are positions in the shared draw sequence (path 0 is the first draw), not ranks. "
                    "Scroll sideways for every column; hover a header for its full name.")
+
+
+PATH_GROUPS = (("Worst 1%", 0.0, 0.01), ("Worst 5%", 0.0, 0.05), ("Worst 10%", 0.0, 0.10),
+               ("Middle 10% (45th to 55th percentile)", 0.45, 0.55), ("Best 10%", 0.90, 1.0), ("Best 1%", 0.99, 1.0))
+
+
+def ending_percentiles(calculated):
+    """Each calculated path's ending-wealth percentile: (rank + 0.5) / count x 100, so ranks spread over 0 to 100."""
+    ordered = calculated.sort_values("Ending wealth")["Path"].tolist()
+    return {path: (i + 0.5) / len(ordered) * 100 for i, path in enumerate(ordered)}
+
+
+def group_members(calculated, low, high):
+    """Paths whose ending-wealth rank falls in [low, high) of the calculated paths; always at least one."""
+    ordered = calculated.sort_values("Ending wealth")["Path"].tolist()
+    n = len(ordered)
+    first = min(int(np.floor(round(low * n, 9))), n - 1)
+    last = max(first + 1, int(np.ceil(round(high * n, 9))))
+    return [int(p) for p in ordered[first:last]]
+
+
+def ordinal(value):
+    n = int(round(value))
+    n = min(max(n, 1), 99)
+    return f"{n}{'th' if 10 <= n % 100 <= 20 else {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')}"
+
+
+def averaged_paths(run, members, label):
+    """A group of paths averaged month by month (balances) and year by year (flows), from the stored summaries."""
+    import altair as alt
+
+    plan, paths = run.plan, run.retirement_paths
+    group = paths.loc[paths["Path"].isin(members)]
+    st.subheader(f"{label} of paths ({len(members)} path{'s' if len(members) != 1 else ''})")
+    if len(members) < 5:
+        st.caption(f"Only {len(members)} path{'s' if len(members) != 1 else ''} in this group, so its average rests on very "
+                   "few market sequences. Raise *Daily retirement-ledger paths* on the Assumptions tab (500 gives 5 paths "
+                   "in the worst 1%) for a steadier picture.")
+    a, b, c, d = st.columns(4)
+    a.metric("Wealth at start", compact(float(run.result.daily["total"].iloc[0])))
+    b.metric("Wealth at retirement (average)", compact(float(group["Wealth at retirement"].mean())))
+    c.metric("Wealth when super becomes accessible (average)", compact(float(group["Wealth when super accessible"].mean()))
+             if "Wealth when super accessible" in group and group["Wealth when super accessible"].notna().any() else "–")
+    d.metric("Ending wealth (average)", compact(float(group["Ending wealth"].mean())))
+    a, b, c, d = st.columns(4)
+    a.metric("Paths in the group that ran out", share(float((group["Status"] == "depleted").mean())),
+             help="Share of the group's paths with any unpaid spending or tax.")
+    b.metric("Spending shortfall (average)", compact(float(group["Spending shortfall"].mean())))
+    c.metric("Age Pension received (average)", compact(float(group["Age Pension received"].mean()))
+             if "Age Pension received" in group else "–")
+    d.metric("Withdrawal rate (average of path medians)", share(float(group["Median withdrawal rate"].mean())))
+    series = run.path_series.loc[run.path_series["Path"].isin(members)] if run.path_series is not None else None
+    marks = milestones(plan, run.result.daily.index[0].date(), run.result.daily.index[-1].date())
+    if series is not None and not series.empty:
+        mean = series.groupby("Date")[["Outside super", "Super and pension", "Pension account"]].mean()
+        frame = pd.DataFrame({"cash": 0.0, "outside_investments": mean["Outside super"],
+                              "accumulation": mean["Super and pension"] - mean["Pension account"],
+                              "pension": mean["Pension account"]}, index=pd.DatetimeIndex(mean.index, name="Date"))
+        st.altair_chart(with_milestones(balances_chart(frame), marks), width="stretch")
+        st.caption("Average month-end balances of the group's paths by account, today's dollars (outside super combines "
+                   "cash and investments). Averages smooth timing: paths that ran out did so in different years, so "
+                   "the average falls gradually where each path fell sharply.")
+    annual = run.retirement_annual.loc[run.retirement_annual["Path"].isin(members)]
+    flows = [c for c in annual.columns if c.startswith("Flow: ")]
+    if flows:
+        yearly = annual.groupby("FY ending")[flows + ["Net change in wealth", "Added to outside investments"]].mean().reset_index()
+        long = yearly.melt("FY ending", value_vars=flows, var_name="Flow", value_name="AUD")
+        long["Flow"] = long["Flow"].str.replace("Flow: ", "", regex=False)
+        long = long.groupby("Flow").filter(lambda g: g["AUD"].abs().max() > 1e-6)
+        long["Period"] = long["FY ending"].map(period_label)
+        yearly["Period"] = yearly["FY ending"].map(period_label)
+        order = [f for f in FLOW_COLOURS if f in set(long["Flow"])]
+        x = alt.X("FY ending:Q", axis=fy_axis(yearly), scale=alt.Scale(
+            domain=[int(yearly["FY ending"].min()) - 0.6, int(yearly["FY ending"].max()) + 0.6], nice=False))
+        domain = flow_domain(long, "AUD", (yearly["Net change in wealth"], yearly["Added to outside investments"]))
+        bars = alt.Chart(long).mark_bar(size=16).encode(
+            x=x, y=alt.Y("sum(AUD):Q", title="Average per year, today's dollars", axis=alt.Axis(format="$,.0f"),
+                         scale=alt.Scale(domain=domain, nice=False)),
+            color=alt.Color("Flow:N", sort=order, scale=alt.Scale(domain=order, range=[FLOW_COLOURS[f] for f in order]),
+                            legend=alt.Legend(orient="bottom", title=None, columns=2, labelLimit=220)),
+            tooltip=[alt.Tooltip("Period:N", title="Year"), "Flow:N", alt.Tooltip("AUD:Q", title="Average", format="$,.0f")])
+        line = alt.Chart(yearly).mark_line(color="#19353a", strokeWidth=2, point=alt.OverlayMarkDef(color="#19353a", size=40)).encode(
+            x=x, y="Net change in wealth:Q", tooltip=[alt.Tooltip("Period:N", title="Year"),
+                                                     alt.Tooltip("Net change in wealth:Q", title="Average net change", format="$,.0f")])
+        zero = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(color="#5f6b73").encode(y="y:Q")
+        added = additions_layer(yearly.rename(columns={"Added to outside investments": "AUD"}), x)
+        layers = [bars, zero, line] + ([added] if added is not None else [])
+        st.subheader("Money in and out, averaged across the group")
+        st.altair_chart(with_milestones(alt.layer(*layers).properties(height=600), marks, "Position:Q"), width="stretch")
+        st.caption("Each bar is the average of that flow across the group's paths in that year, so the bars add up to the "
+                   "average net change in wealth (black line). The dashed teal line is the average added to outside "
+                   "investments from pay.")
+        born = date.fromisoformat(plan["person"]["date_of_birth"])
+        table = annual.groupby("FY ending")[[c for c in ("Wealth at 1 July", "Spending paid", "Shortfall", "Tax paid",
+                                                          "Age Pension", "Pension payments", "Withdrawal rate")
+                                             if c in annual]].mean().reset_index()
+        table.insert(0, "Year", table["FY ending"].map(period))
+        table.insert(1, "Age at 30 June", [age_on(born, date(int(y), 6, 30)) for y in table["FY ending"]])
+        if "Withdrawal rate" in table:
+            table["Withdrawal rate"] *= 100
+        st.subheader("Year by year, averaged")
+        st.dataframe(table.drop(columns="FY ending"), width="stretch", hide_index=True, height=fit(table),
+                     column_config={"Year": st.column_config.TextColumn("Year (1 July – 30 June)", pinned=True),
+                                    "Age at 30 June": st.column_config.NumberColumn(format="%d"),
+                                    "Withdrawal rate": percent_column("Withdrawal rate"),
+                                    **{c: money_column(c) for c in table.columns
+                                       if c not in ("Year", "Age at 30 June", "FY ending", "Withdrawal rate")}})
+        st.caption("Averages across the group's paths, today's dollars. Each path's daily ledger and event log are "
+                   "available by picking it on its own.")
 
 
 @st.fragment
@@ -1812,17 +1939,24 @@ def section_ledger(run):
     st.header("5 · One path in full: the daily ledger")
     st.markdown("Everything above summarises many paths. Here one path's daily ledger is shown in full, so you can "
                 "see each salary payment, sale, tax bill and pension payment that produced its result.")
-    ranked = {"Median ending wealth": run.representative_path,
-              "Poor (10th percentile ending wealth)": int(calculated.iloc[int(0.10 * (len(calculated) - 1))]["Path"]),
-              "Good (90th percentile ending wealth)": int(calculated.iloc[int(0.90 * (len(calculated) - 1))]["Path"]),
-              "Worst ending wealth": int(calculated.iloc[0]["Path"]), "Best ending wealth": int(calculated.iloc[-1]["Path"])}
-    options = [f"{label} · path {path}" for label, path in ranked.items()] + [f"Path {p}" for p in calculated["Path"].sort_values()]
-    picked = st.selectbox("Path to inspect", options, key=key("ledger_path"))
-    path = int(picked.rsplit(" ", 1)[1])
+    ranks = ending_percentiles(calculated)
+    choices = {f"Median ending wealth · path {run.representative_path}": run.representative_path}
+    for label, low, high in PATH_GROUPS:
+        members = group_members(calculated, low, high)
+        choices[f"Average of the {label.lower()} · {len(members)} path{'s' if len(members) != 1 else ''}"] = members
+    for _, row in calculated.iterrows():  # sorted from the worst ending wealth
+        choices[f"Path {int(row['Path'])} · {ordinal(ranks[row['Path']])} percentile"] = int(row["Path"])
+    picked = st.selectbox("Path to inspect", list(choices), key=key("ledger_path"))
     st.caption(f"The default is path {run.representative_path}: of the calculated paths, its ending wealth is closest "
                "to the median. The number is simply its position in the draw sequence. A median *ending* does not "
-               "make every year median; the path may have had a bad start and a strong finish. Pick other paths to "
-               "see how a poor or good market sequence plays out.")
+               "make every year median; the path may have had a bad start and a strong finish. The **averages** "
+               "combine every path in a group, ranked by ending wealth, month by month and year by year: the worst 5% "
+               "is what the bad outcomes typically look like, not one unlucky path. Single paths follow, from the "
+               "worst to the best, tagged with their ending-wealth percentile.")
+    if isinstance(choices[picked], list):
+        averaged_paths(run, choices[picked], picked.split(" · ")[0])
+        return
+    path = choices[picked]
     with st.spinner(f"Running the daily ledger for path {path}..."):
         result = selected_ledger(run, path)
     cpi = run.plan["assumptions"]["cpi_annual"]
@@ -1830,13 +1964,23 @@ def section_ledger(run):
     start = daily.index[0]
     marks = milestones(run.plan, daily.index[0].date(), daily.index[-1].date())
     drawdown = float((daily["total"] / daily["total"].cummax() - 1).min())
+    outcome = calculated.set_index("Path").loc[path]
+    w = st.columns(4)
+    w[0].metric("Wealth at start", compact(daily["total"].iloc[0]))
+    w[1].metric("Wealth at retirement", compact(outcome["Wealth at retirement"]),
+                help="Total wealth on your retirement date, today's dollars.")
+    w[2].metric("Wealth when super becomes accessible", compact(outcome.get("Wealth when super accessible", np.nan)),
+                help="Total wealth on the first day super can be withdrawn (preservation age and retirement), when that "
+                     "is after the start.")
+    w[3].metric(f"Wealth at {daily.index[-1].date()}", compact(daily["total"].iloc[-1]))
     a, b, c, d, e = st.columns(5)
-    a.metric("Wealth at start", compact(daily["total"].iloc[0]))
-    b.metric(f"Wealth at {daily.index[-1].date()}", compact(daily["total"].iloc[-1]))
+    a.metric("Ending wealth percentile", ordinal(ranks[path]),
+             help="Where this path's ending wealth ranks among calculated paths.")
+    b.metric("Age Pension received", compact(daily["age_pension"].sum()) if "age_pension" in daily else "–")
     c.metric("Spending shortfall", compact(daily["shortfall"].sum()))
-    d.metric("Tax (personal + fund)", compact(sum((x["assessment"].net_tax + x["assessment"].division_293_tax)
+    d.metric("Tax (personal, fund, Division 296)", compact(sum((x["assessment"].net_tax + x["assessment"].division_293_tax)
                                                   / year_deflator(int(x["financial_year"][:4]) + 1, start, cpi) for x in annual)
-                                              + daily["fund_tax"].sum()))
+                                              + daily["fund_tax"].sum() + daily["division_296"].sum()))
     e.metric("Largest fall in wealth", share(drawdown),
              help="Deepest fall of total wealth below its previous high on this path. Unlike a portfolio drawdown it "
                   "includes spending, so it keeps falling in retirement even in flat markets.")

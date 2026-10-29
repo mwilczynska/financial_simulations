@@ -360,3 +360,30 @@ def test_all_paths_chart_draws_a_spread_of_funded_paths_and_every_ruin_path():
     assert len(funded) == SHOWN_PATHS and depleted == list(range(0, 700, 50))
     # Spread evenly across ending wealth: the lowest and highest funded paths are both drawn.
     assert min(funded) == 1 and max(funded) == 699
+
+
+def test_path_groups_rank_by_ending_wealth_and_keep_at_least_one_path():
+    pytest.importorskip("streamlit")
+    import pandas as pd
+    from financial_simulations.ui.app import ending_percentiles, group_members, ordinal
+
+    calculated = pd.DataFrame({"Path": range(200), "Ending wealth": [float((p * 37) % 200) for p in range(200)]})
+    worst = calculated.sort_values("Ending wealth")["Path"].tolist()
+    assert group_members(calculated, 0.0, 0.05) == worst[:10]
+    assert group_members(calculated, 0.0, 0.001) == worst[:1]
+    assert group_members(calculated, 0.99, 1.0) == worst[-2:]
+    assert group_members(calculated, 0.45, 0.55) == worst[90:110]
+    ranks = ending_percentiles(calculated)
+    assert ranks[worst[0]] == pytest.approx(0.25) and ranks[worst[-1]] == pytest.approx(99.75)
+    assert [ordinal(v) for v in (0.25, 2, 11, 21, 52.6, 99.75)] == ["1st", "2nd", "11th", "21st", "53rd", "99th"]
+
+
+def test_run_keeps_each_paths_account_series_and_wealth_when_super_is_accessible(processed_fixture):
+    plan = quick_plan()
+    plan["market"]["retirement_paths"] = 3
+    run = run_plan(plan, None, market=load_plan_markets(plan["assets"], processed_fixture))
+    series = run.path_series
+    assert series["Path"].nunique() == 3 and {"Outside super", "Super and pension", "Pension account"} <= set(series)
+    total = series.groupby("Date")[["Outside super", "Super and pension"]].sum().sum(axis=1)
+    assert total.to_numpy() == pytest.approx(run.wealth_paths.groupby("Date")["Total wealth"].sum().to_numpy())
+    assert "Wealth when super accessible" in run.retirement_paths

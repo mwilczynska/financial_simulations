@@ -36,6 +36,7 @@ class PlanRun:
     account_bands: pd.DataFrame
     retirement_annual: pd.DataFrame
     wealth_paths: pd.DataFrame | None = None
+    path_series: pd.DataFrame | None = None  # every calculated path's month-end balances by account (today's dollars)
 
 
 def ledger_for_path(plan: dict, market, portfolios, path: int) -> LedgerResult:
@@ -84,6 +85,9 @@ def run_plan(plan: dict, output_root: str | Path | None = DEFAULT_ROOT, *, marke
                                  "Path": np.repeat([s[0]["Path"] for s in calculated], len(months)),
                                  "Status": np.repeat([s[0]["Status"] for s in calculated], len(months)),
                                  "Total wealth": np.concatenate([s[1]["Total wealth"] for s in calculated])})
+    path_series = pd.DataFrame({"Date": np.tile(months, len(calculated)),
+                                "Path": np.repeat([s[0]["Path"] for s in calculated], len(months)),
+                                **{name: np.concatenate([s[1][name] for s in calculated]) for name, _ in SERIES}})
     unsupported = len(outcome_frame) - len(complete)
     if unsupported:
         reasons = "; ".join(sorted(set(outcome_frame.loc[outcome_frame["Status"] == "unsupported", "Reason"])))
@@ -113,4 +117,4 @@ def run_plan(plan: dict, output_root: str | Path | None = DEFAULT_ROOT, *, marke
         write_plan_plots(folder, plan, market, portfolios, outcome_frame, retirement_bands, result)
         (folder / "manifest.json").write_text(json.dumps(manifest, indent=2, default=str) + "\n", encoding="utf-8", newline="\n")
     return PlanRun(plan, result, notes, folder, rules, market, portfolios, outcome_frame, retirement_bands, representative,
-                   account_bands, retirement_annual, wealth_paths)
+                   account_bands, retirement_annual, wealth_paths, path_series)
