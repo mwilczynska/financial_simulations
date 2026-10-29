@@ -1163,7 +1163,7 @@ does not cover (excluded, with the reason shown). Returns are the USD histories 
                + ("The axis is linear up to $1,000 and logarithmic above, so a very high upper tail does not flatten "
                   "the median. " if wide else "")
                + "Total wealth includes super that may not yet be accessible.")
-    if run.wealth_paths is not None:
+    if getattr(run, "wealth_paths", None) is not None:
         st.subheader("Wealth over time on every path")
         st.altair_chart(all_paths_chart(run.wealth_paths, marks), width="stretch")
         st.caption(f"Each faint grey line is one of the {len(calculated)} calculated paths' total wealth at each month end "
@@ -1452,6 +1452,12 @@ def results(plan):
     if run is None:
         st.info("Press Run plan to see your portfolios, their history and simulated futures, retirement outcomes "
                 "across many market paths, and any single path's daily ledger.")
+        return
+    if not hasattr(run, "wealth_paths"):  # the newest PlanRun field; an old server's modules lack it
+        # Streamlit reloads this page's code on change but not the simulation modules it imports.
+        st.error("The planner code was updated while this app was running, so these results came from the old code. "
+                 "Stop the app (Ctrl+C in its terminal) and start it again with `financial-simulations ui`, then "
+                 "press Run plan.")
         return
     if plan_to_json(valid) != plan_to_json(run.plan):
         st.warning("Inputs have changed since this run. Press Run plan to refresh the results.")
