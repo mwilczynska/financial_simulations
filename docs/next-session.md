@@ -13,7 +13,7 @@ single-person daily ledger for that income year. AUD FX and Australian inflation
 by the user to a later date. Keep the Stage 1 user-selected default portfolio:
 `USLCAP3x` 40%, `ITT3x` 20%, `GOLDPM2x` 20%, `COMM` 20%, annual rebalancing.
 The retirement planner's invented default uses that mix outside super and
-100% `GLSTOCK` inside super; both accounts rebalance annually by default (ADR 0018). Planner defaults are 1,000 portfolio paths and 100 ledger paths; depleted paths stay in results (ADR 0019). Division 296 is assessed on super distribution income (ADR 0028), so long horizons no longer exclude large-balance paths; realised fund gains are not yet in its earnings base.
+100% `GLSTOCK` inside super; both accounts rebalance annually by default (ADR 0018). Planner defaults are 1,000 portfolio paths and 100 ledger paths; depleted paths stay in results (ADR 0019). Division 296 is assessed (ADR 0028), with super funds realising an assumed 20% of accumulated gains a year (ADR 0029), so long horizons no longer exclude large-balance paths.
 Generate PNGs directly from Python; the retirement planner also has
 interactive charts. Never create PDFs.
 

@@ -34,6 +34,7 @@ Decision records preserve why Financial Simulations makes a material modelling o
 | [0026](0026-results-in-todays-dollars.md) | 2026-10-29 | Accepted; implemented and locally validated | Results in today's dollars, with an Inflation flow; ledger, event log and history stay nominal |
 | [0027](0027-age-pension-and-sapto.md) | 2026-10-29 | Accepted; implemented and locally validated | Single Age Pension (assets and income tests, deeming, Work Bonus, tax), SAPTO and senior Medicare thresholds; runs pass Age Pension age |
 | [0028](0028-division-296-tax.md) | 2026-10-29 | Accepted; implemented and locally validated | Division 296 tax assessed (enacted formula, ATO examples) on super distribution income and released from super, instead of rejecting balances above $3m |
+| [0029](0029-super-realised-gains.md) | 2026-10-29 | Accepted; implemented and locally validated | Super funds realise an assumed share (default 20%) of accumulated gains each year: taxed in accumulation and counted for Division 296 with the 0.2-1.0 transitional factor |
 
 ## When to write a record
 

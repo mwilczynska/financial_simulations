@@ -69,7 +69,9 @@ Option 3:
   plan had no unsupported paths, and 18 paid Division 296.
 - The tax shown is a **lower bound**. Real funds realise gains (from
   2029-30, at full value for large APRA funds), so their earnings, and the
-  tax, are higher than distribution income alone.
+  tax, are higher than distribution income alone. (Addressed the same day by
+  [ADR 0029](0029-super-realised-gains.md), with an assumed realisation
+  share.)
 - Not modelled:
   - defined benefit interests;
   - small-fund (SMSF) cost-base elections;

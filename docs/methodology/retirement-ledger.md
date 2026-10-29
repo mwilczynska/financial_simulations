@@ -133,13 +133,17 @@ Asset unit prices start at 1. On each day:
       super, and concessional contributions as low-tax contributions.
     - Schedule the net tax plus Division 293 tax for settlement (default
       31 October).
-    - Charge accumulation fund tax: 15% x (income + credits) − credits,
-      selling units or crediting them. Credit retirement-phase franking
-      credits to the pension.
+    - Realise `super_realised_gains` of each super account's unrealised gain
+      (value less its aggregate cost base, when positive) and add it to the
+      cost base ([ADR 0029](../decisions/0029-super-realised-gains.md)).
+    - Charge accumulation fund tax: 15% x (income + credits + realised gain x
+      2/3) − credits, selling units or crediting them. Credit retirement-phase
+      franking credits to the pension; pension gains are exempt.
     - Update unused concessional cap amounts and the TSB at 30 June.
-    - Assess Division 296: earnings are the year's super distributions and
-      franking credits, in accumulation and pension (funds realise no gains
-      in this ledger, and contributions are excluded). The reference balance
+    - Assess Division 296: earnings are the year's super distributions,
+      franking credits and realised gains after the one-third discount, in
+      accumulation and pension, with the gains scaled by the transitional
+      factor (0.2 in 2026-27 to 1.0 from 2030-31). Contributions are excluded. The reference balance
       is the prior and current 30 June TSB
       ([ADR 0028](../decisions/0028-division-296-tax.md)). The tax is
       released from super, accumulation first, on 30 September 15 months
@@ -211,10 +215,11 @@ the rule-set hash and assumptions) and `ledger.png` directly from Python.
   capital-gain distributions are not modelled.
 - **People and policies.** One person only; the single Age Pension
   ([age-pension.md](age-pension.md)).
-- **Division 296 earnings.** Funds realise no capital gains here, so
-  Division 296 is charged on distributions and franking credits only. Real
-  funds realise gains through turnover and member drawdowns, so the tax shown
-  is a lower bound.
+- **Super realised gains.** A fund's realised gains depend on its trading,
+  which is not published. The ledger uses one assumed annual realisation
+  share (plan default 20%) on an aggregate cost base. The opening balance is
+  taken to carry no accrued gain. Unrealised losses are not realised, so
+  there are no fund capital losses.
 - **Excess regimes.** Excess contributions, excess transfer balances and
   early access stop the run by design; tax that cannot be funded is recorded
   as unpaid.

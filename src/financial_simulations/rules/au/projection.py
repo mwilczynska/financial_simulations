@@ -138,6 +138,9 @@ def project_rulesets(base: RuleSet, through: str, assumptions: ProjectionAssumpt
             "age_pension_income_test": projected("age_pension_income_test", income_test,
                                                  "Free area CPI-indexed, rounded to $2 a fortnight; taper and Work Bonus unchanged."),
             "deeming": projected("deeming", deeming, "Threshold CPI-indexed, rounded to $200; deeming rates held at current values."),
+            "division_296_cgt_factor": Parameter("division_296_cgt_factor", {2027: 0.4, 2028: 0.6, 2029: 0.8}.get(year, 1.0),
+                                                 "enacted", "ato-div296-apra",
+                                                 "Prescribed Division 296 CGT factor: 0.4, 0.6, 0.8 to 2029-30, then 1.0."),
         }
         previous = previous.derive(label, changes, SOURCES)
         rulesets[label] = previous

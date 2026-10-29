@@ -14,8 +14,8 @@ Scope and conventions (see docs/methodology/retirement-ledger.md):
   rebalances, which reset each account to its weights at pre-return values on
   the first return observation of each calendar year. Outside super a
   rebalance sells overweight parcels (oldest first) and realises CGT; inside
-  super it is a unit switch. Funds are assumed not to realise gains (no fund
-  CGT), so super rebalancing is untaxed.
+  super it is an untaxed unit switch, and the fund's own trading is the
+  realised-gains assumption below.
 * Salary is paid gross. Income tax is assessed at 30 June and settled on a
   configurable later date. With ``payg_withholding`` each payday withholds a
   26th of the estimated tax on a full year's salary, and the settlement pays
@@ -29,10 +29,17 @@ Scope and conventions (see docs/methodology/retirement-ledger.md):
   assessable income, and each income year in which the person reaches Age
   Pension age is assessed with SAPTO. Without it, a ledger that reaches Age
   Pension age stops with ``UnsupportedRule``.
+* Super funds realise ``super_realised_gains`` of each account's
+  accumulated unrealised gain every 30 June (an assumed turnover; 0 realises
+  nothing). Each account tracks an aggregate cost base: purchases add to it,
+  sales and transfers move it pro rata, and realised gains are added to it.
+  Accumulation gains are taxed at 15% after the one-third complying-fund
+  discount; pension-phase gains are exempt.
 * Division 296 tax is assessed each 30 June on the year's super earnings
-  (distributions and franking credits in accumulation and pension; funds
-  realise no gains here, and contributions are excluded) when the total super
-  balance is above the large balance threshold. It is released from super on
+  (distributions, franking credits and realised gains after the one-third
+  discount, in accumulation and pension; the gains scaled by the transitional
+  factor; contributions excluded) when the total super balance is above the
+  large balance threshold. It is released from super on
   30 September 15 months after the income year ends (30 September 2028 for
   2026-27): an assumed date, as the ATO requests fund reports from the April
   after the following 30 June and tax is due 84 days after its notice.
@@ -50,7 +57,8 @@ from financial_simulations.rules.au.age_pension import apply_work_bonus, fortnig
 from financial_simulations.rules.au.parameters import RuleSet, UnsupportedRule, financial_year_of
 from financial_simulations.rules.au.superannuation import (
     TransferBalanceAccount, access_date, add_business_days, age_on, apply_concessional, apply_non_concessional, birthday,
-    concessional_cap, division_296_tax, minimum_pension_payment, require_tax_free_benefits, super_guarantee)
+    accumulation_earnings_tax, concessional_cap, division_296_tax, minimum_pension_payment, require_tax_free_benefits,
+    super_guarantee)
 from financial_simulations.rules.au.tax import CapitalGainEvent, IncomeYear, assess, post_reform_gain
 
 
@@ -234,6 +242,7 @@ class LedgerScenario:
     retirement_spending: float | None = None  # annual spending from the retirement date (same base year), if different
     spending_rule: SpendingRule = field(default_factory=SpendingRule)
     age_pension: bool = False  # pay the means-tested Age Pension and assess SAPTO from Age Pension age
+    super_realised_gains: float = 0.0  # share of each super account's unrealised gain the fund realises each 30 June
 
 
 @dataclass
@@ -311,6 +320,10 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
     state = _State(_money(scenario.outside_cash, "Outside cash"), list(scenario.outside_parcels), dict(opening_outside),
                    {a: float(scenario.super_units.get(a, 0.0)) for a in assets}, {a: 0.0 for a in assets},
                    {a: 1.0 for a in assets})
+    if not 0 <= scenario.super_realised_gains <= 1:
+        raise ValueError("The share of super gains realised each year must be between 0 and 1.")
+    # Aggregate cost base of each super account; the opening balance is taken to carry no accrued gain.
+    super_cost = {"accumulation": _value(state.super_acc, state.prices), "pension": 0.0}
     events, rows, annual = [], [], []
     paydays = set()
     if scenario.employment:
@@ -377,9 +390,14 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
             state.pension_minimum = minimum_pension_payment(pension_value, person.born, rules)
             state.pension_paid = 0.0
 
+    def super_account(units_map):
+        return "accumulation" if units_map is state.super_acc else "pension" if units_map is state.super_pen else None
+
     def buy(units_map, weights, amount, account):
         if weights is None:
             raise ValueError(f"Supply {account} weights: there are no opening holdings to follow.")
+        if super_account(units_map):
+            super_cost[super_account(units_map)] += amount
         for asset, weight in weights.items():
             if weight > 0:
                 units_map[asset] = units_map.get(asset, 0.0) + amount * weight / state.prices[asset]
@@ -471,6 +489,8 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
     def sell_units(units_map, amount):
         value = _value(units_map, state.prices)
         amount = min(amount, value)
+        if amount > 0 and super_account(units_map):
+            super_cost[super_account(units_map)] *= 1 - amount / value
         if amount > 0:
             for asset in units_map:
                 units_map[asset] *= 1 - amount / value
@@ -716,6 +736,9 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
                 raise ValueError("Pension transfer exceeds the accumulation balance.")
             state.tba = account.credit(amount)
             fraction = amount / balance if balance > 0 else 0.0
+            moved_cost = super_cost["accumulation"] * fraction
+            super_cost["accumulation"] -= moved_cost
+            super_cost["pension"] += moved_cost
             for asset in assets:
                 moved = state.super_acc[asset] * fraction
                 state.super_acc[asset] -= moved
@@ -802,7 +825,17 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
             # Withholding already paid counts against the assessment; a negative balance is a refund.
             state.liabilities.append({"due": due, "amount": assessment.net_tax + assessment.division_293_tax - fy["withheld"],
                                       "financial_year": rules.financial_year})
-            accumulation_tax = rules["fund_earnings_tax_rate"] * (fy["acc_income"] + fy["acc_credits"]) - fy["acc_credits"]
+            # The fund realises part of each account's accumulated gain; the realised part joins the cost base.
+            gains = {}
+            for account, units_map in (("accumulation", state.super_acc), ("pension", state.super_pen)):
+                unrealised = _value(units_map, state.prices) - super_cost[account]
+                gains[account] = scenario.super_realised_gains * unrealised if unrealised > 0 else 0.0
+                super_cost[account] += gains[account]
+            if gains["accumulation"] + gains["pension"] > 0:
+                log("super_realised_gains", gains["accumulation"] + gains["pension"], "super",
+                    accumulation=gains["accumulation"], pension=gains["pension"])
+            accumulation_tax = accumulation_earnings_tax(fy["acc_income"], gains["accumulation"], 0.0, fy["acc_credits"],
+                                                         rules)["tax"]
             if accumulation_tax > 0:
                 flows["fund_tax"] += sell_units(state.super_acc, accumulation_tax)
             elif accumulation_tax < 0 and any(state.super_acc.values()):
@@ -817,9 +850,11 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
                 raise ArithmeticError("Pension minimum was not met by 30 June.")
             unused = apply_concessional(fy["concessional"], fy["cap"], unused, rules)
             tsb_end = _value(state.super_acc, state.prices) + _value(state.super_pen, state.prices)
-            # Division 296 fund earnings: fund taxable income less contributions plus exempt pension income. With no
-            # realised fund gains, that is the year's super distributions and franking credits.
-            earnings = fy["acc_income"] + fy["acc_credits"] + fy["pen_income"] + fy["pen_credits"]
+            # Division 296 fund earnings: fund taxable income less contributions plus exempt pension income, that is
+            # distributions, franking credits and the discounted net capital gain, which the transitional factor scales.
+            net_gain = (gains["accumulation"] + gains["pension"]) * (1 - rules["cgt_discount_complying_fund"])
+            earnings = (fy["acc_income"] + fy["acc_credits"] + fy["pen_income"] + fy["pen_credits"]
+                        + net_gain * rules["division_296_cgt_factor"])
             div296 = division_296_tax(tsb_prior, tsb_end, earnings, rules)
             if div296.tax > 0:
                 state.division_296.append({"due": date(rules.end.year + 1, 9, 30), "amount": div296.tax,
@@ -839,6 +874,7 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
                            "age_pension": fy["age_pension"], "age_pension_taxable": fy["age_pension_taxable"],
                            "sapto": assessment.sapto, "division_296_tax": div296.tax,
                            "division_296_earnings": earnings, "division_296_reference_balance": div296.reference_balance,
+                           "super_realised_gains": gains["accumulation"] + gains["pension"],
                            "transfer_balance": state.tba.balance if state.tba else None})
             log("assessment", assessment.net_tax, "outside", financial_year=rules.financial_year,
                 taxable_income=assessment.taxable_income, division_293=assessment.division_293_tax)

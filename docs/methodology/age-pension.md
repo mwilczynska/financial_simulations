@@ -195,8 +195,8 @@ no unsupported paths.
 - Daily revaluation of assets, as described above.
 - 2026-27 values apply from 1 July, although rates for 1 July to 19
   September 2026 were lower (by under 3%).
-- Division 296 is assessed on distribution income only, a lower bound (ADR
-  0028).
+- Division 296 depends on the assumed share of super gains the fund
+  realises each year (ADR 0029).
 
 ## References
 

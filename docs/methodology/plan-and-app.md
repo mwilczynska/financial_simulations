@@ -76,7 +76,7 @@ Schema version 2 uses:
 | `[person]` and `[employment]` | Birth date, retirement age, cover, salary, `salary_sacrifice_per_year`, `salary_sacrifice_percent` (fraction of salary, added to the dollar amount), payday |
 | `assets` | Selected local ticker codes |
 | `[outside]` | Cash, cash buffer, `cash_interest`, `investment_balance`, `opening_cost_base`, `opening_acquired`, `weights`, `rebalance`, `saving` (`surplus` or `fixed`), `contribution_per_year`, `contribution_indexed` |
-| `[super]` | Balance, prior 30 June total super balance, `weights`, `rebalance` |
+| `[super]` | Balance, prior 30 June total super balance, `weights`, `rebalance`, `realised_gains` (share of the fund's unrealised gains realised each year; default 0.2, an assumption; ADR 0029) |
 | `[spending]`, `[pension]`, `[assumptions]` | `annual` (today's dollars), `real_change` (a year, on top of CPI; default 0), `retirement` (`same` default, `amount` with `retirement_annual`, or `percent` with `retirement_percent` of total wealth on the retirement date), `rule` (`fixed` default, `guyton_klinger`, `vanguard`, `percent`; non-fixed rules require `retirement = "percent"`), `minimum`, `maximum` (today's dollars, CPI-indexed), `guardrail_band`, `guardrail_step`, `ceiling`, `floor`; pension transfer; projected-rule assumptions and `planning_age`. A legacy nominal `annual_growth` is read as `real_change = (1 + annual_growth) / (1 + cpi) - 1` (ADR 0025) |
 | `[market]` | Portfolio path count, retirement path count, seed, mean block length |
 
@@ -495,8 +495,9 @@ proxy, zero franking, aggregate opening tax position and AUD return proxy
 limit tax interpretation. Division 296 used to make every path with super
 above $3 million unsupported: 37 of 40 paths in a 34-year check. Since ADR
 0028 it is assessed, and a 40-path check of a 50-year plan had no
-unsupported paths. Because funds realise no gains in the ledger, the
-Division 296 tax charged is a lower bound.
+unsupported paths. Its earnings include the fund's realised gains under the
+`super.realised_gains` assumption (ADR 0029), so the tax depends on that
+assumption.
 
 References: processed source data and provenance in the sibling
 `financial_datasets` project, identified by run-manifest hashes;

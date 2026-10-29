@@ -148,7 +148,7 @@ def normalize_plan(raw: dict) -> dict:
                               "first_payday"},
                "outside": {"cash", "cash_buffer", "investment_balance", "opening_cost_base", "opening_acquired", "weights",
                            "rebalance", "saving", "contribution_per_year", "contribution_indexed", "cash_interest"},
-               "super": {"balance", "weights", "rebalance", "total_super_balance_prior_30_june"},
+               "super": {"balance", "weights", "rebalance", "total_super_balance_prior_30_june", "realised_gains"},
                "spending": {"annual", "annual_growth", "real_change", "retirement", "retirement_annual",
                             "retirement_percent", "rule", "minimum", "maximum", "guardrail_band", "guardrail_step",
                             "ceiling", "floor"},
@@ -213,7 +213,9 @@ def normalize_plan(raw: dict) -> dict:
                      "weights": c.weights(super_, "super", names),
                      "rebalance": c.choice(super_, "rebalance", "super", "annual", REBALANCE),
                      "total_super_balance_prior_30_june": c.number(super_, "total_super_balance_prior_30_june", "super",
-                                                                   super_.get("balance", 0.0), low=0, high=1e9)}
+                                                                   super_.get("balance", 0.0), low=0, high=1e9),
+                     # Share of each super account's accumulated gain the fund realises each year (an assumption).
+                     "realised_gains": c.number(super_, "realised_gains", "super", 0.2, low=0, high=1)}
     if plan["super"]["balance"] > 0 and not plan["super"]["weights"]:
         c.problems.append("super.weights: required when the super balance is positive")
     # Spending is in today's dollars and rises with CPI, plus an optional real change a year. Files written before
@@ -392,7 +394,7 @@ def build_inputs(plan: dict, *, market=None, returns=None):
                                          else None),
         outside_contribution_growth=plan["assumptions"]["cpi_annual"] if plan["outside"]["contribution_indexed"] else 0.0,
         stop_investing_at_retirement=True, cash_interest=plan["outside"]["cash_interest"], payg_withholding=True,
-        age_pension=True)
+        age_pension=True, super_realised_gains=plan["super"]["realised_gains"])
     years = project_rulesets(load_ruleset("2026-27"), financial_year_of(end),
                              ProjectionAssumptions(plan["assumptions"]["cpi_annual"], plan["assumptions"]["wage_growth_annual"]))
     return path, scenario, years, notes

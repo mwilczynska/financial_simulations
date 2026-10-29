@@ -353,7 +353,16 @@ def inputs_investments(plan):
                 "Total super balance at last 30 June", plan["super"]["total_super_balance_prior_30_june"], "tsb")
     plan["super"]["weights"] = weights_editor("Inside-super portfolio", plan["super"]["weights"], names, "supw")
     plan["super"]["rebalance"] = rebalance_choice(plan["super"]["rebalance"], "super_rebalance",
-                                                  "Inside super the switch is modelled without tax (funds are assumed not to realise gains).")
+                                                  "Inside super the switch itself is untaxed; the fund's own trading is "
+                                                  "covered by the realised-gains assumption below.")
+    plan["super"]["realised_gains"] = percent(
+        "Share of the fund's unrealised gains realised each year %", plan["super"]["realised_gains"], "super_realised",
+        low=0, high=100, step=5.0,
+        help="Super funds trade, so part of the growth in your balance is realised as capital gains each year. In "
+             "accumulation these are taxed at 15% after the one-third discount (10% effective); in the pension they are "
+             "tax-free. Both count towards Division 296 above a 3 million dollar balance. There is no published turnover "
+             "figure for funds: 20% is an assumption (gains held about five years on average). 0% realises nothing "
+             "and gives the lowest tax; 100% realises every year's gain.")
 
 
 RULE_LABELS = {"fixed": "Fixed: the same buying power every year (default)", "guyton_klinger": "Guyton–Klinger guardrails",
@@ -1611,8 +1620,9 @@ the same rules:
 5. **Tax.** Each 30 June personal tax is assessed (brackets, Medicare levy and surcharge, LITO, CGT discount,
    Division 293, the 2027 CGT reform) and paid on 31 October. Accumulation earnings are taxed at 15%; pension
    earnings are exempt. Above a 3 million dollar total super balance, Division 296 adds 15% on the share of the
-   year's super earnings above the threshold (10% more above 10 million), released from super. Funds here
-   realise no gains, so it is charged on distribution income only: a lower bound.
+   year's super earnings above the threshold (10% more above 10 million), released from super. The fund is
+   assumed to realise part of its accumulated gains each year (set on the Investments tab): those gains are taxed
+   at 10% effective in accumulation and count towards Division 296 (scaled by 0.2 rising to 1 from 2030-31).
 6. **Pension.** At the chosen age the accumulation balance moves into an account-based pension, up to the
    transfer balance cap; the age-based minimum is paid monthly.
 7. **Age Pension.** From a fortnight after age 67, the single Age Pension is worked out each fortnight from the
@@ -1646,8 +1656,8 @@ does not cover (excluded, with the reason shown). Returns are the USD histories 
     if (calculated["Division 296 tax"] > 0).any():
         d.metric("Paths paying Division 296", share(float((calculated["Division 296 tax"] > 0).mean())),
                  help="Share of paths whose total super balance passed the large balance threshold (3 million "
-                      "dollars, CPI-indexed) in a year with super earnings. The tax is a lower bound: funds here "
-                      "realise no capital gains.")
+                      "dollars, CPI-indexed) in a year with super earnings. Earnings include the realised gains "
+                      f"assumed on the Investments tab ({plan['super']['realised_gains']:.0%} a year).")
     if unsupported:
         reasons = paths.loc[paths["Status"] == "unsupported", "Reason"].value_counts()
         st.warning("Unsupported paths are excluded, so the shares above are conditional on the others: "

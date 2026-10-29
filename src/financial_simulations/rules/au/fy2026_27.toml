@@ -199,6 +199,12 @@ title = "Income tests: rebate income (ATO)"
 url = "https://www.ato.gov.au/individuals-and-families/income-deductions-offsets-and-records/income-tests"
 
 [[sources]]
+id = "ato-div296-apra"
+title = "About Division 296 tax for APRA funds (ATO): CGT adjustment factors"
+url = "https://www.ato.gov.au/tax-and-super-professionals/for-superannuation-professionals/apra-regulated-funds/managing-member-benefits/taxation-of-member-super-benefits/about-division-296-tax-for-apra-funds"
+page_updated = "2026-06-29"
+
+[[sources]]
 id = "ato-ecpi"
 title = "Exempt current pension income (ATO)"
 url = "https://www.ato.gov.au/individuals-and-families/super-for-individuals-and-families/self-managed-super-funds-smsf/smsf-administration-and-reporting/exempt-current-pension-income"
@@ -387,6 +393,12 @@ value = { large_balance = 3000000, very_large_balance = 10000000, rate = 0.15, a
 status = "enacted"
 source = "ato-div296-thresholds"
 note = "From 1 July 2026 (Act No. 8, 2026). 15% on total super earnings x the percentage of the TSB reference amount over the large threshold, plus 10% x the percentage over the very large threshold (each rounded to 2 decimal places); nil if earnings are not above nil. The reference amount is the greater of the TSB just before the year and at its end, except in 2026-27 (end only). Implemented by superannuation.division_296_tax; see ato-div296-calculation."
+
+[parameters.division_296_cgt_factor]
+value = 0.2
+status = "enacted"
+source = "ato-div296-apra"
+note = "Prescribed factor applied to a complying fund's net capital gain when working out Division 296 fund earnings (funds other than small funds): 0.2 in 2026-27, 0.4, 0.6 and 0.8 to 2029-30, then no adjustment (1.0)."
 
 [parameters.age_pension_age]
 value = 67

@@ -500,3 +500,26 @@ def test_division_296_taxes_super_earnings_above_3m_and_is_released_from_super()
     small = run_ledger(market(), scenario_with(Person("1985-01-01"), super_units={"GL": 2_000_000},
                                                income={"GL": AssetIncome(0.04)}), YEARS)
     assert small.annual[0]["division_296_tax"] == 0
+
+
+def test_super_funds_realise_a_share_of_gains_taxed_in_accumulation_and_counted_for_division_296():
+    from financial_simulations.rules.au.projection import ProjectionAssumptions, project_rulesets
+
+    years = project_rulesets(RULES, "2027-28", ProjectionAssumptions(0.025, 0.035))
+    path = market(end="2028-06-30", returns=0.0004)  # about 10% a year, all price growth
+    base = dict(super_units={"GL": 4_000_000}, tsb_prior_30_june=4_000_000)
+    none = run_ledger(path, scenario_with(Person("1985-01-01"), **base), years)
+    some = run_ledger(path, scenario_with(Person("1985-01-01"), super_realised_gains=0.25, **base), years)
+    first = some.annual[0]
+    growth = none.annual[0]["total_super_balance_30_june"] - 4_000_000
+    # A quarter of the year's unrealised gain is realised; fund tax is 15% after the one-third discount.
+    assert first["super_realised_gains"] == pytest.approx(0.25 * growth, rel=1e-6)
+    assert first["accumulation_tax"] == pytest.approx(0.15 * (2 / 3) * first["super_realised_gains"], rel=1e-6)
+    # Division 296 earnings: the discounted gain scaled by the 2026-27 transitional factor of 0.2.
+    assert first["division_296_earnings"] == pytest.approx(first["super_realised_gains"] * (2 / 3) * 0.2, rel=1e-6)
+    assert none.annual[0]["division_296_tax"] == 0 and first["division_296_tax"] > 0
+    # The realised part joins the cost base: the next year realises a quarter of the remaining and new gain only.
+    second = some.annual[1]
+    assert second["super_realised_gains"] < 0.25 * (second["total_super_balance_30_june"] - 4_000_000)
+    with pytest.raises(ValueError, match="between 0 and 1"):
+        run_ledger(path, scenario_with(Person("1985-01-01"), super_realised_gains=1.5, **base), years)
