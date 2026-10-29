@@ -77,7 +77,7 @@ Schema version 2 uses:
 | `assets` | Selected local ticker codes |
 | `[outside]` | Cash, cash buffer, `cash_interest`, `investment_balance`, `opening_cost_base`, `opening_acquired`, `weights`, `rebalance`, `saving` (`surplus` or `fixed`), `contribution_per_year`, `contribution_indexed` |
 | `[super]` | Balance, prior 30 June total super balance, `weights`, `rebalance` |
-| `[spending]`, `[pension]`, `[assumptions]` | `annual` (before retirement), `retirement_annual` (from the retirement date; defaults to `annual`), `annual_growth`, `rule` (`fixed` default, `guyton_klinger`, `vanguard`), `minimum`, `guardrail_band`, `guardrail_step`, `ceiling`, `floor`; pension transfer; projected-rule assumptions and `planning_age` |
+| `[spending]`, `[pension]`, `[assumptions]` | `annual` (today's dollars), `real_change` (a year, on top of CPI; default 0), `retirement` (`same` default, `amount` with `retirement_annual`, or `percent` with `retirement_percent` of total wealth on the retirement date), `rule` (`fixed` default, `guyton_klinger`, `vanguard`, `percent`; non-fixed rules require `retirement = "percent"`), `minimum`, `maximum` (today's dollars, CPI-indexed), `guardrail_band`, `guardrail_step`, `ceiling`, `floor`; pension transfer; projected-rule assumptions and `planning_age`. A legacy nominal `annual_growth` is read as `real_change = (1 + annual_growth) / (1 + cpi) - 1` (ADR 0025) |
 | `[market]` | Portfolio path count, retirement path count, seed, mean block length |
 
 `outside.weights` and `super.weights` each sum to one. They represent the
@@ -173,7 +173,7 @@ The **rate that lasts to the planning age** (`Sustainable withdrawal rate`)
 is the largest first-year withdrawal the path could fund, as a fraction of
 the portfolio's value at the start of the window. Withdrawals are paid
 monthly at each month end, one twelfth of the annual amount. The annual
-amount rises by the plan's spending growth every 12 months, and the
+amount rises by the plan's spending growth, `(1 + CPI)(1 + real_change) - 1`, every 12 months, and the
 portfolio must not run out before the end. Let
 `G_k` be the growth factor from retirement to the `k`-th month end.
 Proportional sales leave each later month's growth factor unchanged, so
@@ -270,13 +270,14 @@ browser download sit in an expander.
 are nominal and which are adjusted for inflation. Everything is in nominal
 dollars unless it says "today's dollars".
 
-- Spending grows by its own growth rate.
+- Spending is entered in today's dollars and rises with CPI, plus an
+  optional real change (ADR 0025).
 - Salary and salary sacrifice rise each 1 July by the wage-growth assumption
   when `employment.salary_indexed` is true (the default; ADR 0024). Otherwise
   they stay constant in nominal dollars.
 - Fixed outside additions are indexed only when that option is ticked.
 - Rule thresholds are projected with CPI and wages.
-- Withdrawal rates rise with spending growth; the perpetual rate keeps the
+- Withdrawal rates rise with spending (CPI plus any real change); the perpetual rate keeps the
   CPI-grown value.
 
 **Block length.** The Assumptions tab explains the average block length in

@@ -141,16 +141,25 @@ class Pension:
 
 @dataclass(frozen=True)
 class SpendingRule:
-    """How retirement spending responds to the portfolio, reviewed each 1 July from retirement.
+    """How retirement spending is set and how it responds to the portfolio.
 
-    ``fixed``: the scheduled dollar amount (first-year dollars grown at the spending growth rate), whatever markets do.
-    ``guyton_klinger``: Guyton and Klinger (2006) guardrails on the withdrawal rate (spending / total wealth on 1 July).
-    The first review sets the starting rate. Later reviews skip that year's growth step after a losing year if the
-    rate is above the start, then cut spending by ``step`` if the rate is more than ``band`` above the start, or raise
-    it by ``step`` if more than ``band`` below.
-    ``vanguard``: Vanguard's dynamic spending rule. Each year aims for the starting rate times current wealth, but a
-    change from last year's amount (after the spending growth step) is limited to ``+ceiling`` and ``-floor``.
-    ``minimum`` (first-year dollars, grown like spending) is a floor no rule cuts below; 0 means none.
+    ``start_rate``, when given, sets retirement spending on the first spending date on or after the retirement date
+    to ``start_rate`` times total wealth that day (the previous close). The scheduled amount then grows at the spending
+    growth rate from there. None keeps the dollar schedule and, for a rule, measures the starting rate on the first
+    1 July review instead.
+
+    Each 1 July after retirement a rule reviews spending against total wealth:
+
+    ``fixed``: no review; the scheduled amount is paid whatever markets do.
+    ``guyton_klinger``: Guyton and Klinger (2006) guardrails on the withdrawal rate (spending / total wealth). Skip
+    that year's growth step after a losing year if the rate is above the start, then cut spending by ``step`` if the
+    rate is more than ``band`` above the start, or raise it by ``step`` if more than ``band`` below.
+    ``vanguard``: Vanguard's dynamic spending rule. Aim for the starting rate times current wealth, but limit the
+    change from last year's amount (after the spending growth step) to ``+ceiling`` and ``-floor``.
+    ``percent``: spend the starting rate times current wealth each year.
+
+    ``minimum`` and ``maximum`` (opening-year dollars, grown at ``bound_growth``, or the spending growth when None)
+    bound every rule's amount; 0 means none. The minimum wins if they cross.
     """
 
     kind: str = "fixed"
@@ -159,14 +168,20 @@ class SpendingRule:
     ceiling: float = 0.05
     floor: float = 0.025
     minimum: float = 0.0
+    maximum: float = 0.0
+    start_rate: float | None = None
+    bound_growth: float | None = None
 
     def __post_init__(self):
-        if self.kind not in ("fixed", "guyton_klinger", "vanguard"):
-            raise ValueError("Spending rule must be fixed, guyton_klinger or vanguard.")
+        if self.kind not in ("fixed", "guyton_klinger", "vanguard", "percent"):
+            raise ValueError("Spending rule must be fixed, guyton_klinger, vanguard or percent.")
         for name in ("band", "step", "ceiling", "floor"):
             if not 0 <= getattr(self, name) < 1:
                 raise ValueError(f"Spending rule {name} must be a fraction between 0 and 1.")
+        if self.start_rate is not None and not 0 < self.start_rate < 1:
+            raise ValueError("Starting withdrawal rate must be a fraction between 0 and 1.")
         _money(self.minimum, "Minimum spending")
+        _money(self.maximum, "Maximum spending")
 
 
 @dataclass(frozen=True)
@@ -456,15 +471,53 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
 
     rule = scenario.spending_rule
     rule_state = {"factor": 1.0, "rate0": None, "previous": None, "fy_pnl": 0.0, "fy_open": None}
+    bound_growth = scenario.spending_growth if rule.bound_growth is None else rule.bound_growth
+
+    def scheduled_retirement(day):
+        base = scenario.retirement_spending if scenario.retirement_spending is not None else scenario.annual_spending
+        return base * (1 + scenario.spending_growth) ** _years_since(start, day)
+
+    def bound(day, action):
+        """Hold the rule's amount between the maximum and the minimum (the minimum wins)."""
+        scheduled = scheduled_retirement(day)
+        grown = (1 + bound_growth) ** _years_since(start, day)
+        if rule.maximum and scheduled * rule_state["factor"] > rule.maximum * grown:
+            rule_state["factor"] = rule.maximum * grown / scheduled
+            action += "; held at the maximum"
+        if scheduled * rule_state["factor"] < rule.minimum * grown:
+            rule_state["factor"] = rule.minimum * grown / scheduled
+            action += "; held at the minimum"
+        return action
+
+    def record_rule(day, wealth, action):
+        rule_state["previous"] = scheduled_retirement(day) * rule_state["factor"]
+        state.fy["rule_amount"] = rule_state["previous"]
+        state.fy["rule_rate"] = rule_state["previous"] / wealth
+        log("spending_rule", rule_state["previous"], "outside", rule=rule.kind, action=action, wealth=wealth,
+            withdrawal_rate=rule_state["previous"] / wealth, starting_rate=rule_state["rate0"])
+
+    def begin_retirement(day, wealth):
+        """Set retirement spending to the starting rate times wealth on the first spending date once retired."""
+        scheduled = scheduled_retirement(day)
+        if rule.start_rate is None or rule_state["rate0"] is not None or scheduled <= 0 or not wealth or wealth <= TOLERANCE:
+            return
+        rule_state["rate0"] = rule.start_rate
+        rule_state["factor"] = rule.start_rate * wealth / scheduled
+        record_rule(day, wealth, bound(day, f"start at {rule.start_rate:.2%} of wealth") if rule.kind != "fixed"
+                    else f"start at {rule.start_rate:.2%} of wealth")
 
     def review_spending(day, wealth):
         """Apply the spending rule on 1 July once retired; spending scheduled from today uses the new factor."""
         last_return = rule_state["fy_pnl"] / rule_state["fy_open"] if rule_state["fy_open"] else 0.0
         rule_state["fy_pnl"], rule_state["fy_open"] = 0.0, wealth
-        if rule.kind == "fixed" or person.retirement_date is None or day < person.retirement_date or wealth <= TOLERANCE:
+        if person.retirement_date is None or day < person.retirement_date or wealth <= TOLERANCE:
             return
-        base = scenario.retirement_spending if scenario.retirement_spending is not None else scenario.annual_spending
-        scheduled = base * (1 + scenario.spending_growth) ** _years_since(start, day)
+        if rule_state["rate0"] is None and rule.start_rate is not None:
+            begin_retirement(day, wealth)
+            return
+        if rule.kind == "fixed":
+            return
+        scheduled = scheduled_retirement(day)
         if scheduled <= 0:
             return
         planned = scheduled * rule_state["factor"]
@@ -472,6 +525,9 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
         action = "start"
         if rule_state["rate0"] is None:
             rule_state["rate0"] = rate
+        elif rule.kind == "percent":
+            rule_state["factor"] = rule_state["rate0"] * wealth / scheduled
+            action = f"spend {rule_state['rate0']:.2%} of wealth"
         elif rule.kind == "guyton_klinger":
             actions = []
             if last_return < 0 and rate > rule_state["rate0"]:
@@ -492,15 +548,7 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
             rule_state["factor"] = amount / scheduled
             action = ("follow target" if amount == target else "cut limited by floor" if amount > target
                       else "rise limited by ceiling")
-        minimum = rule.minimum * (1 + scenario.spending_growth) ** _years_since(start, day)
-        if scheduled * rule_state["factor"] < minimum:
-            rule_state["factor"] = minimum / scheduled
-            action += "; held at the minimum"
-        rule_state["previous"] = scheduled * rule_state["factor"]
-        state.fy["rule_amount"] = rule_state["previous"]
-        state.fy["rule_rate"] = rule_state["previous"] / wealth
-        log("spending_rule", rule_state["previous"], "outside", rule=rule.kind, action=action, wealth=wealth,
-            withdrawal_rate=rule_state["previous"] / wealth, starting_rate=rule_state["rate0"])
+        record_rule(day, wealth, bound(day, action))
 
     start_year(rules_by_year[financial_year_of(start)])
     closing = None
@@ -626,6 +674,8 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
             log("pension_commencement", amount, "pension", transfer_balance=state.tba.balance, minimum=state.pension_minimum)
         if day == start or day.day == 1:
             retired = person.retirement_date is not None and day >= person.retirement_date
+            if retired and rule_state["rate0"] is None:
+                begin_retirement(day, closing if closing is not None else opening)
             base = scenario.retirement_spending if retired and scenario.retirement_spending is not None else scenario.annual_spending
             factor = rule_state["factor"] if retired else 1.0
             spending_due.append((day, base * (1 + scenario.spending_growth) ** _years_since(start, day) * factor / 12))

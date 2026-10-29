@@ -35,7 +35,8 @@ SCHEMA_VERSION = 2
 RULES_START = date(2026, 7, 1)
 REBALANCE = ("annual", "none")
 SAVING = ("surplus", "fixed")
-SPENDING_RULES = ("fixed", "guyton_klinger", "vanguard")
+SPENDING_RULES = ("fixed", "guyton_klinger", "vanguard", "percent")
+RETIREMENT_START = ("same", "amount", "percent")
 
 
 class PlanError(ValueError):
@@ -148,8 +149,9 @@ def normalize_plan(raw: dict) -> dict:
                "outside": {"cash", "cash_buffer", "investment_balance", "opening_cost_base", "opening_acquired", "weights",
                            "rebalance", "saving", "contribution_per_year", "contribution_indexed", "cash_interest"},
                "super": {"balance", "weights", "rebalance", "total_super_balance_prior_30_june"},
-               "spending": {"annual", "annual_growth", "retirement_annual", "rule", "minimum", "guardrail_band",
-                            "guardrail_step", "ceiling", "floor"},
+               "spending": {"annual", "annual_growth", "real_change", "retirement", "retirement_annual",
+                            "retirement_percent", "rule", "minimum", "maximum", "guardrail_band", "guardrail_step",
+                            "ceiling", "floor"},
                "pension": {"start_age", "transfer_all", "amount"},
                "assumptions": {"cpi_annual", "wage_growth_annual", "planning_age"},
                "market": {"paths", "retirement_paths", "seed", "block_length"}}
@@ -211,15 +213,31 @@ def normalize_plan(raw: dict) -> dict:
                                                                    super_.get("balance", 0.0), low=0, high=1e9)}
     if plan["super"]["balance"] > 0 and not plan["super"]["weights"]:
         c.problems.append("super.weights: required when the super balance is positive")
+    # Spending is in today's dollars and rises with CPI, plus an optional real change a year. Files written before
+    # real_change existed give a nominal annual_growth, which is converted to the real change it implies.
+    real_default = 0.0
+    if "annual_growth" in spending and "real_change" not in spending:
+        legacy = c.number(spending, "annual_growth", "spending", 0.0, low=-0.2, high=0.2)
+        cpi = assumptions.get("cpi_annual", 0.025)
+        real_default = round((1 + legacy) / (1 + cpi) - 1, 9) if isinstance(cpi, (int, float)) else 0.0
     plan["spending"] = {"annual": c.number(spending, "annual", "spending", 0.0, low=0, high=1e8),
-                        "annual_growth": c.number(spending, "annual_growth", "spending", 0.0, low=-0.2, high=0.2)}
-    # Spending once retired, in the same first-year dollars; defaults to the pre-retirement amount.
-    plan["spending"]["retirement_annual"] = c.number(spending, "retirement_annual", "spending", plan["spending"]["annual"],
-                                                     low=0, high=1e8)
-    # How retirement spending responds to markets (see SpendingRule); "fixed" keeps the dollar schedule.
+                        "real_change": c.number(spending, "real_change", "spending", real_default, low=-0.2, high=0.2)}
+    # How retirement spending starts: the same as before retirement, a different amount (both today's dollars),
+    # or a percentage of total wealth on the retirement date. Older files had no field: infer it.
+    rule = c.choice(spending, "rule", "spending", "fixed", SPENDING_RULES)
+    legacy_start = ("percent" if rule != "fixed" else
+                    "amount" if spending.get("retirement_annual", spending.get("annual")) != spending.get("annual") else "same")
     plan["spending"].update({
-        "rule": c.choice(spending, "rule", "spending", "fixed", SPENDING_RULES),
+        "retirement": c.choice(spending, "retirement", "spending", legacy_start, RETIREMENT_START),
+        "retirement_annual": c.number(spending, "retirement_annual", "spending", plan["spending"]["annual"], low=0, high=1e8),
+        "retirement_percent": c.number(spending, "retirement_percent", "spending", 0.04, low=0.001, high=0.5)})
+    if rule != "fixed" and plan["spending"]["retirement"] != "percent":
+        c.problems.append('spending.retirement: market-responsive rules start from a percentage of wealth; set retirement = "percent"')
+    # How retirement spending responds to markets (see SpendingRule); "fixed" keeps the schedule.
+    plan["spending"].update({
+        "rule": rule,
         "minimum": c.number(spending, "minimum", "spending", 0.0, low=0, high=1e8),
+        "maximum": c.number(spending, "maximum", "spending", 0.0, low=0, high=1e8),
         "guardrail_band": c.number(spending, "guardrail_band", "spending", 0.20, low=0.01, high=0.9),
         "guardrail_step": c.number(spending, "guardrail_step", "spending", 0.10, low=0.01, high=0.9),
         "ceiling": c.number(spending, "ceiling", "spending", 0.05, low=0, high=0.9),
@@ -353,11 +371,15 @@ def build_inputs(plan: dict, *, market=None, returns=None):
         super_units={a: plan["super"]["balance"] * w for a, w in plan["super"]["weights"].items()},
         super_weights=plan["super"]["weights"],
         income={ticker: AssetIncome(market.income_yields[ticker], 0.0) for ticker in names},
-        employment=employment, annual_spending=plan["spending"]["annual"], spending_growth=plan["spending"]["annual_growth"],
-        retirement_spending=plan["spending"]["retirement_annual"],
+        employment=employment, annual_spending=plan["spending"]["annual"], spending_growth=spending_growth(plan),
+        retirement_spending=retirement_schedule(plan),
         spending_rule=SpendingRule(plan["spending"]["rule"], band=plan["spending"]["guardrail_band"],
                                    step=plan["spending"]["guardrail_step"], ceiling=plan["spending"]["ceiling"],
-                                   floor=plan["spending"]["floor"], minimum=plan["spending"]["minimum"]),
+                                   floor=plan["spending"]["floor"], minimum=plan["spending"]["minimum"],
+                                   maximum=plan["spending"]["maximum"],
+                                   start_rate=(plan["spending"]["retirement_percent"]
+                                               if plan["spending"]["retirement"] == "percent" else None),
+                                   bound_growth=plan["assumptions"]["cpi_annual"]),
         pension=pension, tsb_prior_30_june=plan["super"]["total_super_balance_prior_30_june"],
         outside_rebalance=plan["outside"]["rebalance"] == "annual", super_rebalance=plan["super"]["rebalance"] == "annual",
         outside_contribution_per_payday=(plan["outside"]["contribution_per_year"] / 26 if plan["outside"]["saving"] == "fixed"
@@ -367,6 +389,18 @@ def build_inputs(plan: dict, *, market=None, returns=None):
     years = project_rulesets(load_ruleset("2026-27"), financial_year_of(end),
                              ProjectionAssumptions(plan["assumptions"]["cpi_annual"], plan["assumptions"]["wage_growth_annual"]))
     return path, scenario, years, notes
+
+
+def spending_growth(plan: dict) -> float:
+    """Nominal yearly spending growth: CPI compounded with the chosen real change."""
+    return (1 + plan["assumptions"]["cpi_annual"]) * (1 + plan["spending"]["real_change"]) - 1
+
+
+def retirement_schedule(plan: dict) -> float:
+    """Retirement spending base in today's dollars. For a percentage start it is a unit schedule the ledger rescales
+    to the starting rate times wealth on the retirement date."""
+    spending = plan["spending"]
+    return {"same": spending["annual"], "amount": spending["retirement_annual"], "percent": 1.0}[spending["retirement"]]
 
 
 def sacrifice_per_year(plan: dict) -> float:

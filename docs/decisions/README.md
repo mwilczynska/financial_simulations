@@ -30,6 +30,7 @@ Decision records preserve why Financial Simulations makes a material modelling o
 | [0022](0022-payg-withholding.md) | 2026-10-29 | Accepted; implemented and locally validated | Estimated PAYG withholding on salary each payday; assessment settles the balance |
 | [0023](0023-retirement-spending-rules.md) | 2026-10-29 | Accepted; implemented and locally validated | Optional Guyton–Klinger and Vanguard retirement spending rules; fixed dollar spending stays the default |
 | [0024](0024-salary-indexed-to-wage-growth.md) | 2026-10-29 | Accepted; implemented and locally validated | Salary and salary sacrifice rise each 1 July with the wage-growth assumption by default |
+| [0025](0025-spending-in-todays-dollars-and-percentage-starts.md) | 2026-10-29 | Accepted; implemented and locally validated | Spending in today's dollars rising with CPI; percentage-of-wealth retirement starts, required by rules; percent-of-wealth rule; maximum |
 
 ## When to write a record
 

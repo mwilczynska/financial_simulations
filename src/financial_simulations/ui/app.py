@@ -16,7 +16,7 @@ import streamlit as st
 from financial_simulations.data.plan_markets import CUSTOM_TICKERS, TICKERS, load_plan_markets
 from financial_simulations.reporting.plan import wide_wealth_range
 from financial_simulations.retirement.plan import (PlanError, default_plan, load_plan_text, normalize_plan, plan_to_json,
-                                                   plan_to_toml, sacrifice_per_year, slug)
+                                                   plan_to_toml, sacrifice_per_year, slug, spending_growth)
 from financial_simulations.retirement.flows import account_flows, household_flows, milestones
 from financial_simulations.retirement.paths import warm_pool
 from financial_simulations.retirement.run_plan import ledger_for_path, run_plan
@@ -355,25 +355,48 @@ def inputs_investments(plan):
                                                   "Inside super the switch is modelled without tax (funds are assumed not to realise gains).")
 
 
-RULE_LABELS = {"fixed": "Fixed dollar amount (default)", "guyton_klinger": "Guyton–Klinger guardrails",
-               "vanguard": "Vanguard ceiling and floor"}
+RULE_LABELS = {"fixed": "Fixed: the same buying power every year (default)", "guyton_klinger": "Guyton–Klinger guardrails",
+               "vanguard": "Vanguard ceiling and floor", "percent": "A percentage of wealth each year"}
+START_LABELS = {"same": "The same as now", "amount": "A different amount", "percent": "A percentage of wealth at retirement"}
 
 
 def spending_rule_inputs(plan):
-    """Choose how retirement spending responds to markets; the default keeps a fixed dollar schedule."""
-    spending = plan["spending"]
-    st.subheader("How retirement spending responds to markets")
-    spending["rule"] = st.radio("Retirement spending rule", list(RULE_LABELS), index=list(RULE_LABELS).index(spending["rule"]),
+    """How retirement spending is set and how it responds to markets. Rules need a percentage start."""
+    spending, cpi = plan["spending"], plan["assumptions"]["cpi_annual"]
+    st.subheader("Spending in retirement")
+    spending["rule"] = st.radio("How spending responds to markets", list(RULE_LABELS), index=list(RULE_LABELS).index(spending["rule"]),
                                 format_func=RULE_LABELS.get, key=key("spending_rule"))
-    if spending["rule"] == "fixed":
-        st.info("**Default: a fixed dollar amount.** You spend the retirement amount above every year, growing by your "
-                "spending growth, whatever the markets do. It is *not* a percentage of the portfolio: if markets fall, "
-                "spending stays the same and the withdrawal takes a bigger share of what is left, which is how plans "
-                "run out of money.")
+    fixed = spending["rule"] == "fixed"
+    if fixed:
+        spending["retirement"] = st.radio("Retirement spending starts at", list(START_LABELS),
+                                          index=list(START_LABELS).index(spending["retirement"]), format_func=START_LABELS.get,
+                                          horizontal=True, key=key("spend_start"))
+    else:
+        spending["retirement"] = "percent"
+    if spending["retirement"] == "amount":
+        spending["retirement_annual"] = money("Spending once retired (today's dollars a year)", spending["retirement_annual"],
+                                              "spend_retired", help="Rises with inflation like spending now.")
+    elif spending["retirement"] == "percent":
+        spending["retirement_percent"] = percent(
+            "Starting withdrawal rate: % of total wealth on your retirement date", spending["retirement_percent"],
+            "spend_rate", low=0.1, high=50, step=0.1,
+            help="Total wealth is cash, outside investments and super. Each simulated path reaches retirement with "
+                 "different wealth, so each gets its own dollar amount; the results show the range in today's dollars.")
+        st.caption("Each path's starting amount is this percentage of its own wealth on your retirement date, so it is "
+                   "only known after the simulation runs. Section 4 of the results shows the range it produced. For "
+                   "reference, Guyton and Klinger tested starting rates of about 5–5.5% with their guardrails; 4% is a "
+                   "common rule of thumb for fixed spending over 30 years.")
+    if fixed:
+        how = {"same": "the amount above", "amount": "this amount",
+               "percent": "that percentage of your wealth on your retirement date"}[spending["retirement"]]
+        st.info(f"**Default: fixed spending.** You spend {how} in your first retired year, and after that the same "
+                f"buying power every year, whatever the markets do. If markets fall, spending stays the same and takes a "
+                "bigger share of what is left, which is how plans run out of money.")
     elif spending["rule"] == "guyton_klinger":
-        st.info("**Guyton–Klinger guardrails** (Guyton and Klinger, 2006). The first 1 July after you retire sets your "
-                "starting *withdrawal rate*: that year's spending divided by total wealth. Each later 1 July:\n"
-                "1. After a year in which your investments lost money, skip that year's spending increase if the rate is "
+        st.info("**Guyton–Klinger guardrails** (Guyton and Klinger, 2006). On your retirement date spending starts at the "
+                "starting rate above. Each 1 July after that, the *withdrawal rate* is that year's spending divided by "
+                "total wealth:\n"
+                "1. After a year in which your investments lost money, skip that year's inflation increase if the rate is "
                 "above the start.\n"
                 f"2. If the rate is more than {spending['guardrail_band']:.0%} above the start, **cut spending "
                 f"{spending['guardrail_step']:.0%}**.\n"
@@ -389,46 +412,52 @@ def spending_rule_inputs(plan):
         with b:
             spending["guardrail_step"] = percent("Change when a guardrail is hit %", spending["guardrail_step"], "gk_step", low=1,
                                                  high=90, step=1.0)
-    else:
-        st.info("**Vanguard ceiling and floor** (Jaconetti and colleagues, Vanguard, 2013). The first 1 July after you "
-                "retire sets your starting *withdrawal rate*: that year's spending divided by total wealth. Each later "
-                "1 July spending aims for that rate times your current wealth. The change from last year (after the usual "
-                f"spending growth) is limited to **+{spending['ceiling']:.1%}** and **−{spending['floor']:.1%}**, so cuts "
-                "are small and gradual. In this planner's simulations cuts were gentler than Guyton–Klinger, but at a 5% "
-                "start it ran out about as often as fixed spending.")
+    elif spending["rule"] == "vanguard":
+        st.info("**Vanguard ceiling and floor** (Jaconetti and colleagues, Vanguard, 2013). On your retirement date "
+                "spending starts at the starting rate above. Each 1 July after that, spending aims for that rate times "
+                f"your current wealth, but the change from last year (after inflation) is limited to **+{spending['ceiling']:.1%}** "
+                f"and **−{spending['floor']:.1%}**, so cuts are small and gradual. In this planner's simulations cuts were "
+                "gentler than Guyton–Klinger, but at a 5% start it ran out about as often as fixed spending.")
         a, b = st.columns(2)
         with a:
             spending["ceiling"] = percent("Largest yearly rise %", spending["ceiling"], "vg_ceiling", low=0, high=90, step=0.5)
         with b:
             spending["floor"] = percent("Largest yearly cut %", spending["floor"], "vg_floor", low=0, high=90, step=0.5)
-    if spending["rule"] != "fixed":
-        spending["minimum"] = money("Minimum spending, never cut below (AUD a year, first-year dollars; 0 = none)",
-                                    spending["minimum"], "spend_minimum",
-                                    help="Essential spending the rule will not cut below. It grows at the spending growth "
-                                         "rate. A higher minimum makes cuts shallower but raises the chance of running out.")
-        st.caption("Rules review spending once a year on 1 July, starting after your retirement date, using total wealth "
+    else:
+        st.info("**A percentage of wealth each year.** On your retirement date and each 1 July after that, spending is "
+                "the starting rate times your total wealth that day. It can never run out (bounded by the minimum "
+                "below), but spending moves fully with the markets: a 30% fall cuts next year's spending by 30%. It is a "
+                "useful reference for how much variability the other rules remove.")
+    if not fixed:
+        a, b = st.columns(2)
+        with a:
+            spending["minimum"] = money("Essential minimum, never cut below (today's dollars a year; 0 = none)",
+                                        spending["minimum"], "spend_minimum",
+                                        help="Rises with inflation. A higher minimum makes cuts shallower but raises the "
+                                             "chance of running out.")
+        with b:
+            spending["maximum"] = money("Maximum, never spend more than (today's dollars a year; 0 = none)",
+                                        spending["maximum"], "spend_maximum",
+                                        help="Rises with inflation. Stops spending racing up on paths where markets do very well.")
+        st.caption("Rules review spending once a year on 1 July after your retirement date, using total wealth "
                    "(cash, outside investments and super). Each review and its reason are in the event log in section 5.")
 
 
 def inputs_retirement(plan):
     st.subheader("Spending")
-    a, b = st.columns(2)
-    with a:
-        same = plan["spending"]["retirement_annual"] == plan["spending"]["annual"]
-        plan["spending"]["annual"] = money("Annual spending before retirement (AUD, first year)", plan["spending"]["annual"],
-                                           "spend")
-        if st.checkbox("Spend the same once retired", same, key=key("spend_same")):
-            plan["spending"]["retirement_annual"] = plan["spending"]["annual"]
-        else:
-            plan["spending"]["retirement_annual"] = money(
-                "Annual spending once retired (AUD, in the same first-year dollars)", plan["spending"]["retirement_annual"],
-                "spend_retired", help="Both amounts are in today's dollars and grow at the spending growth rate. For example "
-                                      "$70,000 here with 2.5% growth is about $79,000 a year by the fifth year.")
-    with b:
-        plan["spending"]["annual_growth"] = percent("Spending growth %/yr", plan["spending"]["annual_growth"], "spendg", low=-20, high=20,
-                                                    help="Set equal to CPI to keep spending's buying power constant. "
-                                                         "Spending is entered in today's dollars for the first year.")
+    spending, cpi = plan["spending"], plan["assumptions"]["cpi_annual"]
+    spending["annual"] = money("Spending now (today's dollars a year)", spending["annual"], "spend",
+                               help="Everything you spend in a year, paid monthly from cash.")
+    st.caption(f"All spending amounts are in **today's dollars**. Each 1 July they rise with inflation ({cpi:.1%} CPI, set "
+               "on the Assumptions tab), so they buy the same every year.")
     spending_rule_inputs(plan)
+    with st.expander("Spend more or less over time", expanded=spending["real_change"] != 0):
+        spending["real_change"] = percent(
+            "Real change in spending, % a year on top of inflation", spending["real_change"], "spend_real", low=-10, high=10,
+            help="0 keeps buying power constant. Studies of retirees' actual spending find it tends to fall slowly "
+                 "with age in real terms, by roughly 1% a year (the 'retirement spending smile'); −1% models that.")
+        st.caption("This applies before and after retirement, and to the starting amount set by a percentage. The "
+                   "essential minimum and maximum always rise with inflation only.")
     st.subheader("Account-based pension")
     pension = plan["pension"]
     a, b = st.columns(2)
@@ -897,7 +926,7 @@ nominal \\$1,000,000 in 20 years buys what about \\${1e6 / (1 + cpi) ** 20:,.0f}
 | --- | --- |
 | Market returns, portfolio values, wealth bands, balances, tax | Nominal (USD total-return history applied as AUD) |
 | "Ending wealth, today's dollars" and the "…in today's dollars" metric | Inflation adjusted: divided by (1 + CPI) per year |
-| Spending | Grows each 1 July by your spending growth ({plan['spending']['annual_growth']:.1%}). Equal to CPI means constant buying power |
+| Spending | Entered in today's dollars; rises each 1 July with CPI{"" if not plan['spending']['real_change'] else " and your real change"}, so it keeps its buying power |
 | Salary | {"Rises each 1 July by wage growth (" + format(plan['assumptions']['wage_growth_annual'], '.1%') + ")" if plan['employment'].get('salary_indexed', True) else "Not indexed: the same dollar amount each year until retirement"} |
 | Fixed yearly additions to outside investments | Indexed to CPI only if you tick the inflation box |
 | Tax brackets and super caps after 2026-27 | Projected with the CPI and wage-growth assumptions |
@@ -1062,7 +1091,7 @@ def withdrawal_rates_section(plan, portfolios, names):
         return
     years = (end - portfolios.retirement_start).days / 365.25
     age = plan["assumptions"]["planning_age"]
-    growth, cpi = plan["spending"]["annual_growth"], plan["assumptions"]["cpi_annual"]
+    growth, cpi = spending_growth(plan), plan["assumptions"]["cpi_annual"]
     rows = []
     for title in names:
         part = outcomes.loc[outcomes["Portfolio"] == title]
@@ -1489,7 +1518,7 @@ the same spending became a bigger share of it.
   it appears.
 
 **Limits.** Tax paid includes tax on investment income and capital gains; super that is not yet accessible counts in
-total wealth; spending grows at {plan['spending']['annual_growth']:.1%} a year.
+total wealth; spending rises with inflation{"" if not plan['spending']['real_change'] else f" and {plan['spending']['real_change']:+.1%} a year in real terms"}.
 """)
     stress = annual.groupby("FY ending").agg(**{"Paths with a shortfall": ("Shortfall", lambda x: (x > 0).mean())}).reset_index()
     stress["Period"] = stress["FY ending"].map(period_label)

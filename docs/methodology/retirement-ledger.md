@@ -66,11 +66,18 @@ Asset unit prices start at 1. On each day:
 7. **Spending** is scheduled on the opening day and on each 1st of the month,
    at annual spending/12, rising by `spending_growth` at each 1 July. From the
    retirement date the base becomes `retirement_spending` when it is given
-   (same base year, same growth). A `spending_rule` other than `fixed` then
-   reviews spending each 1 July from retirement
-   ([ADR 0023](../decisions/0023-retirement-spending-rules.md)). The
-   withdrawal rate is the year's planned spending divided by total wealth at
-   the previous close. The first review records the starting rate `r0`.
+   (same base year, same growth).
+   - **Percentage start.** With `spending_rule.start_rate`, the first
+     spending date on or after the retirement date sets retirement spending
+     to `start_rate` times total wealth at the previous close, and `r0 =
+     start_rate` ([ADR 0025](../decisions/0025-spending-in-todays-dollars-and-percentage-starts.md)).
+     The amount then grows at `spending_growth` like any other.
+
+   A `spending_rule` other than `fixed` then reviews spending each 1 July
+   from retirement ([ADR 0023](../decisions/0023-retirement-spending-rules.md)).
+   The withdrawal rate is the year's planned spending divided by total
+   wealth at the previous close. Without a percentage start, the first
+   review records the starting rate `r0`.
    - **Guyton–Klinger.** After a year with a negative market return, and
      with the rate above `r0`, that year's growth step is skipped. Then
      spending is cut by `step` if the rate is above `r0 * (1 + band)`, or
@@ -79,7 +86,10 @@ Asset unit prices start at 1. On each day:
    - **Vanguard.** The target is `r0` times wealth. The change from last
      year's amount, after the growth step, is limited to `+ceiling` and
      `-floor`. Defaults are 5% and 2.5%.
-   - **Minimum.** Neither rule goes below `minimum` (grown like spending).
+   - **Percent of wealth.** Spending is `r0` times wealth at each review.
+   - **Bounds.** `maximum` caps every rule's amount and `minimum` floors it
+     (the minimum wins if they cross). Both grow at `bound_growth` (the
+     planner passes CPI), or at `spending_growth` when it is not given.
 
    Spending scheduled from that 1 July uses the new amount. Each review is
    logged as a `spending_rule` event with its reason. The year's
@@ -187,9 +197,7 @@ the rule-set hash and assumptions) and `ledger.png` directly from Python.
 - **Income split.** The income split is an assumption, not a fund's actual tax
   statement. Foreign income and credits, AMIT cost-base adjustments and
   capital-gain distributions are not modelled.
-- **People and policies.** One person only. Spending is a fixed nominal
-  amount: no guardrails, no spending rules that depend on wealth, and no
-  Age Pension.
+- **People and policies.** One person only. No Age Pension.
 - **Excess regimes.** Excess contributions, excess transfer balances,
   Division 296 balances, early access and tax debts stop the run by design.
 

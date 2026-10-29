@@ -304,15 +304,36 @@ def test_spending_rule_defaults_to_fixed_and_maps_to_the_ledger(processed_fixtur
     plan = default_plan()
     assert plan["spending"]["rule"] == "fixed" and plan["spending"]["minimum"] == 0
     market = load_plan_markets(plan["assets"], processed_fixture)
-    plan["spending"].update(rule="guyton_klinger", minimum=30000.0, guardrail_band=0.25)
-    rule = build_inputs(plan, market=market)[1].spending_rule
-    assert (rule.kind, rule.minimum, rule.band, rule.step) == ("guyton_klinger", 30000.0, 0.25, 0.10)
+    plan["spending"].update(rule="guyton_klinger", minimum=30000.0, maximum=90000.0, guardrail_band=0.25)
+    with pytest.raises(PlanError, match="spending.retirement: market-responsive rules start from a percentage"):
+        normalize_plan(plan)
+    plan["spending"].update(retirement="percent", retirement_percent=0.05)
+    scenario = build_inputs(plan, market=market)[1]
+    rule = scenario.spending_rule
+    assert (rule.kind, rule.minimum, rule.maximum, rule.band, rule.step) == ("guyton_klinger", 30000.0, 90000.0, 0.25, 0.10)
+    assert rule.start_rate == 0.05 and rule.bound_growth == plan["assumptions"]["cpi_annual"]
+    assert scenario.retirement_spending == 1.0
     plan["spending"]["rule"] = "vanguard"
     run = run_plan({**plan, "market": {**plan["market"], "paths": 16, "retirement_paths": 2}}, None, market=market)
     assert (run.result.events["event"] == "spending_rule").any()
-    plan["spending"]["rule"] = "percent"
-    with pytest.raises(PlanError, match="spending.rule: must be one of fixed, guyton_klinger, vanguard"):
+    plan["spending"]["rule"] = "half"
+    with pytest.raises(PlanError, match="spending.rule: must be one of fixed, guyton_klinger, vanguard, percent"):
         normalize_plan(plan)
+
+
+def test_spending_rises_with_cpi_and_old_nominal_growth_becomes_a_real_change():
+    from financial_simulations.retirement.plan import spending_growth
+
+    plan = default_plan()
+    assert plan["spending"]["real_change"] == 0 and spending_growth(plan) == pytest.approx(plan["assumptions"]["cpi_annual"])
+    old = {**plan, "spending": {"annual": 80000.0, "annual_growth": 0.035, "retirement_annual": 60000.0, "rule": "fixed"},
+           "assumptions": {**plan["assumptions"], "cpi_annual": 0.025}}
+    migrated = normalize_plan(old)
+    assert migrated["spending"]["real_change"] == pytest.approx(1.035 / 1.025 - 1)
+    assert spending_growth(migrated) == pytest.approx(0.035)
+    assert migrated["spending"]["retirement"] == "amount" and "annual_growth" not in migrated["spending"]
+    same = normalize_plan({**old, "spending": {"annual": 80000.0, "annual_growth": 0.025, "rule": "vanguard"}})
+    assert same["spending"]["real_change"] == 0 and same["spending"]["retirement"] == "percent"
 
 
 def test_workers_start_with_one_maths_thread_and_the_parent_environment_is_restored(monkeypatch):

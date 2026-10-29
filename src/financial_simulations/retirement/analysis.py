@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 
 from financial_simulations.markets.resampling import Sampler, sample_indices
-from financial_simulations.retirement.plan import horizon
+from financial_simulations.retirement.plan import horizon, spending_growth
 from financial_simulations.rules.au.superannuation import birthday
 
 
@@ -237,10 +237,10 @@ def analyse_portfolios(plan: dict, market, target_dates, progress=None) -> Portf
         retirement = _simulate(market.path.returns, np.stack(long_rows).astype(np.int32), long_dates, accounts, shares,
                                _month_ends(long_dates), lambda f: tell(0.8 + 0.2 * f, "Testing withdrawal rates to "
                                                                           f"age {plan['assumptions']['planning_age']}"))
-        swr = {title: sustainable_withdrawal_rates(series.snapshots, 0, plan["spending"]["annual_growth"])
+        swr = {title: sustainable_withdrawal_rates(series.snapshots, 0, spending_growth(plan))
                for title, series in retirement.items()}
         window = (long_dates[-1] - long_dates[0]).days / 365.25
-        perpetual = {title: perpetual_withdrawal_rates(series.snapshots, 0, plan["spending"]["annual_growth"],
+        perpetual = {title: perpetual_withdrawal_rates(series.snapshots, 0, spending_growth(plan),
                                                        plan["assumptions"]["cpi_annual"], window)
                      for title, series in retirement.items()}
     else:

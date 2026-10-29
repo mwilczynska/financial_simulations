@@ -41,12 +41,19 @@ rebalance = "annual"
 total_super_balance_prior_30_june = 650000.0
 
 [spending]
+# Spending in today's dollars. It rises with CPI each 1 July, plus real_change (0 keeps buying power constant).
 annual = 75000.0
-annual_growth = 0.025
-# Retirement spending rule: "fixed" spends the dollar amount above whatever markets do (the default);
-# "guyton_klinger" and "vanguard" adjust spending each 1 July from retirement. minimum = 0 means no floor.
+real_change = 0.0
+# Retirement spending starts "same" as above, at a different "amount" (retirement_annual, today's dollars), or at a
+# "percent" of total wealth on the retirement date (retirement_percent).
+retirement = "same"
+retirement_percent = 0.04
+# How retirement spending responds to markets: "fixed" (the default) keeps the amount whatever markets do;
+# "guyton_klinger", "vanguard" and "percent" adjust it each 1 July and need retirement = "percent".
+# minimum and maximum (today's dollars, 0 = none) bound the rules.
 rule = "fixed"
 minimum = 0.0
+maximum = 0.0
 
 [pension]
 start_age = 60

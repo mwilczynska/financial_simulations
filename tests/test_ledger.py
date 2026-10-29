@@ -354,6 +354,48 @@ def _falling_market_rules(kind, minimum=0.0):
     return result, result.events[result.events["event"] == "spending_rule"]
 
 
+def _percent_start(kind, **rule):
+    from financial_simulations.retirement.ledger import SpendingRule
+
+    path = market(end="2027-06-30", returns=0.0)
+    scenario = scenario_with(Person("1975-01-01", retirement_date="2026-09-15"), outside_cash=50000,
+                             outside_parcels=(Parcel("GL", 950000, 950000, "2020-01-01"),), annual_spending=60000,
+                             retirement_spending=1.0, spending_rule=SpendingRule(kind, start_rate=0.04, **rule))
+    result = run_ledger(path, scenario, YEARS)
+    return result, result.events[result.events["event"] == "spending"]
+
+
+def test_a_percentage_start_sets_spending_from_wealth_on_the_retirement_date():
+    result, paid = _percent_start("fixed")
+    dates = pd.to_datetime(paid["scheduled"])
+    assert paid.loc[dates < pd.Timestamp("2026-09-15"), "requested"].unique().tolist() == pytest.approx([5000.0])
+    after = paid.loc[dates >= pd.Timestamp("2026-10-01"), "requested"]
+    start = result.events[result.events["event"] == "spending_rule"].iloc[0]
+    # 4% of total wealth on the first spending date once retired (1 October), a twelfth each month.
+    assert start["withdrawal_rate"] == pytest.approx(0.04) and after.unique().tolist() == pytest.approx([start["amount"] / 12])
+    assert 0.04 * 900000 < start["amount"] < 0.04 * 1000000
+
+
+def test_a_maximum_caps_a_percentage_start():
+    _, paid = _percent_start("percent", maximum=30000)
+    after = paid.loc[pd.to_datetime(paid["scheduled"]) >= pd.Timestamp("2026-10-01"), "requested"]
+    assert after.unique().tolist() == pytest.approx([2500.0])
+
+
+def test_percent_of_wealth_rule_spends_the_starting_rate_of_wealth_each_first_of_july():
+    from financial_simulations.retirement.ledger import SpendingRule
+    from financial_simulations.rules.au.projection import ProjectionAssumptions, project_rulesets
+
+    years = project_rulesets(RULES, "2028-29", ProjectionAssumptions(0.025, 0.035))
+    scenario = scenario_with(Person("1975-01-01", retirement_date="2026-01-01"), outside_cash=1000,
+                             outside_parcels=(Parcel("GL", 1000000, 1000000, "2020-01-01"),), annual_spending=1.0,
+                             spending_growth=0.025, spending_rule=SpendingRule("percent", start_rate=0.04))
+    result = run_ledger(market(end="2028-07-31", returns=-0.001), scenario, years)
+    reviews = result.events[result.events["event"] == "spending_rule"]
+    assert len(reviews) == 3 and reviews["withdrawal_rate"].tolist() == pytest.approx([0.04] * 3)
+    assert reviews["amount"].iloc[2] < reviews["amount"].iloc[1] < reviews["amount"].iloc[0]
+
+
 def test_guyton_klinger_cuts_after_the_withdrawal_rate_breaches_the_upper_guardrail():
     result, reviews = _falling_market_rules("guyton_klinger")
     first, second = reviews.iloc[0], reviews.iloc[1]
