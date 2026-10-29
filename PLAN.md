@@ -13,8 +13,8 @@ sampling error, and paired multi-portfolio studies on shared draws. It also
 adds provenance-checked source segments, a leveraged-risk tail diagnostic and
 rolling calibration/holdout PIT scoring. A batched many-path ledger with dated
 flows and an opt-in common-date calendar policy prepare for Stage 2. Stage 2A
-has begun: a sourced 2026-27 Australian rule register and tested rule
-functions are implemented; the single-path ledger is next. See the validation evidence for
+has a sourced 2026-27 Australian rule register, tested rule functions and an
+auditable single-person daily ledger; multi-year runs need later-year rules. See the validation evidence for
 [1A](docs/validation/stage-1a.md), [1B](docs/validation/stage-1b.md),
 [1C](docs/validation/stage-1c.md) and [1D](docs/validation/stage-1d.md).
 
@@ -219,10 +219,13 @@ Historical market replay is mapped onto the future life calendar. Future tax/sup
 
 ### 2A. Build the Australian rule specification and an audited deterministic example
 
-In progress. The sourced [2026-27 rule register](docs/rules/au-2026-27.md), data file
-and tested rule functions are implemented ([methodology](docs/methodology/australian-rules.md),
-[ADR 0013](docs/decisions/0013-stage-2a-rule-register-scope.md)). The auditable
-single-path ledger and later-year rule sets remain.
+Implemented for 2026-27: the sourced [rule register](docs/rules/au-2026-27.md),
+tested rule functions ([methodology](docs/methodology/australian-rules.md),
+[ADR 0013](docs/decisions/0013-stage-2a-rule-register-scope.md)) and the auditable
+single-person daily [ledger](docs/methodology/retirement-ledger.md)
+([ADR 0014](docs/decisions/0014-single-person-ledger-conventions.md),
+[validation](docs/validation/stage-2a.md)). Later-year rule sets, including the
+enacted 1 July 2027 CGT reform, are needed before multi-year runs.
 
 Before connecting thousands of paths, document the supported Australian rules, their sources, effective dates and boundary examples. Use ATO, legislation and Services Australia as the authoritative sources, with ASIC Moneysmart for explanatory cross-checks.
 

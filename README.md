@@ -18,9 +18,11 @@ censored drawdown/recovery and Monte Carlo sampling error. It also adds paired
 multi-portfolio studies on shared draws, provenance-checked source-segment
 sensitivity, a leveraged-risk tail diagnostic and rolling calibration/holdout
 scoring. A batched many-path ledger with dated cash flows is ready for Stage 2.
-Stage 2A has begun with a sourced [2026-27 Australian rule register](docs/rules/au-2026-27.md)
-and tested tax and super rule functions; the retirement ledger, AUD FX and
-Australian inflation remain planned.
+Stage 2A provides a sourced [2026-27 Australian rule register](docs/rules/au-2026-27.md),
+tested tax and super rule functions and a daily single-person
+[retirement ledger](docs/methodology/retirement-ledger.md) for that year
+(`python scripts/ledger_example.py` runs two synthetic examples). Multi-year
+runs, AUD FX and Australian inflation remain planned.
 
 ## Development
 

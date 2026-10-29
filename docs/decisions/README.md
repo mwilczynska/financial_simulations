@@ -19,6 +19,7 @@ Decision records preserve why Financial Simulations makes a material modelling o
 | [0011](0011-garch-filtered-historical-simulation.md) | 2026-10-28 | Accepted; synthetic validation | GARCH(1,1) filtered historical simulation as the heavy-tail generator |
 | [0012](0012-paired-holdout-and-segment-studies.md) | 2026-10-28 | Accepted; synthetic and companion-data validation | Paired portfolio, source-segment and rolling holdout studies |
 | [0013](0013-stage-2a-rule-register-scope.md) | 2026-10-28 | Accepted; 2026-27 rules implemented and tested | Sourced 2026-27 rule register with explicit unsupported cases |
+| [0014](0014-single-person-ledger-conventions.md) | 2026-10-28 | Accepted; 2026-27 ledger implemented and tested | Daily single-person ledger conventions |
 
 ## When to write a record
 
