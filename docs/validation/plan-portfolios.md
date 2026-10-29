@@ -271,3 +271,18 @@ The browser review found and fixed:
 Also changed: chart heights increased by about 30–40%; the acquisition date
 uses year, month and day fields; the prior-30-June total super balance
 defaults to today's balance unless unticked.
+
+## Save flow, explanations and chart fixes (2026-10-29)
+
+Browser checks used throwaway plan names, and their files were removed
+afterwards:
+
+- Save wrote `plans/zz-save-check.toml`. After a name change, Rename left
+  only `plans/zz-renamed-check.toml`.
+- The distributions show the combined portfolio with a full legend.
+- The withdrawal-rate chart is taller, and its reference lines appear as a
+  legend instead of overlapping text.
+- The single-path money in and out chart shows outside additions in the two
+  working years, stopping at retirement.
+
+Plan, ledger and market tests passed: 37 tests.

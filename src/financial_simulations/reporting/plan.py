@@ -12,7 +12,7 @@ from matplotlib.ticker import FuncFormatter
 import numpy as np
 import pandas as pd
 
-from financial_simulations.retirement.flows import household_flows, milestones
+from financial_simulations.retirement.flows import account_flows, household_flows, milestones
 
 
 COLORS = {"Outside super": "#126a63", "Inside super": "#386a98", "Combined": "#b76a42"}
@@ -164,8 +164,13 @@ def write_plan_plots(output: Path, plan, market, portfolios, retirement_paths, r
             negative += np.where(values < 0, values, 0)
         net = flows.drop_duplicates("FY ending").set_index("FY ending").reindex(years)["Net change"]
         ax.plot(years, net, color="#19353a", marker="o", markersize=3, linewidth=1.6, label="Net change in wealth")
+        moves = account_flows(daily, representative.events)
+        added = moves.loc[moves["Flow"] == "Savings invested"].groupby("FY ending")["AUD"].sum().reindex(years, fill_value=0)
+        if added.abs().max() > 1e-6:
+            ax.plot(years, added, color="#0b7a8a", linestyle="--", marker="s", markersize=4, linewidth=1.6,
+                    label="Added to outside investments (transfer)")
         ax.axhline(0, color="#5f6b73", linewidth=0.8)
-        top, low = max(positive.max(), net.max(), 1.0), min(negative.min(), net.min(), -1.0)
+        top, low = max(positive.max(), net.max(), added.max(), 1.0), min(negative.min(), net.min(), -1.0)
         ax.set_ylim(low - 0.08 * (top - low), top + 0.12 * (top - low))
         for _, mark in milestones(plan, daily.index[0].date(), daily.index[-1].date()).iterrows():
             ax.axvline(mark["Position"], color="#5f6b73", linestyle="--", linewidth=1)

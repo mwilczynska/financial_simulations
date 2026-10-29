@@ -260,6 +260,28 @@ The You tab shows a first-year estimate of where pay goes, using the
 The estimate excludes investment income. Birth dates are entered as year,
 month and day fields.
 
+**Saving plans.** The sidebar holds the plan name, which is also the file
+name. **Save** writes `plans/<plan-name>.toml` and shows which file the app is
+working on. After a name change, **Rename** writes the new file and removes
+the old one; **Save** keeps both. **Open** loads a saved plan. Import and
+browser download sit in an expander.
+
+**Inflation.** An expander at the top of the Results tab says which numbers
+are nominal and which are adjusted for inflation. Everything is in nominal
+dollars unless it says "today's dollars".
+
+- Spending grows by its own growth rate.
+- Salary is not indexed.
+- Fixed outside additions are indexed only when that option is ticked.
+- Rule thresholds are projected with CPI and wages.
+- Withdrawal rates rise with spending growth; the perpetual rate keeps the
+  CPI-grown value.
+
+**Block length.** The Assumptions tab explains the average block length in
+plain terms: average run length in trading days, the jump probability
+`1 / block_length`, and the trade-off between keeping longer historical
+patterns and mixing eras.
+
 The Results tab has five sections, each chart followed by an explanation.
 Financial years are written "Jul 2026 – Jun 2027" in tables and tooltips,
 and axes are titled "Year ending 30 June". Dashed vertical lines mark
@@ -280,9 +302,11 @@ positions them.
    - a fan for the selected portfolio;
    - median paths compared;
    - median and 5th-percentile drawdown;
+   - a note that this section shows investment returns only on $100, with
+     no additions, withdrawals or tax; those are applied in sections 4 and 5;
    - four distributions (ending value on a log axis, annualised growth,
-     volatility, maximum drawdown), each overlaying outside and inside super
-     with dashed medians;
+     volatility, maximum drawdown), each overlaying outside super, inside
+     super and the combined portfolio with dashed medians;
    - the sustainable-withdrawal-rate distribution;
    - a percentile table;
    - calendar-year return bands.
@@ -295,6 +319,11 @@ positions them.
    - every path's ending wealth, sorted. Hovering gives exact nominal and
      today's-dollar values, the account split and any shortfall; labelled
      10th, median and 90th percentile lines; depleted paths in red;
+   - in both money in and out charts, a dashed teal line for the amount
+     **added to outside investments** from pay each year (`account_flows`
+     "Savings invested"). It is a transfer from cash, so it is drawn as a
+     line rather than a bar and is excluded from the net change. Each path's
+     `retirement_annual` rows record it as `Added to outside investments`;
    - **money in and out in a typical year**: for each financial year, the
      median of every flow across calculated paths, with tooltips giving the
      25th and 75th percentiles, plus the median net change in wealth with

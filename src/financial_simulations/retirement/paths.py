@@ -13,7 +13,7 @@ import sys
 
 import numpy as np
 
-from financial_simulations.retirement.flows import household_flows
+from financial_simulations.retirement.flows import account_flows, household_flows
 from financial_simulations.retirement.ledger import LedgerResult, run_ledger
 from financial_simulations.retirement.plan import build_inputs
 from financial_simulations.rules.au.parameters import UnsupportedRule
@@ -56,10 +56,14 @@ def _summarise(path: int, result: LedgerResult, retire: date, cpi: float):
     yearly = household_flows(daily)
     household = yearly.pivot_table(index="FY ending", columns="Flow", values="AUD", aggfunc="sum")
     net = yearly.drop_duplicates("FY ending").set_index("FY ending")["Net change"]
+    moves = account_flows(daily, result.events)
+    added = moves.loc[moves["Flow"] == "Savings invested"].groupby("FY ending")["AUD"].sum()
     for row in rows:
         year = row["FY ending"]
         row.update({f"Flow: {flow}": float(household.loc[year, flow]) for flow in household.columns})
         row["Net change in wealth"] = float(net.loc[year])
+        # A transfer from cash, not a change in total wealth, so it is kept apart from the flows above.
+        row["Added to outside investments"] = float(added.get(year, 0.0))
     retired_rates = [r["Withdrawal rate"] for r in rows if r["Full retired year"] and np.isfinite(r["Withdrawal rate"])]
     at_retirement = daily.loc[daily.index.date <= retire, "total"]
     unpaid = sum(item["amount"] for item in result.outstanding["unpaid_tax"])
