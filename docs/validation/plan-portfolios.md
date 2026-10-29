@@ -286,3 +286,16 @@ afterwards:
   working years, stopping at retirement.
 
 Plan, ledger and market tests passed: 37 tests.
+
+## Memory and chart performance (2026-10-29)
+
+**Memory.** On the owner's 5,000/500-path plan the command-line run's
+committed memory (main process plus 12 workers) peaked at 10.9 GB. A single
+idle worker committed 803 MB with an 89 MB working set and 30 threads. With
+one maths-library thread it committed 64 MB with 7 threads. The same run
+then peaked at 2.06 GB, and the plan and ledger tests passed.
+
+**Path chart.** All paths are painted as one server-side image, and only the
+median, the hovered path and the hover points are drawn by the browser.
+Each hover is then handled in about 12–30 ms, measured in a hidden browser
+pane. All 31 charts drew in 9 s on that plan.

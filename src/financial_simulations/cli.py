@@ -38,10 +38,16 @@ def main(argv=None) -> int:
         import sys
         from pathlib import Path
 
+        import os
+
         app = Path(__file__).resolve().parent / "ui" / "app.py"
+        # The app's numerical work is vectorised over paths, not large matrix algebra, so a few maths-library
+        # threads are enough; the default reserves a buffer per CPU thread (about 0.8 GB on a 32-thread machine).
+        env = {**os.environ, **{name: os.environ.get(name, "4") for name in
+                                ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS")}}
         return subprocess.call([sys.executable, "-m", "streamlit", "run", str(app), "--server.port", str(args.port),
                                 "--server.headless", "true", "--browser.gatherUsageStats", "false",
-                                "--client.toolbarMode", "minimal"])
+                                "--client.toolbarMode", "minimal"], env=env)
     try:
         if args.command in ("paired", "holdout"):
             from financial_simulations import studies

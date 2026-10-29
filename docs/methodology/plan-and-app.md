@@ -374,6 +374,19 @@ module; under Streamlit that is the app script. The pool therefore hides
 `__main__` while it submits work. Without this a worker re-ran the whole
 app, which took about 49 seconds and once broke the pool.
 
+**Memory.** On Windows, numpy's OpenBLAS reserves a buffer for every CPU
+thread. On a 32-thread machine each ledger worker therefore committed about
+800 MB while touching only about 89 MB. Twelve workers committed about
+9.6 GB, and Windows grew the pagefile to back that commitment. Two app
+instances took system commitment to about 50 GB against 32 GB of RAM.
+
+Workers now start with `OPENBLAS_NUM_THREADS`, `OMP_NUM_THREADS` and
+`MKL_NUM_THREADS` set to 1, which brings each to about 64 MB. The
+`financial-simulations ui` launcher gives the app process four. A
+5,000/500-path plan peaked at about 2.1 GB committed in total, against
+10.9 GB before. Only one app instance should run at a time, because each
+keeps its own worker pool.
+
 Charts show hover values. Dragging pans, Shift+scroll zooms and a
 double-click resets. Plain scrolling scrolls the page, because an
 earlier version zoomed the chart under the pointer. Python generates PNG

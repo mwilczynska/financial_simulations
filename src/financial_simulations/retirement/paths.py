@@ -165,6 +165,9 @@ def _ready() -> int:
     return os.getpid()
 
 
+THREAD_LIMITS = {"OPENBLAS_NUM_THREADS": "1", "OMP_NUM_THREADS": "1", "MKL_NUM_THREADS": "1"}
+
+
 @contextmanager
 def _without_main_module():
     """Stop spawned workers re-importing ``__main__``.
@@ -177,13 +180,22 @@ def _without_main_module():
     """
     main = sys.modules.get("__main__")
     spec, path = getattr(main, "__spec__", None), getattr(main, "__file__", None)
+    saved = {name: os.environ.get(name) for name in THREAD_LIMITS}
     try:
+        # Workers inherit the environment at spawn. One maths-library thread each: by default OpenBLAS reserves a
+        # buffer per CPU thread, which committed about 800 MB per worker on a 32-thread machine (64 MB with one).
+        os.environ.update(THREAD_LIMITS)
         if main is not None:
             main.__spec__ = None
             if path is not None:
                 del main.__file__
         yield
     finally:
+        for name, value in saved.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
         if main is not None:
             main.__spec__ = spec
             if path is not None:

@@ -302,3 +302,13 @@ def test_spending_rule_defaults_to_fixed_and_maps_to_the_ledger(processed_fixtur
     plan["spending"]["rule"] = "percent"
     with pytest.raises(PlanError, match="spending.rule: must be one of fixed, guyton_klinger, vanguard"):
         normalize_plan(plan)
+
+
+def test_workers_start_with_one_maths_thread_and_the_parent_environment_is_restored(monkeypatch):
+    import os
+    from financial_simulations.retirement.paths import THREAD_LIMITS, _without_main_module
+
+    monkeypatch.setenv("OPENBLAS_NUM_THREADS", "8")
+    with _without_main_module():
+        assert all(os.environ[name] == "1" for name in THREAD_LIMITS)
+    assert os.environ["OPENBLAS_NUM_THREADS"] == "8"
