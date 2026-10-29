@@ -23,13 +23,20 @@ class PortfolioAnalysis:
     summary: pd.DataFrame
 
 
-def _wealth(returns: np.ndarray, dates, weights: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Buy and hold at daily resolution; return path wealth and daily return."""
+def _wealth(returns: np.ndarray, dates, weights: np.ndarray, rebalance: bool) -> tuple[np.ndarray, np.ndarray]:
+    """Daily positions; return path wealth and daily return.
+
+    With ``rebalance`` the positions reset to ``weights`` at their pre-return
+    values on the first return observation of each calendar year (the Stage 1
+    and tracker convention); otherwise weights drift (buy and hold).
+    """
     count, steps, assets = returns.shape
     positions = np.broadcast_to(100 * weights, (count, assets)).copy()
     wealth = np.empty((count, steps + 1))
     wealth[:, 0] = 100
     for step in range(steps):
+        if rebalance and dates[step + 1].year != dates[step].year:
+            positions = positions.sum(axis=1, keepdims=True) * weights
         positions *= 1 + returns[:, step, :]
         wealth[:, step + 1] = positions.sum(axis=1)
     daily = wealth[:, 1:] / wealth[:, :-1] - 1
@@ -59,8 +66,9 @@ def analyse_portfolios(plan: dict, market, target_dates) -> PortfolioAnalysis:
     paths, outcomes, annual, summaries, historical = [], [], [], [], []
     for title, section in PORTFOLIOS:
         weights = np.array([plan[section]["weights"].get(ticker, 0.0) for ticker in market.path.assets])
-        wealth, daily = _wealth(sampled, target_dates, weights)
-        hwealth, hdaily = _wealth(market.path.returns[None, :, :], market.path.dates, weights)
+        rebalance = plan[section]["rebalance"] == "annual"
+        wealth, daily = _wealth(sampled, target_dates, weights, rebalance)
+        hwealth, hdaily = _wealth(market.path.returns[None, :, :], market.path.dates, weights, rebalance)
         hwealth = hwealth[0]
         for pos in historical_months:
             historical.append({"Date": market.path.dates[pos], "Portfolio": title, "Growth of 100": float(hwealth[pos])})

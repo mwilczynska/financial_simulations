@@ -75,8 +75,8 @@ Schema version 2 uses:
 | `[plan]` | Name, start date from 2026-07-01, requested years |
 | `[person]` and `[employment]` | Birth date, retirement age, cover, salary, sacrifice, payday |
 | `assets` | Selected local ticker codes |
-| `[outside]` | Cash, cash buffer, `investment_balance`, `opening_cost_base`, `opening_acquired`, `weights` |
-| `[super]` | Balance, prior 30 June total super balance, `weights` |
+| `[outside]` | Cash, cash buffer, `investment_balance`, `opening_cost_base`, `opening_acquired`, `weights`, `rebalance` |
+| `[super]` | Balance, prior 30 June total super balance, `weights`, `rebalance` |
 | `[spending]`, `[pension]`, `[assumptions]` | Spending, pension transfer and projected-rule assumptions |
 | `[market]` | Portfolio path count, retirement path count, seed, mean block length |
 
@@ -112,10 +112,18 @@ differences reflect weights. See [resampling](resampling.md).
 For each portfolio, positions begin at `100 * weight[ticker]`. Every daily
 return updates its position:
 `position[t,ticker] = position[t-1,ticker] * (1 + return[t,ticker])`.
-Portfolio value is their sum. This is **buy and hold**: weights drift.
-Historical growth uses the same accounting on the full shared sample. The
-separate Stage 1 default experiment uses annual rebalancing, so its
-statistics need not match the planner's.
+Portfolio value is their sum. Each account's `rebalance` policy is
+`annual` (default) or `none`. Under `annual`, on the first return
+observation of each calendar year the positions reset to
+`value[t-1] * weight[ticker]` before that day's return. This is the Stage 1
+and investment-tracker convention. Under `none` the weights drift (buy and
+hold). Historical growth uses the same accounting on the full shared sample.
+[ADR 0018](../decisions/0018-planner-annual-rebalancing.md) records why: on
+the 1970–2026 shared sample, the default 40/20/20/20 outside mix compounds
+at 15.25% a year rebalanced and 10.21% buy and hold. The tracker reports
+15.25% with its own calendar convention. In the retirement ledger, an
+outside-super rebalance is a set of CGT disposals; inside super it is an
+untaxed unit switch.
 
 The future target is a weekday accounting template from plan start to its
 supported end, not a forecast of exchange holidays. The ledger also

@@ -10,9 +10,12 @@ Scope and conventions (see docs/methodology/retirement-ledger.md):
   distribution, paid at the last observation of each calendar quarter and
   removed from the unit price, plus the remaining price return. Total return
   is never counted twice. Yields and franking are labelled assumptions.
-* Holdings are bought and held. New money buys the target weights, and there
-  is no rebalancing, so outside CGT arises only from sales. Funds are assumed
-  not to realise gains (no fund CGT).
+* New money buys the target weights. Holdings drift between optional annual
+  rebalances, which reset each account to its weights at pre-return values on
+  the first return observation of each calendar year. Outside super a
+  rebalance sells overweight parcels (oldest first) and realises CGT; inside
+  super it is a unit switch. Funds are assumed not to realise gains (no fund
+  CGT), so super rebalancing is untaxed.
 * Salary is paid gross. Income tax is assessed at 30 June and settled on a
   configurable later date. PAYG withholding is not modelled.
 """
@@ -21,7 +24,6 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from math import isfinite
 
-import numpy as np
 import pandas as pd
 
 from financial_simulations.dates import as_date
@@ -140,12 +142,15 @@ class LedgerScenario:
     tsb_prior_30_june: float | None = None
     unused_concessional: dict = field(default_factory=dict)
     capital_losses_brought_forward: float = 0.0
+    outside_rebalance: bool = False
+    super_rebalance: bool = False
 
 
 @dataclass
 class _State:
     cash: float
     parcels: list
+    outside_units: dict
     super_acc: dict
     super_pen: dict
     prices: dict
@@ -205,9 +210,10 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
     outside_weights = _default_weights(scenario.outside_weights, opening_outside, assets, "Outside weights")
     super_weights = _default_weights(scenario.super_weights, scenario.super_units, assets, "Super weights")
     observations = {d: i for i, d in enumerate(path.dates)}
+    rebalance_days = {d for previous, d in zip(path.dates, path.dates[1:]) if d.year != previous.year}
     quarter_ends = _last_observation_per(path.dates, lambda d: (d.year, (d.month - 1) // 3))
     month_ends = _last_observation_per(path.dates, lambda d: (d.year, d.month))
-    state = _State(_money(scenario.outside_cash, "Outside cash"), list(scenario.outside_parcels),
+    state = _State(_money(scenario.outside_cash, "Outside cash"), list(scenario.outside_parcels), dict(opening_outside),
                    {a: float(scenario.super_units.get(a, 0.0)) for a in assets}, {a: 0.0 for a in assets},
                    {a: 1.0 for a in assets})
     events, rows, annual = [], [], []
@@ -253,25 +259,36 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
                 units_map[asset] = units_map.get(asset, 0.0) + amount * weight / state.prices[asset]
         log("buy", amount, account)
 
-    def buy_outside(amount):
-        if outside_weights is None:
-            raise ValueError("Supply outside weights: there are no opening holdings to follow.")
-        for asset, weight in outside_weights.items():
-            if weight > 0:
-                state.parcels.append(Parcel(asset, amount * weight / state.prices[asset], amount * weight, day))
-        log("buy", amount, "outside")
+    def buy_outside(amount, amounts=None, purpose="investment"):
+        """Buy new parcels: ``amount`` at the target weights, or explicit per-asset ``amounts``."""
+        if amounts is None:
+            if outside_weights is None:
+                raise ValueError("Supply outside weights: there are no opening holdings to follow.")
+            amounts = {asset: amount * weight for asset, weight in outside_weights.items()}
+        for asset, spend in amounts.items():
+            if spend > 0:
+                units = spend / state.prices[asset]
+                state.parcels.append(Parcel(asset, units, spend, day))
+                state.outside_units[asset] += units
+        log("buy", sum(amounts.values()), "outside", purpose=purpose)
 
     def sell_outside(amount):
         """Sell proportionally across assets by value, oldest parcels first within each asset."""
-        holdings = {a: sum(p.units for p in state.parcels if p.asset == a) * state.prices[a] for a in assets}
+        holdings = {a: state.outside_units[a] * state.prices[a] for a in assets}
         total = sum(holdings.values())
         amount = min(amount, total)
         if amount <= 0:
             return 0.0
+        sell_parcels({a: amount * v / total for a, v in holdings.items()}, "withdrawal")
+        return amount
+
+    def sell_parcels(targets, purpose):
+        """Sell ``targets`` (AUD by asset), oldest parcels first; record each CGT event."""
         remaining_parcels = []
-        targets = {a: amount * v / total for a, v in holdings.items()}
+        targets = dict(targets)
+        sold_total = 0.0
         for parcel in sorted(state.parcels, key=lambda p: p.acquired):
-            target = targets[parcel.asset]
+            target = targets.get(parcel.asset, 0.0)
             value = parcel.units * state.prices[parcel.asset]
             if target <= TOLERANCE or value <= 0:
                 remaining_parcels.append(parcel)
@@ -293,13 +310,37 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
                                                                                      parcel.acquired, cpi), "post_reform")]
             state.fy["events"].extend(gains)
             log("sale", sold, "outside", asset=parcel.asset, gain=sum(g.amount for g in gains), acquired=str(parcel.acquired),
-                **{f"{g.category}_gain": g.amount for g in gains})
+                purpose=purpose, **{f"{g.category}_gain": g.amount for g in gains})
             targets[parcel.asset] = target - sold
+            sold_total += sold
             if fraction < 1 - 1e-12:
                 remaining_parcels.append(Parcel(parcel.asset, parcel.units * (1 - fraction), parcel.cost_base - cost, parcel.acquired,
                                                 None if parcel.reform_value is None else parcel.reform_value * (1 - fraction)))
         state.parcels = remaining_parcels
-        return amount
+        state.outside_units = {a: 0.0 for a in assets}
+        for parcel in remaining_parcels:
+            state.outside_units[parcel.asset] += parcel.units
+        return sold_total
+
+    def rebalance():
+        """Reset accounts to target weights at pre-return values; outside sales realise CGT."""
+        if scenario.outside_rebalance and outside_weights is not None:
+            holdings = {a: state.outside_units[a] * state.prices[a] for a in assets}
+            total = sum(holdings.values())
+            excess = {a: holdings[a] - total * outside_weights[a] for a in assets}
+            sells = {a: v for a, v in excess.items() if v > TOLERANCE}
+            buys = {a: -v for a, v in excess.items() if v < -TOLERANCE}
+            if sells and buys:
+                proceeds = sell_parcels(sells, "rebalance")
+                scale = proceeds / sum(buys.values())
+                buy_outside(0.0, {a: v * scale for a, v in buys.items()}, "rebalance")
+        if scenario.super_rebalance and super_weights is not None:
+            for account, units_map in (("accumulation", state.super_acc), ("pension", state.super_pen)):
+                total = _value(units_map, state.prices)
+                if total > TOLERANCE:
+                    for asset in assets:
+                        units_map[asset] = total * super_weights[asset] / state.prices[asset]
+                    log("rebalance", total, account)
 
     def sell_units(units_map, amount):
         value = _value(units_map, state.prices)
@@ -349,13 +390,15 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
             log("cgt_reform_valuation", sum(p.reform_value or 0.0 for p in state.parcels), "outside")
         flows = {k: 0.0 for k in ("market_pnl", "salary", "employer_contributions", "contributions_tax", "spending_paid",
                                   "shortfall", "tax_paid", "fund_tax", "distributions", "pension_payments", "lump_sums")}
-        opening = (state.cash + sum(p.units * state.prices[p.asset] for p in state.parcels)
+        opening = (state.cash + _value(state.outside_units, state.prices)
                    + _value(state.super_acc, state.prices) + _value(state.super_pen, state.prices))
         observation = observations.get(day)
+        if day in rebalance_days:
+            rebalance()
         if observation:
             for i, asset in enumerate(assets):
                 state.prices[asset] *= 1 + path.returns[observation - 1, i]
-            flows["market_pnl"] = (state.cash + sum(p.units * state.prices[p.asset] for p in state.parcels)
+            flows["market_pnl"] = (state.cash + _value(state.outside_units, state.prices)
                                    + _value(state.super_acc, state.prices) + _value(state.super_pen, state.prices)) - opening
         if day in quarter_ends:
             for asset in assets:
@@ -366,7 +409,7 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
                 state.prices[asset] -= per_unit
                 spec = income[asset]
                 credit_ratio = spec.company_tax_rate / (1 - spec.company_tax_rate)
-                outside_units = sum(p.units for p in state.parcels if p.asset == asset)
+                outside_units = state.outside_units[asset]
                 if outside_units:
                     cash = per_unit * outside_units
                     state.cash += cash
@@ -508,12 +551,12 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
                            "transfer_balance": state.tba.balance if state.tba else None})
             log("assessment", assessment.net_tax, "outside", financial_year=rules.financial_year,
                 taxable_income=assessment.taxable_income, division_293=assessment.division_293_tax)
-        outside_value = sum(p.units * state.prices[p.asset] for p in state.parcels)
+        outside_value = _value(state.outside_units, state.prices)
         acc_value, pen_value = _value(state.super_acc, state.prices), _value(state.super_pen, state.prices)
         total = state.cash + outside_value + acc_value + pen_value
         expected = (opening + flows["market_pnl"] + flows["salary"] + flows["employer_contributions"]
                     - flows["contributions_tax"] - flows["spending_paid"] - flows["tax_paid"] - flows["fund_tax"])
-        if not np.isclose(total, expected, rtol=1e-11, atol=1e-6):
+        if abs(total - expected) > 1e-6 + 1e-11 * abs(expected):
             raise ArithmeticError(f"Ledger reconciliation failed on {day}: {total} != {expected}.")
         rows.append({"date": day, "is_observation": observation is not None, "cash": state.cash,
                      "outside_investments": outside_value, "accumulation": acc_value, "pension": pen_value,

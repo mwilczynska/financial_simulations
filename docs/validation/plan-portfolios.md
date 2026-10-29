@@ -87,3 +87,26 @@ as AUD is an explicit temporary proxy. Cash distributions are estimated
 from historical contributions and do not identify Australian franking.
 Complete-path retirement bands omit unsupported tax situations and
 need substantially more complete draws for stable tail estimates.
+
+## Annual rebalancing and agreement with the tracker (ADR 0018)
+
+The user reported a historical CAGR of about 10% in the planner for the
+default outside mix against about 15% in `portfolio_plot17.py`. The tracker
+rebalances annually; the planner then compounded buy and hold. Executed on
+the local processed data, 1970-01-02 to 2026-10-27:
+
+| Calculation | Buy and hold | Annual rebalance |
+| --- | --- | --- |
+| Tracker conventions (`Adj Close`, union calendar, forward fill, lagged return) | 10.19% | 15.25% |
+| Planner `analyse_portfolios` (common dates, pre-return reset) | 10.21% | 15.25% |
+
+The rebalanced planner portfolio has 22.2% annualised daily volatility and
+−58.1% maximum drawdown; buy and hold has 28.5% and −89.2%. The inside
+mix (100% `GLSTOCK`) is unaffected: 10.08% either way. New tests check the
+portfolio-accounting worked example (110 against 110.25), a ledger
+rebalance that sells 5,000 of the overweight asset, realising a 1,666.67
+gain on a 40,000/60,000 cost-to-value parcel, untaxed super switching, and
+conservation of total wealth. The ledger now keeps per-asset outside unit
+totals instead of summing every parcel daily. One invented 10-year ledger
+path fell from 0.89 s to 0.21 s, with all existing ledger reconciliations
+unchanged.

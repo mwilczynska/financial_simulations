@@ -1,6 +1,8 @@
 # ADR 0017: ticker portfolios and portfolio-first interactive results
 
-Date: 2026-10-28. Status: accepted; implemented and locally validated.
+Date: 2026-10-28. Status: accepted; implemented and locally validated. The
+buy-and-hold account representation was superseded by
+[ADR 0018](0018-planner-annual-rebalancing.md).
 Supersedes the input and deterministic market conventions in
 [ADR 0016](0016-plan-file-and-browser-app.md). Its local plan-file and
 browser-app decision remains in force.

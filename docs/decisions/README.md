@@ -22,7 +22,8 @@ Decision records preserve why Financial Simulations makes a material modelling o
 | [0014](0014-single-person-ledger-conventions.md) | 2026-10-28 | Accepted; 2026-27 ledger implemented and tested | Daily single-person ledger conventions |
 | [0015](0015-projected-rules-and-cgt-reform.md) | 2026-10-28 | Accepted; implemented and tested | Projected later-year rules and the 2027 CGT reform under an assumed CPI |
 | [0016](0016-plan-file-and-browser-app.md) | 2026-10-28 | App/file decision remains; v1 inputs superseded by 0017 | One plan file with a local browser app |
-| [0017](0017-ticker-portfolios-and-interactive-results.md) | 2026-10-28 | Accepted; implemented and locally validated | Local tickers, two portfolio mixes, shared daily simulations and interactive results |
+| [0017](0017-ticker-portfolios-and-interactive-results.md) | 2026-10-28 | Accepted; buy-and-hold accounts superseded by 0018 | Local tickers, two portfolio mixes, shared daily simulations and interactive results |
+| [0018](0018-planner-annual-rebalancing.md) | 2026-10-28 | Accepted; implemented and locally validated | Annual rebalancing per account in the planner and tax ledger |
 
 ## When to write a record
 

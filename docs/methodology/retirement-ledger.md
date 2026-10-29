@@ -108,7 +108,7 @@ transfers between the person's accounts.
 | Distribution timing and size | Quarterly, at annual_yield/4 of price | Labelled assumption (estimated income mode) |
 | Franking credit ratio | 30% company tax | Assumption; base-rate entities pay 25% |
 | Fund realised gains | None | Simplification: overstates net fund returns when funds turn over assets |
-| Rebalancing | None; new money follows target weights | Avoids unmodelled CGT on outside rebalancing |
+| Rebalancing | Optional per account (`outside_rebalance`, `super_rebalance`; ledger default off, planner default annual). On the first return observation of a calendar year, accounts reset to target weights at pre-return values. Outside sales are CGT events labelled `purpose = rebalance`; super switches are untaxed | [ADR 0018](../decisions/0018-planner-annual-rebalancing.md); untaxed super switching overstates fund returns |
 | Parcel selection | Oldest first within asset | Engineering choice; specific identification is allowed in law |
 | Interest on cash | Nil | Simplification |
 | Default weights | Opening holdings' proportions; error if none | Prevents silently investing in an arbitrary asset |

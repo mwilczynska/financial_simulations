@@ -23,10 +23,12 @@ investment_balance = 450000.0
 opening_cost_base = 330000.0
 opening_acquired = "2015-03-02"
 weights = {USLCAP3x = 0.4, ITT3x = 0.2, GOLDPM2x = 0.2, COMM = 0.2}
+rebalance = "annual"
 
 [super]
 balance = 650000.0
 weights = {GLSTOCK = 1.0}
+rebalance = "annual"
 total_super_balance_prior_30_june = 650000.0
 
 [spending]

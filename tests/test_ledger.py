@@ -192,3 +192,24 @@ def test_ledger_report_writes_csv_json_and_png_without_pdf(tmp_path):
     assert len(pd.read_csv(tmp_path / "daily.csv")) == 365
     assert (tmp_path / "ledger.png").read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
     assert not list(tmp_path.glob("*.pdf"))
+
+
+def test_annual_rebalance_resets_weights_and_realises_outside_cgt():
+    dates = tuple(pd.bdate_range("2026-12-28", "2027-01-08").date)
+    returns = np.zeros((len(dates) - 1, 2))
+    returns[0, 0] = 0.20  # AU rises 20% on 29 December, then the new year starts
+    path = MarketPath(dates, ("AU", "GL"), returns, "AUD")
+    opening = (Parcel("AU", 50000, 40000, "2019-01-01"), Parcel("GL", 50000, 50000, "2019-01-01"))
+    kwargs = dict(outside_parcels=opening, outside_weights={"AU": 0.5, "GL": 0.5}, super_units={"AU": 50000, "GL": 50000},
+                  super_weights={"AU": 0.5, "GL": 0.5})
+    held = run_ledger(path, scenario_with(Person("1985-01-01"), **kwargs), YEARS)
+    rebalanced = run_ledger(path, scenario_with(Person("1985-01-01"), outside_rebalance=True, super_rebalance=True, **kwargs),
+                            YEARS)
+    assert held.daily["total"].iloc[-1] == pytest.approx(rebalanced.daily["total"].iloc[-1])
+    sales = rebalanced.events[(rebalanced.events["event"] == "sale") & (rebalanced.events["purpose"] == "rebalance")]
+    # 60,000 AU and 50,000 GL reset to 55,000 each at the first 2027 observation (1 January in this weekday template): sell 5,000 AU with cost base 3,333.33.
+    assert sales["date"].tolist() == [date(2027, 1, 1)]
+    assert sales["amount"].sum() == pytest.approx(5000)
+    assert sales["gain"].sum() == pytest.approx(5000 - 40000 / 60000 * 5000)
+    assert "sale" not in set(held.events.get("event", ()))
+    assert (rebalanced.events["event"] == "rebalance").sum() == 1  # accumulation units switch without tax

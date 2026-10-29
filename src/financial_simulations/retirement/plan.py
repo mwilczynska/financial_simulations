@@ -32,6 +32,7 @@ from financial_simulations.rules.au.superannuation import birthday
 
 SCHEMA_VERSION = 2
 RULES_START = date(2026, 7, 1)
+REBALANCE = ("annual", "none")
 
 
 class PlanError(ValueError):
@@ -84,6 +85,13 @@ class _Checker:
             return default or ""
         return value.strip()
 
+    def choice(self, table, key, path, default, options):
+        value = table.get(key, default)
+        if value not in options:
+            self.problems.append(f"{path}.{key}: must be one of {', '.join(options)}")
+            return default
+        return value
+
     def flag(self, table, key, path, default):
         value = table.get(key, default)
         if not isinstance(value, bool):
@@ -130,8 +138,9 @@ def normalize_plan(raw: dict) -> dict:
     allowed = {"plan": {"name", "start_date", "years"},
                "person": {"date_of_birth", "retirement_age", "private_hospital_cover"},
                "employment": {"annual_salary", "salary_sacrifice_per_year", "first_payday"},
-               "outside": {"cash", "cash_buffer", "investment_balance", "opening_cost_base", "opening_acquired", "weights"},
-               "super": {"balance", "weights", "total_super_balance_prior_30_june"},
+               "outside": {"cash", "cash_buffer", "investment_balance", "opening_cost_base", "opening_acquired", "weights",
+                           "rebalance"},
+               "super": {"balance", "weights", "rebalance", "total_super_balance_prior_30_june"},
                "spending": {"annual", "annual_growth"},
                "pension": {"start_age", "transfer_all", "amount"},
                "assumptions": {"cpi_annual", "wage_growth_annual"},
@@ -174,12 +183,14 @@ def normalize_plan(raw: dict) -> dict:
                        "investment_balance": c.number(outside, "investment_balance", "outside", 0.0, low=0, high=1e9),
                        "opening_cost_base": c.number(outside, "opening_cost_base", "outside", 0.0, low=0, high=1e9),
                        "opening_acquired": c.day(outside, "opening_acquired", "outside", plan["plan"]["start_date"]),
-                       "weights": c.weights(outside, "outside", names)}
+                       "weights": c.weights(outside, "outside", names),
+                       "rebalance": c.choice(outside, "rebalance", "outside", "annual", REBALANCE)}
     if (plan["outside"]["opening_acquired"] and plan["plan"]["start_date"]
             and plan["outside"]["opening_acquired"] > plan["plan"]["start_date"]):
         c.problems.append("outside.opening_acquired: must be on or before plan.start_date")
     plan["super"] = {"balance": c.number(super_, "balance", "super", 0.0, low=0, high=1e9),
                      "weights": c.weights(super_, "super", names),
+                     "rebalance": c.choice(super_, "rebalance", "super", "annual", REBALANCE),
                      "total_super_balance_prior_30_june": c.number(super_, "total_super_balance_prior_30_june", "super",
                                                                    super_.get("balance", 0.0), low=0, high=1e9)}
     if plan["super"]["balance"] > 0 and not plan["super"]["weights"]:
@@ -314,7 +325,8 @@ def build_inputs(plan: dict, *, market=None, returns=None):
         super_weights=plan["super"]["weights"],
         income={ticker: AssetIncome(market.income_yields[ticker], 0.0) for ticker in names},
         employment=employment, annual_spending=plan["spending"]["annual"], spending_growth=plan["spending"]["annual_growth"],
-        pension=pension, tsb_prior_30_june=plan["super"]["total_super_balance_prior_30_june"])
+        pension=pension, tsb_prior_30_june=plan["super"]["total_super_balance_prior_30_june"],
+        outside_rebalance=plan["outside"]["rebalance"] == "annual", super_rebalance=plan["super"]["rebalance"] == "annual")
     years = project_rulesets(load_ruleset("2026-27"), financial_year_of(end),
                              ProjectionAssumptions(plan["assumptions"]["cpi_annual"], plan["assumptions"]["wage_growth_annual"]))
     return path, scenario, years, notes

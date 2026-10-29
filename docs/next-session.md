@@ -13,7 +13,7 @@ single-person daily ledger for that income year. AUD FX and Australian inflation
 by the user to a later date. Keep the Stage 1 user-selected default portfolio:
 `USLCAP3x` 40%, `ITT3x` 20%, `GOLDPM2x` 20%, `COMM` 20%, annual rebalancing.
 The retirement planner's invented default uses that mix outside super and
-100% `GLSTOCK` inside super; the planner compounds those holdings buy and hold.
+100% `GLSTOCK` inside super; both accounts rebalance annually by default (ADR 0018).
 Generate PNGs directly from Python; the retirement planner also has
 interactive charts. Never create PDFs.
 

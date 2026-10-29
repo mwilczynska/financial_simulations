@@ -176,3 +176,19 @@ def test_35_year_path_and_plots_keep_yearly_summary_compact(tmp_path, processed_
     assert len(run.retirement_bands) >= 35 * 12
     assert len(run.portfolios.paths) >= 2 * 35 * 12
     assert (run.folder / "ledger.png").stat().st_size > 10000
+
+
+def test_annual_rebalancing_is_the_default_and_harvests_dispersion():
+    from financial_simulations.retirement.analysis import _wealth
+    import numpy as np
+
+    assert default_plan()["outside"]["rebalance"] == "annual"
+    with pytest.raises(PlanError, match="outside.rebalance: must be one of annual, none"):
+        normalize_plan({**default_plan(), "outside": {**default_plan()["outside"], "rebalance": "monthly"}})
+    # The portfolio-accounting worked example: 50/50, +10% on each asset in turn across a year end.
+    dates = (date(2026, 12, 30), date(2026, 12, 31), date(2027, 1, 4))
+    returns = np.array([[[0.10, 0.0], [0.0, 0.10]]])
+    held, _ = _wealth(returns, dates, np.array([0.5, 0.5]), False)
+    rebalanced, _ = _wealth(returns, dates, np.array([0.5, 0.5]), True)
+    assert held[0, -1] == pytest.approx(110.0)
+    assert rebalanced[0, -1] == pytest.approx(110.25)
