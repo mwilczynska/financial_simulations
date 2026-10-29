@@ -770,8 +770,8 @@ def all_paths_chart(paths, marks, outcomes=None):
     first, last = pd.Timestamp(paths["Date"].min()), pd.Timestamp(paths["Date"].max())
     y_scale = (alt.Scale(type="symlog", constant=1000, domain=[0, top], nice=False) if wide
                else alt.Scale(domain=[0, top], nice=False))
-    y = alt.Y("Total wealth:Q", title="Total wealth (nominal AUD" + (", log-like)" if wide else ")"),
-              scale=y_scale, axis=alt.Axis(format="$,.0f"))
+    y_title = "Total wealth (nominal AUD" + (", log-like)" if wide else ")")
+    y = alt.Y("Total wealth:Q", title=y_title, scale=y_scale, axis=alt.Axis(format="$,.0f"))
     hover = alt.selection_point(fields=["Path"], on="pointerover", nearest=True, clear="pointerout", empty=False,
                                 name="path_hover")
     x = alt.X("Date:T", title=None, axis=year_axis(lines_frame), scale=alt.Scale(domain=[first.isoformat(), last.isoformat()]))
@@ -781,7 +781,7 @@ def all_paths_chart(paths, marks, outcomes=None):
     image = pd.DataFrame({"url": [paths_image(paths, first, last, top, wide, opacity)], "x": [first], "x2": [last],
                           "y": [top], "y2": [0.0]})
     lines = alt.Chart(image).mark_image(aspect=False, align="left", baseline="top").encode(
-        x=x, x2="x2:T", y=alt.Y("y:Q", scale=y_scale, title=y.title, axis=alt.Axis(format="$,.0f")), y2="y2:Q", url="url:N")
+        x=x, x2="x2:T", y=alt.Y("y:Q", scale=y_scale, title=y_title, axis=alt.Axis(format="$,.0f")), y2="y2:Q", url="url:N")
     # Only the hovered path is drawn on top, so a hover redraws one line instead of restyling every path.
     highlight = alt.Chart(lines_frame).transform_filter(hover).mark_line(color="#0b3d45", strokeWidth=3.5).encode(
         x=x, y=y, detail="Path:N")
