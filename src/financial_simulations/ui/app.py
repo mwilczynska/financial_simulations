@@ -646,39 +646,46 @@ def quantile_bands(frame, by, field):
 
 
 def all_paths_chart(paths, marks, outcomes=None):
-    """Every path's total wealth as a faint grey line (overlaps darken); the line under the pointer is highlighted."""
+    """Every path's total wealth as a faint grey line (overlaps darken); the path nearest the pointer is highlighted.
+
+    All paths are drawn, because their overlap is the distribution. To keep the browser responsive the line layer
+    carries only the four fields it needs, and hovering uses one invisible point per path per year (the nearest
+    point picks the path) instead of every month, which keeps the hover index about twelve times smaller.
+    """
     import altair as alt
 
-    frame = add_age(paths)
-    if outcomes is not None:
-        keep = outcomes[["Path", "Ending wealth", "Spending shortfall", "First retired-year withdrawal rate"]]
-        frame = frame.merge(keep, on="Path", how="left")
-    medians = frame.groupby("Date")["Total wealth"].median()
-    wide = float(frame["Total wealth"].quantile(0.95)) > 20 * max(1000.0, float(medians.max()))
-    count = frame["Path"].nunique()
-    opacity = min(0.45, max(0.12, 15 / count))
+    lines_frame = paths[["Date", "Path", "Status", "Total wealth"]]
+    medians = lines_frame.groupby("Date")["Total wealth"].median()
+    wide = float(lines_frame["Total wealth"].quantile(0.95)) > 20 * max(1000.0, float(medians.max()))
+    count = lines_frame["Path"].nunique()
+    opacity = min(0.45, max(0.04, 15 / count))
     y = alt.Y("Total wealth:Q", title="Total wealth (nominal AUD" + (", log-like)" if wide else ")"),
               scale=alt.Scale(type="symlog", constant=1000) if wide else alt.Scale(zero=True), axis=alt.Axis(format="$,.0f"))
     hover = alt.selection_point(fields=["Path"], on="pointerover", nearest=True, clear="pointerout", empty=False,
                                 name="path_hover")
-    extra = [alt.Tooltip(f, format=fmt, title=t) for f, fmt, t in
-             (("Ending wealth:Q", "$,.0f", "Path's ending wealth"), ("Spending shortfall:Q", "$,.0f", "Path's spending shortfall"),
-              ("First retired-year withdrawal rate:Q", ".1%", "Path's first retired-year withdrawal rate"))
-             if f.split(":")[0] in frame]
-    x = alt.X("Date:T", title=None, axis=year_axis(frame))
-    lines = alt.Chart(frame).mark_line().encode(
+    x = alt.X("Date:T", title=None, axis=year_axis(lines_frame))
+    lines = alt.Chart(lines_frame).mark_line().encode(
         x=x, y=y, detail="Path:N",
         color=alt.when(hover).then(alt.value("#0b3d45")).otherwise(
             alt.Color("Status:N", scale=alt.Scale(domain=["funded", "depleted"], range=["#4a4a4a", "#b23a3a"]),
                       legend=alt.Legend(orient="bottom", title=None))),
-        opacity=alt.when(hover).then(alt.value(1.0)).when(alt.datum.Status == "depleted").then(alt.value(0.7))
-        .otherwise(alt.value(opacity)),
-        strokeWidth=alt.when(hover).then(alt.value(3.5)).otherwise(alt.value(1.2)))
-    # Invisible points along every path carry the hover: Vega-Lite finds the nearest point, then its whole path
-    # (same Path value) is highlighted in the line layer above.
-    points = alt.Chart(frame).mark_point(opacity=0, size=60).encode(
+        opacity=alt.when(hover).then(alt.value(1.0)).when(alt.datum.Status == "depleted")
+        .then(alt.value(min(0.7, opacity * 3))).otherwise(alt.value(opacity)),
+        strokeWidth=alt.when(hover).then(alt.value(3.5)).otherwise(alt.value(1.0)))
+    # Invisible yearly points (each June month end, plus each path's last month) carry the hover and tooltip.
+    dates = pd.to_datetime(paths["Date"])
+    yearly = paths.loc[(dates.dt.month == 6) | (dates == dates.max())]
+    yearly = add_age(yearly)
+    if outcomes is not None:
+        keep = outcomes[["Path", "Ending wealth", "Spending shortfall", "First retired-year withdrawal rate"]]
+        yearly = yearly.merge(keep, on="Path", how="left")
+    extra = [alt.Tooltip(f, format=fmt, title=t) for f, fmt, t in
+             (("Ending wealth:Q", "$,.0f", "Path's ending wealth"), ("Spending shortfall:Q", "$,.0f", "Path's spending shortfall"),
+              ("First retired-year withdrawal rate:Q", ".1%", "Path's first retired-year withdrawal rate"))
+             if f.split(":")[0] in yearly]
+    points = alt.Chart(yearly).mark_point(opacity=0, size=80).encode(
         x="Date:T", y="Total wealth:Q",
-        tooltip=[alt.Tooltip("Path:N", title="Path"), "Status:N", alt.Tooltip("Date:T", format="%b %Y"), *age_tooltip(frame),
+        tooltip=[alt.Tooltip("Path:N", title="Path"), "Status:N", alt.Tooltip("Date:T", format="%b %Y"), *age_tooltip(yearly),
                  alt.Tooltip("Total wealth:Q", title="Wealth on this date", format="$,.0f"), *extra]).add_params(hover)
     median_frame = add_age(medians.reset_index())
     median = alt.Chart(median_frame).mark_line(color="#126a63", strokeWidth=3).encode(
@@ -1240,7 +1247,8 @@ does not cover (excluded, with the reason shown). Returns are the USD histories 
     if getattr(run, "wealth_paths", None) is not None:
         st.subheader("Wealth over time on every path")
         st.altair_chart(all_paths_chart(run.wealth_paths, marks, calculated), width="stretch")
-        st.caption(f"Each faint grey line is one of the {len(calculated)} calculated paths' total wealth at each month end "
+        st.caption(f"All {len(calculated)} calculated paths are drawn. "
+                   + f"Each faint grey line is one path's total wealth at each month end "
                    "(nominal). Lines are translucent, so where many paths overlap the grey darkens: the darkest areas are "
                    "where most paths went. The teal line is the median at each month; red lines are depleted paths. Point at "
                    "a line to highlight that whole path and see its value, your age, and its ending wealth, shortfall and "
