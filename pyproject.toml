@@ -20,6 +20,9 @@ financial-simulations = "financial_simulations.cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+"financial_simulations.rules.au" = ["*.toml"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]

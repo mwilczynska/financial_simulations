@@ -1,0 +1,306 @@
+# Australian resident individual and taxed-super rules for the 2026-27 income year.
+# Every parameter names a source below and a status:
+#   enacted            - in force under an Act or regulation for this year
+#   published_indexed  - the ATO-published result of statutory indexation for this year
+#   assumption         - not yet set for this year; the stated value and reason are a project choice
+# Figures were read from the cited pages on the access date; see docs/rules/au-2026-27.md.
+
+[ruleset]
+financial_year = "2026-27"
+start = "2026-07-01"
+end = "2027-06-30"
+verified = "2026-10-28"
+
+[[sources]]
+id = "ato-resident-rates"
+title = "Tax rates - Australian resident (ATO)"
+url = "https://www.ato.gov.au/tax-rates-and-codes/tax-rates-australian-residents"
+page_updated = "2026-08-13"
+
+[[sources]]
+id = "act-2025-28"
+title = "Treasury Laws Amendment (More Cost of Living Relief) Act 2025, No. 28, 2025"
+url = "https://www.legislation.gov.au/C2025A00028/asmade"
+page_updated = "2025-03-27"
+
+[[sources]]
+id = "ato-medicare-low-income"
+title = "Medicare levy reduction for low-income earners (ATO)"
+url = "https://www.ato.gov.au/individuals-and-families/medicare-and-private-health-insurance/medicare-levy/medicare-levy-reduction/medicare-levy-reduction-for-low-income-earners"
+page_updated = "2026-06-30"
+
+[[sources]]
+id = "ato-mls"
+title = "Medicare levy surcharge income, thresholds and rates (ATO)"
+url = "https://www.ato.gov.au/individuals-and-families/medicare-and-private-health-insurance/medicare-levy-surcharge/medicare-levy-surcharge-income-thresholds-and-rates"
+page_updated = "2026-06-22"
+
+[[sources]]
+id = "ato-lito"
+title = "Low income tax offset (ATO)"
+url = "https://www.ato.gov.au/individuals-and-families/income-deductions-offsets-and-records/tax-offsets/low-income-tax-offset"
+page_updated = "2026-06-08"
+
+[[sources]]
+id = "ato-standard-deduction"
+title = "Standard deduction for work-related expenses (ATO)"
+url = "https://www.ato.gov.au/individuals-and-families/income-deductions-offsets-and-records/deductions-you-can-claim/work-related-deductions/standard-deduction-for-work-related-expenses"
+
+[[sources]]
+id = "act-2026-49"
+title = "Treasury Laws Amendment (Tax Reform No. 1) Act 2026, No. 49, 2026"
+url = "https://www.legislation.gov.au/C2026A00049/asmade/2026-06-26/text/original/epub/OEBPS/document_1/document_1.html"
+page_updated = "2026-06-26"
+
+[[sources]]
+id = "ato-cgt-discount"
+title = "CGT discount (ATO)"
+url = "https://www.ato.gov.au/individuals-and-families/investments-and-assets/capital-gains-tax/calculating-your-cgt/cgt-discount"
+page_updated = "2026-06-29"
+
+[[sources]]
+id = "ato-cgt-reform"
+title = "Capital gains tax reform (ATO)"
+url = "https://www.ato.gov.au/individuals-and-families/investments-and-assets/capital-gains-tax/capital-gains-tax-reform"
+page_updated = "2026-10-13"
+
+[[sources]]
+id = "ato-contributions-caps"
+title = "Contributions caps (ATO key super rates and thresholds)"
+url = "https://www.ato.gov.au/tax-rates-and-codes/key-superannuation-rates-and-thresholds/contributions-caps"
+page_updated = "2026-09-11"
+
+[[sources]]
+id = "ato-ncc-cap"
+title = "Non-concessional contributions cap (ATO)"
+url = "https://www.ato.gov.au/individuals-and-families/super-for-individuals-and-families/super/growing-and-keeping-track-of-your-super/caps-limits-and-tax-on-super-contributions/non-concessional-contributions-cap"
+page_updated = "2026-05-07"
+
+[[sources]]
+id = "ato-contribution-types"
+title = "Understanding concessional and non-concessional contributions (ATO)"
+url = "https://www.ato.gov.au/individuals-and-families/super-for-individuals-and-families/super/growing-and-keeping-track-of-your-super/caps-limits-and-tax-on-super-contributions/understanding-concessional-and-non-concessional-contributions"
+page_updated = "2026-01-15"
+
+[[sources]]
+id = "ato-div293"
+title = "Division 293 tax threshold (ATO)"
+url = "https://www.ato.gov.au/tax-rates-and-codes/key-superannuation-rates-and-thresholds/division-293-tax"
+page_updated = "2026-08-07"
+
+[[sources]]
+id = "ato-super-guarantee"
+title = "Super guarantee rates and maximum contribution base (ATO)"
+url = "https://www.ato.gov.au/tax-rates-and-codes/key-superannuation-rates-and-thresholds/super-guarantee"
+page_updated = "2026-04-17"
+
+[[sources]]
+id = "ato-payday-super"
+title = "About Payday Super (ATO)"
+url = "https://www.ato.gov.au/businesses-and-organisations/super-for-employers/about-payday-super"
+
+[[sources]]
+id = "ato-tbc"
+title = "Transfer balance cap (ATO key super rates and thresholds)"
+url = "https://www.ato.gov.au/tax-rates-and-codes/key-superannuation-rates-and-thresholds/transfer-balance-cap"
+page_updated = "2026-04-27"
+
+[[sources]]
+id = "ato-div296-thresholds"
+title = "Division 296 tax thresholds and interest (ATO)"
+url = "https://www.ato.gov.au/tax-rates-and-codes/key-superannuation-rates-and-thresholds/division-296-tax-thresholds-and-interest"
+page_updated = "2026-09-21"
+
+[[sources]]
+id = "ato-div296-calculation"
+title = "How Division 296 tax is calculated (ATO)"
+url = "https://www.ato.gov.au/individuals-and-families/super-for-individuals-and-families/super/growing-and-keeping-track-of-your-super/caps-limits-and-tax-on-super-contributions/division-296-tax/how-division-296-tax-is-calculated"
+page_updated = "2026-06-29"
+
+[[sources]]
+id = "act-2026-8"
+title = "Treasury Laws Amendment (Building a Stronger and Fairer Super System) Act 2026"
+url = "https://www.legislation.gov.au/C2026A00008/asmade/2026-03-13/text/original/epub/OEBPS/document_1/document_1.html"
+page_updated = "2026-03-13"
+
+[[sources]]
+id = "ato-payments-from-super"
+title = "Payments from super: preservation age and minimum annual payments (ATO)"
+url = "https://www.ato.gov.au/tax-rates-and-codes/key-superannuation-rates-and-thresholds/payments-from-super"
+page_updated = "2026-09-16"
+
+[[sources]]
+id = "ato-withdrawal-options"
+title = "When you can withdraw your super (ATO)"
+url = "https://www.ato.gov.au/individuals-and-families/super-for-individuals-and-families/super/withdrawing-and-using-your-super/super-withdrawal-options"
+
+[[sources]]
+id = "ato-ecpi"
+title = "Exempt current pension income (ATO)"
+url = "https://www.ato.gov.au/individuals-and-families/super-for-individuals-and-families/self-managed-super-funds-smsf/smsf-administration-and-reporting/exempt-current-pension-income"
+
+# ---------------------------------------------------------------- personal income tax
+
+[parameters.resident_tax_thresholds]
+value = [18200, 45000, 135000, 190000]
+units = "AUD taxable income; each rate applies above its threshold"
+status = "enacted"
+source = "ato-resident-rates"
+
+[parameters.resident_tax_rates]
+value = [0.15, 0.30, 0.37, 0.45]
+status = "enacted"
+source = "act-2025-28"
+note = "First marginal rate 15% for 2026-27 under Act No. 28, 2025; ATO table agrees."
+
+[parameters.medicare_levy_rate]
+value = 0.02
+status = "enacted"
+source = "ato-resident-rates"
+
+[parameters.medicare_low_income_lower]
+value = 28011
+status = "assumption"
+source = "ato-medicare-low-income"
+note = "2025-26 single threshold, the latest published. 2026-27 thresholds are usually legislated late in the income year."
+
+[parameters.medicare_low_income_upper]
+value = 35013
+status = "assumption"
+source = "ato-medicare-low-income"
+note = "2025-26 single upper threshold; see medicare_low_income_lower."
+
+[parameters.medicare_low_income_shade_rate]
+value = 0.10
+status = "enacted"
+source = "ato-medicare-low-income"
+note = "Levy above the lower threshold is 10% of the excess until it reaches 2% of taxable income; reproduces the ATO's worked example ($29,000 -> $98.90)."
+
+[parameters.mls_single_thresholds]
+value = [105000, 123000, 164000]
+units = "AUD income for MLS purposes; tier rate applies above each threshold"
+status = "published_indexed"
+source = "ato-mls"
+
+[parameters.mls_rates]
+value = [0.01, 0.0125, 0.015]
+status = "enacted"
+source = "ato-mls"
+
+[parameters.lito]
+value = { maximum = 700, first_threshold = 37500, first_taper = 0.05, second_threshold = 45000, second_base = 325, second_taper = 0.015, cut_out = 66667 }
+status = "enacted"
+source = "ato-lito"
+
+[parameters.standard_deduction_maximum]
+value = 1000
+status = "enacted"
+source = "ato-standard-deduction"
+note = "Up to $1,000 for resident individuals with assessable labour income, limited to that income and reduced dollar for dollar by claimed work-related expenses (Act No. 49, 2026, Schedule 4)."
+
+# ---------------------------------------------------------------- capital gains
+
+[parameters.cgt_discount_individual]
+value = 0.5
+status = "enacted"
+source = "ato-cgt-discount"
+note = "Resident individual; asset owned at least 12 months, excluding the acquisition and CGT event days."
+
+[parameters.cgt_discount_complying_fund]
+value = 0.333333333333333333
+status = "enacted"
+source = "ato-ecpi"
+note = "One-third discount for a complying super fund; unchanged by the 2026 CGT reform."
+
+[parameters.cgt_reform_start]
+value = "2027-07-01"
+status = "enacted"
+source = "ato-cgt-reform"
+note = "Indexation, a 30% minimum tax and a 1 July 2027 valuation split apply to individuals from this date. Not implemented: CGT events on or after it are rejected."
+
+# ---------------------------------------------------------------- super contributions
+
+[parameters.concessional_cap]
+value = 32500
+status = "published_indexed"
+source = "ato-contributions-caps"
+
+[parameters.non_concessional_cap]
+value = 130000
+status = "published_indexed"
+source = "ato-ncc-cap"
+
+[parameters.bring_forward]
+value = { age_limit = 75, three_year_below = 1840000, two_year_below = 1970000 }
+units = "TSB at the prior 30 June; age is under 75 at any time in the year"
+status = "published_indexed"
+source = "ato-ncc-cap"
+
+[parameters.carry_forward]
+value = { tsb_below = 500000, years = 5 }
+status = "enacted"
+source = "ato-contributions-caps"
+
+[parameters.contributions_tax_rate]
+value = 0.15
+status = "enacted"
+source = "ato-contribution-types"
+
+[parameters.division_293]
+value = { threshold = 250000, rate = 0.15 }
+status = "enacted"
+source = "ato-div293"
+
+[parameters.super_guarantee_rate]
+value = 0.12
+status = "enacted"
+source = "ato-super-guarantee"
+
+[parameters.maximum_contribution_base]
+value = 270830
+units = "AUD qualifying earnings per financial year"
+status = "published_indexed"
+source = "ato-super-guarantee"
+
+[parameters.payday_super_business_days]
+value = 7
+status = "enacted"
+source = "ato-payday-super"
+note = "Employer deadline after each payday from 1 July 2026; the fund-received date is what counts towards caps."
+
+# ---------------------------------------------------------------- access and retirement phase
+
+[parameters.preservation_age]
+value = [["1960-07-01", 55], ["1961-07-01", 56], ["1962-07-01", 57], ["1963-07-01", 58], ["1964-07-01", 59], ["9999-12-31", 60]]
+units = "[born before date, preservation age]; the final row covers births from 1 July 1964"
+status = "enacted"
+source = "ato-payments-from-super"
+
+[parameters.unrestricted_access_age]
+value = 65
+status = "enacted"
+source = "ato-withdrawal-options"
+
+[parameters.minimum_drawdown]
+value = [[65, 0.04], [75, 0.05], [80, 0.06], [85, 0.07], [90, 0.09], [95, 0.11], [999, 0.14]]
+units = "[age below, factor]; age at 1 July or at commencement"
+status = "enacted"
+source = "ato-payments-from-super"
+note = "ATO describes the factors as indicative and points to SIS Regulations Schedule 7 for pro-rating and rounding."
+
+[parameters.transfer_balance_cap]
+value = 2100000
+status = "published_indexed"
+source = "ato-tbc"
+
+[parameters.fund_earnings_tax_rate]
+value = 0.15
+status = "enacted"
+source = "ato-ecpi"
+note = "Complying fund accumulation-phase income; retirement-phase earnings are exempt current pension income."
+
+[parameters.division_296]
+value = { large_balance = 3000000, very_large_balance = 10000000, rate = 0.15, additional_rate = 0.10 }
+status = "enacted"
+source = "ato-div296-thresholds"
+note = "From 1 July 2026 (Act No. 8, 2026). 2026-27 liability depends only on TSB at 30 June 2027. Not implemented: scenarios above the large balance threshold are rejected."

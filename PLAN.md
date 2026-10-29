@@ -12,8 +12,9 @@ percentiles, explicit targets, censored drawdown/recovery, Monte Carlo
 sampling error, and paired multi-portfolio studies on shared draws. It also
 adds provenance-checked source segments, a leveraged-risk tail diagnostic and
 rolling calibration/holdout PIT scoring. A batched many-path ledger with dated
-flows and an opt-in common-date calendar policy prepare for Stage 2, which
-remains proposed. See the validation evidence for
+flows and an opt-in common-date calendar policy prepare for Stage 2. Stage 2A
+has begun: a sourced 2026-27 Australian rule register and tested rule
+functions are implemented; the single-path ledger is next. See the validation evidence for
 [1A](docs/validation/stage-1a.md), [1B](docs/validation/stage-1b.md),
 [1C](docs/validation/stage-1c.md) and [1D](docs/validation/stage-1d.md).
 
@@ -217,6 +218,11 @@ Use a daily account and cash-flow ledger with dated rule events for birthdays, e
 Historical market replay is mapped onto the future life calendar. Future tax/super rules follow that calendar and the selected policy scenario; a historical market year does not automatically import that year's tax rules.
 
 ### 2A. Build the Australian rule specification and an audited deterministic example
+
+In progress. The sourced [2026-27 rule register](docs/rules/au-2026-27.md), data file
+and tested rule functions are implemented ([methodology](docs/methodology/australian-rules.md),
+[ADR 0013](docs/decisions/0013-stage-2a-rule-register-scope.md)). The auditable
+single-path ledger and later-year rule sets remain.
 
 Before connecting thousands of paths, document the supported Australian rules, their sources, effective dates and boundary examples. Use ATO, legislation and Services Australia as the authoritative sources, with ASIC Moneysmart for explanatory cross-checks.
 

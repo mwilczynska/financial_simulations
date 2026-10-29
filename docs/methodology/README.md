@@ -8,7 +8,7 @@ and local optimiser reconciliation. See [executed evidence](../validation/stage-
 Stage 1B empirical replay/bootstrap, the Stage 1C Gaussian benchmark and
 assumption grid, the GARCH filtered-historical-simulation generator, batched
 cash-flow accounting and Stage 1D evaluation are implemented. Retirement
-calculations remain planned.
+rules are implemented for 2026-27 ([register](../rules/au-2026-27.md)); the account ledger and later stages remain planned.
 
 ## Document register
 
@@ -23,9 +23,9 @@ calculations remain planned.
 | Volatility clustering and heavy tails | [Volatility](volatility.md): implemented | GARCH(1,1) variance targeting and filtered historical simulation |
 | Assumption uncertainty and stresses | [Parametric](parametric.md): persistent scenario grid implemented; parameter sampling planned | Persistent long-run parameters, scenario grids, parameter sampling and model comparison |
 | Reporting and outcome measures | [Baseline reporting](portfolio-accounting.md) and [evaluation](evaluation.md): implemented | Daily performance drawdown, account value, allocation, flows, percentiles, targets, recovery, paired portfolios, holdouts and source segments |
-| Australian personal tax | Planned | Dated rules, income components, AUD cost bases, gains/losses, credits and payment timing |
-| Super accumulation and contributions | Planned | Eligibility, contribution history, caps, fund-return conventions and costs |
-| Super access and retirement pensions | Planned | Release conditions, access dates, transfer records, minimum payments and mixed withdrawals |
+| Australian personal tax | [Australian rules](australian-rules.md): 2026-27 rules implemented; ledger timing planned | Dated rules, income components, AUD cost bases, gains/losses, credits and payment timing |
+| Super accumulation and contributions | [Australian rules](australian-rules.md): 2026-27 caps, SG and fund tax implemented | Eligibility, contribution history, caps, fund-return conventions and costs |
+| Super access and retirement pensions | [Australian rules](australian-rules.md): access dates, minimum payments and transfer balance implemented | Release conditions, access dates, transfer records, minimum payments and mixed withdrawals |
 | Age Pension and longevity | Planned | Eligibility, means tests, residence, mortality sources and improvement assumptions |
 | Couples | Planned | Individual ownership/tax, separate access dates, household spending and survivor extensions |
 

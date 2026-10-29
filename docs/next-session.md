@@ -7,8 +7,9 @@ handoff text is in Git history.
 ## Where the project stands
 
 Stage 1 (portfolio futures, 1A-1D) is implemented and validated within its
-documented scope. Stage 2 (Australian retirement) has not started. Begin it
-only on the user's instruction. AUD FX and Australian inflation are deferred
+documented scope. The user started Stage 2 on 2026-10-28. Stage 2A's first
+checkpoint (sourced 2026-27 rule register, data file and tested rule
+functions) is done; the auditable single-path ledger is next. AUD FX and Australian inflation are deferred
 by the user to a later date. Keep the user-selected default portfolio:
 `USLCAP3x` 40%, `ITT3x` 20%, `GOLDPM2x` 20%, `COMM` 20%, annual rebalancing.
 Generate PNGs directly from Python; never create PDFs.
@@ -21,6 +22,7 @@ Generate PNGs directly from Python; never create PDFs.
 | Gaussian benchmark, assumption grid | `compare` with `[parametric]` | [parametric](methodology/parametric.md), ADR [0007](decisions/0007-daily-parametric-assumptions.md) | [stage 1C](validation/stage-1c.md) |
 | GARCH(1,1) filtered historical simulation | `[volatility]` or `garch_fhs` | [volatility](methodology/volatility.md), ADR [0011](decisions/0011-garch-filtered-historical-simulation.md) | `tests/test_volatility.py` |
 | Calendar evaluation, targets, recovery, MC error | `compare` with `[evaluation]` | [evaluation](methodology/evaluation.md), ADR [0008](decisions/0008-calendar-evaluation-and-sampling-error.md) | [stage 1D](validation/stage-1d.md) |
+| Australian 2026-27 tax and super rules | `rules.au` | [Australian rules](methodology/australian-rules.md), ADR [0013](decisions/0013-stage-2a-rule-register-scope.md), [register](rules/au-2026-27.md) | `tests/test_au_rules.py` |
 | Paired portfolios, source segments, tail diagnostic, holdouts | `paired`, `holdout` | [evaluation](methodology/evaluation.md#paired-portfolio-source-segment-and-holdout-studies), ADR [0012](decisions/0012-paired-holdout-and-segment-studies.md) | [stage 1D](validation/stage-1d.md), `tests/test_studies.py` |
 
 ## Reproduce
@@ -62,9 +64,17 @@ These are conditional, nominal-USD results, not forecasts:
 
 ## Open next steps
 
-- Stage 2A: the sourced Australian rule register and an audited single-path
-  ledger. `simulate_paths` is the batched building block, but state-dependent
-  withdrawals still need a ledger-reconciled extension.
+- Stage 2A checkpoint 2: an auditable single-path daily ledger for one
+  person: salary, Payday Super contributions and cap years, outside
+  investments with cost bases, super accumulation and pension phase, tax
+  assessment timing and minimum pension payments. `simulate_paths` is the
+  batched building block; state-dependent withdrawals need a ledger-reconciled
+  extension.
+- 2027-28 and later rule sets with declared per-parameter treatment, and the
+  enacted 1 July 2027 CGT reform (needs Australian CPI, which the user
+  deferred).
+- Refresh the 2026-27 Medicare low-income thresholds when the ATO publishes
+  them (currently a labelled assumption).
 - Optional Stage 1 extensions: residual trimming or stress scenarios for
   GARCH-FHS, time-varying correlation, outer parameter sampling, and
   interactive plots (a later reporting step).
