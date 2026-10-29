@@ -132,46 +132,148 @@ income year in which the person reaches Age Pension age, because SAPTO and
 Age Pension are unsupported. A longer requested horizon is shortened and
 reported.
 
-Portfolio results include historical CAGR, volatility and drawdown; future
-month-end 5th, 25th, 50th, 75th and 95th pointwise values; and each path's
-terminal growth, calendar-time annualised growth, daily annualised volatility
-and maximum drawdown. A full calendar-year return is its final wealth mark
+Three series are reported: each account's portfolio and a **combined**
+portfolio. The combined series starts in proportion to the opening outside
+investment balance and super balance. It then lets each account compound
+under its own policy, without moving money between accounts, because super
+and outside money cannot be pooled. With $450,000 outside and $650,000 in
+super, the combined series starts 40.9%/59.1%.
+
+The paths store only donor-row indices, one 32-bit integer per path and
+day. Each step gathers the joint returns. Statistics accumulate as the
+loop runs:
+
+- **Terminal growth** of $100, and annualised growth
+  `(terminal / 100) ** (365.25 / elapsed days) - 1`.
+- **Annualised volatility:** the sample standard deviation of the path's
+  daily returns times `sqrt(252)`.
+- **Maximum drawdown:** the lowest `value / running peak - 1`.
+- **Longest drawdown:** the most calendar time between a peak and either
+  recovery to it or the horizon.
+- Month-end value and drawdown snapshots, which feed the pointwise 5th, 25th,
+  50th, 75th and 95th percentile bands.
+
+Historical statistics add the worst and best calendar years and the share
+of positive years. A full calendar-year return is its final wealth mark
 divided by the prior year-end mark minus one; partial years are excluded.
 Monthly and yearly values summarize daily compounding. For example, +10%
 then -10% turns $100 into $99, a -1% total return.
 
+The **sustainable withdrawal rate** of a path is the largest first-year
+withdrawal it could fund. It is expressed as a fraction of the portfolio's
+value at the retirement date, or at plan start if that is later.
+Withdrawals are paid monthly at each month end, one twelfth of the annual
+amount. The annual amount rises by the plan's spending growth every
+12 months, and the portfolio must not run out before the horizon. Let
+`G_k` be the growth factor from retirement to the `k`-th month end.
+Proportional sales leave each later month's growth factor unchanged, so
+remaining wealth is nonnegative exactly while
+`1 >= rate * sum_k (1 + g) ** floor(k / 12) / (12 * G_k)`. Every term is
+positive, so the horizon binds and
+`rate = 1 / sum_k (1 + g) ** floor(k / 12) / (12 * G_k)`. In a flat market
+over two years with 10% growth, `rate = 12 / (12 + 13.2) = 0.476`. The rate
+is pre-tax and ignores salary, contributions and super access. It depends
+strongly on the remaining horizon, which ends before Age Pension age, so it
+is not comparable with 30-year "4% rule" studies. The rate is undefined
+with fewer than 12 month ends.
+
 The first `retirement_paths` of those same joint draws run through the
 [daily tax ledger](retirement-ledger.md). USD source returns are explicitly
 applied as an **AUD proxy** because USD/AUD FX and Australian distribution
-components are absent. A path reaching an existing `UnsupportedRule` is
-recorded with its reason. Retirement bands use only complete paths; the
-completion count and exclusion are shown. They are not unconditional risk
-estimates. The representative ledger is the complete path whose *ending*
-wealth is closest to median ending wealth. Its intermediate dates need not
-be median.
+components are absent. Ledgers run in worker processes when there are
+more than four; each worker returns only a summary row, month-end account
+series and financial-year rows. Every calculated path is classified:
+
+- **funded:** all spending and tax was paid;
+- **depleted:** some spending shortfall or unpaid tax arose. These paths stay
+  in every band and rate. Before 2026-10-28 an unpaid tax debt stopped the
+  ledger, which silently removed the worst paths. See
+  [ADR 0019](../decisions/0019-retirement-path-results.md).
+- **unsupported:** an existing `UnsupportedRule` was reached, such as
+  Division 296 above $3 million. Its reason is shown, and the path is
+  excluded from bands and rates, which are therefore conditional.
+
+Per path the planner reports:
+
+- ending wealth, nominal and deflated by `(1 + CPI) ** years` into
+  today's dollars;
+- ending outside and super/pension wealth, and wealth at the retirement date;
+- spending paid, shortfall, shortfall years, and the first shortfall date;
+- the date outside-super money (cash plus investments) first runs out;
+- unpaid tax, personal tax assessed and fund tax;
+- pension payments, and the pension balance at commencement;
+- withdrawal rates.
+
+A **withdrawal rate** for a full financial year that starts on or after
+the retirement date is `(spending paid + tax paid) / wealth at 1 July`.
+Each path reports its first, median and highest rate. Financial-year rows
+also record pension payments and super lump sums. Retirement bands summarise
+total, outside, super-plus-pension and pension-account wealth at month ends.
+
+The **representative ledger** is the calculated path whose *ending* wealth
+is closest to the median ending wealth. It is re-run in full for its
+daily ledger and events. Its number is its position in the shared draw
+sequence, not a rank. Its intermediate dates need not be median. The app can
+also re-run any other path. Defaults are 1,000 portfolio paths and 100
+ledger paths. With fewer than 100 calculated ledger paths, the planner
+warns that tail percentiles are noisy.
 
 ## Results and reproducibility
 
-The app presents (1) entered portfolios and ticker source statistics;
-(2) historical portfolio growth; (3) future portfolio bands, growth and
-drawdown distributions, and full-year return bands; (4) retirement wealth
-bands, completion/shortfall counts, representative account balances,
-financial-year flows, tax/contribution plots and a year-by-year table.
-Interactive Altair charts have hover values and zoom, with a short
-explanation after each. Python generates PNG counterparts for review.
-Long-horizon date ticks step five years from 25 years onward; growth charts
-use labelled log axes; no-flow panels say so explicitly. The retirement
-wealth fan uses a log-like y-axis when its maximum 95th percentile exceeds
-20 times the larger of $1,000 and the maximum median. It stays linear from
-$0 to $1,000, so zero wealth remains visible. The plot explicitly labels
-this scale. The change affects display only, not path values or quantiles.
+The Results tab has five sections, each chart followed by an explanation:
+
+1. **Your portfolios.** Each account's allocation on its own 0–100% axis,
+   with balance and rebalancing policy, and the combined split. A
+   whole-portfolio statistics table covers outside, inside and combined.
+   Ticker-level source statistics sit in an expander.
+2. **Historical behaviour.** Growth of $100 on a log axis, drawdown below the
+   running peak, and calendar-year returns for all three series.
+3. **Future simulations.** A step-by-step description of the calculation
+   with the run's actual dates, row counts, block length, seed and path
+   count. Then:
+   - a fan for the selected portfolio;
+   - median paths compared;
+   - median and 5th-percentile drawdown;
+   - four distributions (ending value on a log axis, annualised growth,
+     volatility, maximum drawdown), each overlaying outside and inside super
+     with dashed medians;
+   - the sustainable-withdrawal-rate distribution;
+   - a percentile table;
+   - calendar-year return bands.
+4. **Retirement outcomes.** An explanation of the ledger and the path
+   classes. Then:
+   - headline metrics (paths calculated, share funded, median ending wealth
+     nominal and in today's dollars, wealth at retirement, withdrawal rates,
+     total tax);
+   - wealth bands selectable by account;
+   - ending-wealth distributions by account;
+   - withdrawal-rate bands by financial year;
+   - the share of paths with a shortfall each year;
+   - pension payment bands;
+   - an outcome percentile table, and every path in a formatted table.
+5. **One path in full.** The median-ending path by default, or the 10th or
+   90th percentile, worst, best or any numbered path, re-run on demand. It
+   shows balances by account, financial-year flows, a year-by-year tax,
+   cap and pension table, tax and cap charts, pension minimum against paid,
+   a filterable event log and CSV downloads.
+
+Charts show hover values. Dragging pans, Shift+scroll zooms and a
+double-click resets. Plain scrolling scrolls the page, because an
+earlier version zoomed the chart under the pointer. Python generates PNG
+counterparts for review: history, the future fan for each series, the four
+overlaid distributions, the retirement range and the flows. Long-horizon date ticks step five years from 25 years onward;
+growth charts use labelled log axes with a data-fitted domain; no-flow
+panels say so explicitly. The retirement wealth fan uses a log-like y-axis
+when its maximum 95th percentile exceeds 20 times the larger of $1,000 and
+the maximum median. It stays linear from $0 to $1,000, so zero wealth remains
+visible. The plot explicitly labels this scale. The change affects display only, not path values or quantiles.
 
 The browser starts with `financial-simulations ui`; the command line uses
 `financial-simulations plan <plan-file>`. Both write an ignored
 `output/plans/<plan-name>/` folder. It contains the normalized `plan.toml`,
 `daily.csv`, `events.csv`, `annual.json`, `asset_summary.csv`,
-`portfolio_history.csv`, `portfolio_bands.csv`, `portfolio_outcomes.csv`,
-`portfolio_annual.csv`, `retirement_paths.csv`, `retirement_bands.csv`,
+`portfolio_summary.csv`, `portfolio_history.csv`, `portfolio_bands.csv`, `portfolio_outcomes.csv`,
+`portfolio_annual.csv`, `retirement_paths.csv`, `retirement_bands.csv` (by account), `retirement_annual.csv`,
 `ledger.png`, five other PNGs and `manifest.json` with source hashes,
 code/rule manifests, sample settings and notes. None belongs in Git.
 
@@ -192,7 +294,11 @@ Leveraged synthetic histories can compound to very large values over decades;
 a log axis improves visibility, not credibility. Small numbers of complete
 ledger paths make tail percentiles and shortfall rates unstable. The cash
 proxy, zero franking, aggregate opening tax position and AUD return proxy
-limit tax interpretation.
+limit tax interpretation. Division 296 is not implemented. Any ledger path whose
+total super balance passes $3 million at a 30 June is unsupported. On long
+horizons this excludes most paths: in a 34-year check, 37 of 40 paths. Long-horizon
+retirement statistics are therefore conditional on the low-growth paths,
+and the app says so.
 
 References: processed source data and provenance in the sibling
 `financial_datasets` project, identified by run-manifest hashes;

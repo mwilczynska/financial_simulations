@@ -110,3 +110,82 @@ conservation of total wealth. The ledger now keeps per-asset outside unit
 totals instead of summing every parcel daily. One invented 10-year ledger
 path fell from 0.89 s to 0.21 s, with all existing ledger reconciliations
 unchanged.
+
+## Depleted paths, path counts and new statistics (ADR 0019)
+
+Run on the invented default plan (10 years, 1,000 portfolio paths and 200
+ledger paths, local processed data), before the transfer-cap change:
+
+- 177 paths were funded and 11 depleted. All 11 depleted paths would
+  previously have stopped or been excluded.
+- 12 were unsupported: whole-balance transfers above the transfer balance
+  cap, plus Division 296.
+- The whole-balance transfer now stops at the cap, which removes the
+  transfer-cap cases.
+
+Combined-portfolio historical statistics on 1970-01-02 to 2026-10-27:
+
+| Portfolio | CAGR | Volatility | Maximum drawdown | Longest drawdown | Worst year | Best year |
+| --- | --- | --- | --- | --- | --- | --- |
+| Outside super | 15.25% | 22.2% | −58.1% | 5.0 years | −37.7% | +79.5% |
+| Inside super | 10.08% | 16.6% | −57.3% | 5.4 years | −39.2% | +44.0% |
+| Combined | 13.66% | 19.5% | −52.7% | 4.4 years | −33.1% | +54.6% |
+
+The default 40.9%/59.1% combined starting split is from the invented
+balances.
+
+Tests check the withdrawal-rate formula exactly:
+
+- in a flat market with 10% second-year growth,
+  `rate * (12 + 13.2) / 12 = 1`;
+- a portfolio that doubles at once sustains a 100% rate over two years;
+- fewer than 12 month ends gives no rate.
+
+Ledger tests check that unfundable tax is recorded in `tax_unpaid` while the
+path runs to its horizon, and that a whole-balance transfer of $2.5 million
+moves exactly the $2.1 million cap. Storing indices reduced a 1,000-path,
+35-year sample from 365 MB of float returns to 37 MB of indices.
+
+Timings on the owner's desktop varied by a factor of three with background
+load, which was about 50–60% CPU during testing. They are indicative only:
+
+| Stage | Time |
+| --- | --- |
+| Portfolio analysis, 1,000 ten-year paths | 9–15 s |
+| One ten-year ledger path, after the valuation changes | 0.35–0.5 s |
+
+## Browser review of the expanded results (2026-10-29)
+
+The local app ran the invented default on local processed data with 1,000
+portfolio paths and 100 ledger paths. Results:
+
+- 95 paths calculated, of which 93.7% were funded; 5 were unsupported
+  (Division 296).
+- Median ending wealth $2.21m nominal, $1.73m in today's dollars.
+- Median first retired-year withdrawal rate 6.6%.
+
+Each of the following rendered and was inspected:
+
+- the split 100% allocations and the three-series statistics table;
+- the history, drawdown and calendar-year charts;
+- the future fan, median comparison and drawdown charts;
+- four overlaid distributions plus the withdrawal-rate distribution;
+- the retirement bands, withdrawal-rate, shortfall and pension charts;
+- the percentile tables;
+- the path picker. Choosing the 10th-percentile path (33) re-ran its ledger,
+  which ended at $823k, with outside money exhausted around 2032 and the
+  pension funding spending thereafter.
+
+The review found and fixed:
+
+- wheel zoom capturing page scrolls;
+- loose log-axis domains;
+- uneven log histogram ticks;
+- truncated percentile tables;
+- a fixed 0–100% shortfall axis.
+
+A 34-year command-line check (born 1994, horizon shortened to 2060-06-30)
+produced legible five-year ticks and labelled log axes in the PNGs. 37 of 40
+ledger paths reached the unimplemented Division 296 rule, so long-horizon
+retirement statistics are conditional; implementing Division 296 is the
+next requirement for 30-year retirement results.

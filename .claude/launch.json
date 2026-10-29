@@ -4,8 +4,40 @@
     {
       "name": "planner",
       "runtimeExecutable": ".venv/Scripts/python.exe",
-      "runtimeArgs": ["-m", "streamlit", "run", "src/financial_simulations/ui/app.py", "--server.port", "8501", "--server.headless", "true", "--browser.gatherUsageStats", "false", "--client.toolbarMode", "minimal"],
+      "runtimeArgs": [
+        "-m",
+        "streamlit",
+        "run",
+        "src/financial_simulations/ui/app.py",
+        "--server.port",
+        "8501",
+        "--server.headless",
+        "true",
+        "--browser.gatherUsageStats",
+        "false",
+        "--client.toolbarMode",
+        "minimal"
+      ],
       "port": 8501
+    },
+    {
+      "name": "planner-check",
+      "runtimeExecutable": ".venv/Scripts/python.exe",
+      "runtimeArgs": [
+        "-m",
+        "streamlit",
+        "run",
+        "src/financial_simulations/ui/app.py",
+        "--server.port",
+        "8504",
+        "--server.headless",
+        "true",
+        "--browser.gatherUsageStats",
+        "false",
+        "--client.toolbarMode",
+        "minimal"
+      ],
+      "port": 8504
     }
   ]
 }

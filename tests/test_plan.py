@@ -98,7 +98,7 @@ def test_run_plan_writes_portfolio_and_retirement_reports(tmp_path, processed_fi
     assert (run.folder / "asset_summary.csv").exists()
     assert (run.folder / "manifest.json").exists()
     assert load_plan_text((run.folder / "plan.toml").read_text(encoding="utf-8")) == plan
-    assert len(run.portfolios.outcomes) == 32  # 16 shared paths for each of two portfolios
+    assert len(run.portfolios.outcomes) == 48  # 16 shared paths for each portfolio and their combination
     assert len(run.retirement_paths) == 1
     assert not list(run.folder.glob("*.pdf"))
 
@@ -114,7 +114,7 @@ def test_portfolios_keep_shared_daily_draws_but_reflect_distinct_weights(process
     same_mix["market"]["paths"] = 16
     same_mix["super"]["weights"] = same_mix["outside"]["weights"].copy()
     control = analyse_portfolios(same_mix, market, target_observations(same_mix))
-    assert (compared.sampled_returns == control.sampled_returns).all()
+    assert (compared.indices == control.indices).all()
     outside = compared.outcomes.loc[compared.outcomes["Portfolio"] == "Outside super", "Terminal growth of 100"].to_numpy()
     inside = compared.outcomes.loc[compared.outcomes["Portfolio"] == "Inside super", "Terminal growth of 100"].to_numpy()
     assert (outside == control.outcomes.loc[control.outcomes["Portfolio"] == "Inside super", "Terminal growth of 100"].to_numpy()).all()
@@ -147,13 +147,14 @@ def test_browser_app_runs_with_tickers_and_interactive_results(tmp_path, monkeyp
     assert [t.label for t in app.tabs] == ["You", "Investments", "Retirement", "Assumptions", "Results"]
     app.number_input(key="retire__0").set_value(57)
     app.number_input(key="paths__0").set_value(16)
-    app.number_input(key="retirement_paths__0").set_value(1).run()
+    app.number_input(key="retirement_paths__0").set_value(3).run()
     app.button(key="run_sidebar").click().run()
     assert not app.exception and not app.error
-    assert len(app.session_state.result.portfolios.outcomes) == 32
+    assert len(app.session_state.result.portfolios.outcomes) == 48  # two portfolios and their combination
     assert app.session_state.plan["person"]["retirement_age"] == 57
     assert (tmp_path / "output" / "plans" / "example-early-retirement" / "portfolio_future.png").exists()
-    assert len(app.get("vega_lite_chart")) >= 5
+    assert len(app.get("vega_lite_chart")) >= 15
+    assert app.session_state.plan["outside"]["rebalance"] == "annual"
 
 
 def test_35_year_path_and_plots_keep_yearly_summary_compact(tmp_path, processed_fixture):
@@ -179,7 +180,7 @@ def test_35_year_path_and_plots_keep_yearly_summary_compact(tmp_path, processed_
 
 
 def test_annual_rebalancing_is_the_default_and_harvests_dispersion():
-    from financial_simulations.retirement.analysis import _wealth
+    from financial_simulations.retirement.analysis import _simulate
     import numpy as np
 
     assert default_plan()["outside"]["rebalance"] == "annual"
@@ -187,8 +188,26 @@ def test_annual_rebalancing_is_the_default_and_harvests_dispersion():
         normalize_plan({**default_plan(), "outside": {**default_plan()["outside"], "rebalance": "monthly"}})
     # The portfolio-accounting worked example: 50/50, +10% on each asset in turn across a year end.
     dates = (date(2026, 12, 30), date(2026, 12, 31), date(2027, 1, 4))
-    returns = np.array([[[0.10, 0.0], [0.0, 0.10]]])
-    held, _ = _wealth(returns, dates, np.array([0.5, 0.5]), False)
-    rebalanced, _ = _wealth(returns, dates, np.array([0.5, 0.5]), True)
-    assert held[0, -1] == pytest.approx(110.0)
-    assert rebalanced[0, -1] == pytest.approx(110.25)
+    source = np.array([[0.10, 0.0], [0.0, 0.10]])
+    weights = np.array([0.5, 0.5])
+    series = _simulate(source, np.array([[0, 1]]), dates, {"held": (weights, False), "rebalanced": (weights, True)},
+                       {"held": 0.25, "rebalanced": 0.75}, [0, 2])
+    assert series["held"].terminal[0] == pytest.approx(110.0)
+    assert series["rebalanced"].terminal[0] == pytest.approx(110.25)
+    # The combined series holds opening shares of each account without moving money between them.
+    assert series["Combined"].terminal[0] == pytest.approx(0.25 * 110 + 0.75 * 110.25)
+    assert series["held"].max_drawdown[0] == 0
+
+
+def test_sustainable_withdrawal_rate_exhausts_wealth_exactly_at_the_horizon():
+    from financial_simulations.retirement.analysis import sustainable_withdrawal_rates
+    import numpy as np
+
+    # Flat markets: 24 monthly withdrawals of rate/12, the second year 10% larger, use exactly the opening value.
+    flat = np.full((1, 25), 100.0)
+    rate = sustainable_withdrawal_rates(flat, 0, 0.10)[0]
+    assert rate * (12 + 12 * 1.1) / 12 == pytest.approx(1.0)
+    # Doubling immediately after the start halves what each later withdrawal costs.
+    doubled = np.r_[100.0, np.full(24, 200.0)][None, :]
+    assert sustainable_withdrawal_rates(doubled, 0, 0.0)[0] == pytest.approx(1.0)
+    assert np.isnan(sustainable_withdrawal_rates(flat[:, :6], 0, 0.0)[0])

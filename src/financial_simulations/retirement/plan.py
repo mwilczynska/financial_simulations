@@ -42,6 +42,9 @@ class PlanError(ValueError):
         self.problems = list(problems)
         super().__init__("; ".join(self.problems))
 
+    def __reduce__(self):  # keep the problem list intact across worker processes
+        return PlanError, (self.problems,)
+
 
 def default_plan() -> dict:
     raw = files("financial_simulations.retirement").joinpath("default_plan.toml").read_bytes()
@@ -202,8 +205,8 @@ def normalize_plan(raw: dict) -> dict:
                        "amount": c.number(pension, "amount", "pension", 0.0, low=0, high=1e9)}
     plan["assumptions"] = {"cpi_annual": c.number(assumptions, "cpi_annual", "assumptions", 0.025, low=-0.1, high=0.2),
                            "wage_growth_annual": c.number(assumptions, "wage_growth_annual", "assumptions", 0.035, low=-0.1, high=0.2)}
-    plan["market"] = {"paths": c.number(market, "paths", "market", 96, low=16, high=512, integer=True),
-                      "retirement_paths": c.number(market, "retirement_paths", "market", 24, low=1, high=128, integer=True),
+    plan["market"] = {"paths": c.number(market, "paths", "market", 1000, low=16, high=5000, integer=True),
+                      "retirement_paths": c.number(market, "retirement_paths", "market", 100, low=1, high=2000, integer=True),
                       "seed": c.number(market, "seed", "market", 20261028, low=0, high=2147483647, integer=True),
                       "block_length": c.number(market, "block_length", "market", 63, low=1, high=1260, integer=True)}
     if not plan["outside"]["weights"]:

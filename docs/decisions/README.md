@@ -24,6 +24,7 @@ Decision records preserve why Financial Simulations makes a material modelling o
 | [0016](0016-plan-file-and-browser-app.md) | 2026-10-28 | App/file decision remains; v1 inputs superseded by 0017 | One plan file with a local browser app |
 | [0017](0017-ticker-portfolios-and-interactive-results.md) | 2026-10-28 | Accepted; buy-and-hold accounts superseded by 0018 | Local tickers, two portfolio mixes, shared daily simulations and interactive results |
 | [0018](0018-planner-annual-rebalancing.md) | 2026-10-28 | Accepted; implemented and locally validated | Annual rebalancing per account in the planner and tax ledger |
+| [0019](0019-retirement-path-results.md) | 2026-10-28 | Accepted; implemented and locally validated | Keep depleted retirement paths, cap whole-balance pension transfers, more paths and results |
 
 ## When to write a record
 

@@ -17,7 +17,10 @@ Scope and conventions (see docs/methodology/retirement-ledger.md):
   super it is a unit switch. Funds are assumed not to realise gains (no fund
   CGT), so super rebalancing is untaxed.
 * Salary is paid gross. Income tax is assessed at 30 June and settled on a
-  configurable later date. PAYG withholding is not modelled.
+  configurable later date. PAYG withholding is not modelled. Tax that no
+  account can fund is recorded as unpaid (``tax_unpaid``) and the run
+  continues; ATO payment plans and the general interest charge are not
+  modelled.
 """
 
 from dataclasses import dataclass, field
@@ -112,7 +115,7 @@ class Employment:
 
 @dataclass(frozen=True)
 class Pension:
-    """Move ``amount`` (None: the whole accumulation balance) into an account-based pension."""
+    """Move ``amount`` into an account-based pension; None moves the whole balance up to the transfer balance cap."""
 
     commence: date
     amount: float | None = None
@@ -178,7 +181,11 @@ def _last_observation_per(dates, key):
 
 
 def _value(units, prices):
-    return sum(u * prices[a] for a, u in units.items())
+    total = 0.0
+    for asset, held in units.items():
+        if held:
+            total += held * prices[asset]
+    return total
 
 
 def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) -> LedgerResult:
@@ -232,7 +239,7 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
     if tsb_prior is None:
         tsb_prior = _value(state.super_acc, state.prices)
     unused, losses_bf, period = dict(scenario.unused_concessional), float(scenario.capital_losses_brought_forward), None
-    spending_due = []
+    spending_due, unpaid_tax = [], []
     access = access_date(person.born, next(iter(rules_by_year.values())), person.retirement_date)
 
     def log(kind, amount, account, **detail):
@@ -379,6 +386,7 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
         return paid, shortfall
 
     start_year(rules_by_year[financial_year_of(start)])
+    closing = None
     while day <= end:
         rules = rules_by_year[financial_year_of(day)]
         if (day.month, day.day) == (7, 1) and day != start:
@@ -389,9 +397,11 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
                              if p.acquired < reform and p.reform_value is None else p for p in state.parcels]
             log("cgt_reform_valuation", sum(p.reform_value or 0.0 for p in state.parcels), "outside")
         flows = {k: 0.0 for k in ("market_pnl", "salary", "employer_contributions", "contributions_tax", "spending_paid",
-                                  "shortfall", "tax_paid", "fund_tax", "distributions", "pension_payments", "lump_sums")}
-        opening = (state.cash + _value(state.outside_units, state.prices)
-                   + _value(state.super_acc, state.prices) + _value(state.super_pen, state.prices))
+                                  "shortfall", "tax_paid", "tax_unpaid", "fund_tax", "distributions", "pension_payments",
+                                  "lump_sums")}
+        # Nothing changes overnight, so the opening value is the previous close.
+        opening = closing if closing is not None else (state.cash + _value(state.outside_units, state.prices)
+                                                       + _value(state.super_acc, state.prices) + _value(state.super_pen, state.prices))
         observation = observations.get(day)
         if day in rebalance_days:
             rebalance()
@@ -464,11 +474,13 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
                 raise UnsupportedRule("An account-based pension needs an unrestricted condition of release; transition to retirement is not modelled.")
             require_tax_free_benefits(person.born, rules, day)
             balance = _value(state.super_acc, state.prices)
-            amount = balance if scenario.pension.amount is None else scenario.pension.amount
+            account = state.tba or TransferBalanceAccount(rules["transfer_balance_cap"])
+            # "Whole balance" moves as much as the transfer balance cap allows; the rest stays in accumulation.
+            amount = min(balance, account.cap - account.balance) if scenario.pension.amount is None else scenario.pension.amount
             if amount > balance + TOLERANCE:
                 raise ValueError("Pension transfer exceeds the accumulation balance.")
-            state.tba = (state.tba or TransferBalanceAccount(rules["transfer_balance_cap"])).credit(amount)
-            fraction = amount / balance
+            state.tba = account.credit(amount)
+            fraction = amount / balance if balance > 0 else 0.0
             for asset in assets:
                 moved = state.super_acc[asset] * fraction
                 state.super_acc[asset] -= moved
@@ -493,7 +505,9 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
                 if liability["amount"] >= 0:
                     paid, short = pay_need(liability["amount"], "tax")
                     if short > TOLERANCE:
-                        raise UnsupportedRule("Unpaid tax debts are not modelled; the scenario cannot fund its tax.")
+                        # Every account is exhausted: record the debt and continue, without the general interest charge.
+                        flows["tax_unpaid"] += short
+                        unpaid_tax.append({"financial_year": liability["financial_year"], "due": str(day), "amount": short})
                     flows["tax_paid"] += paid
                 else:
                     state.cash -= liability["amount"]
@@ -558,6 +572,7 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
                     - flows["contributions_tax"] - flows["spending_paid"] - flows["tax_paid"] - flows["fund_tax"])
         if abs(total - expected) > 1e-6 + 1e-11 * abs(expected):
             raise ArithmeticError(f"Ledger reconciliation failed on {day}: {total} != {expected}.")
+        closing = total
         rows.append({"date": day, "is_observation": observation is not None, "cash": state.cash,
                      "outside_investments": outside_value, "accumulation": acc_value, "pension": pen_value,
                      "total": total, "super_accessible": day >= access, **flows,
@@ -576,6 +591,7 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
                       "net_realised_gains": sum(e.amount for e in fy["events"]),
                       "concessional_contributions": fy["concessional"], "accumulation_income": fy["acc_income"]}
     outstanding = {"tax_liabilities": [dict(l, due=str(l["due"])) for l in state.liabilities],
+                   "unpaid_tax": unpaid_tax,
                    "unassessed_year": unassessed,
                    "pending_contributions": [{"due": str(d), "amount": a} for d, a, _ in state.pending],
                    "unscheduled_spending": [{"scheduled": str(d), "amount": a} for d, a in spending_due if a > 0],

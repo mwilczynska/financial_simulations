@@ -213,3 +213,26 @@ def test_annual_rebalance_resets_weights_and_realises_outside_cgt():
     assert sales["gain"].sum() == pytest.approx(5000 - 40000 / 60000 * 5000)
     assert "sale" not in set(held.events.get("event", ()))
     assert (rebalanced.events["event"] == "rebalance").sum() == 1  # accumulation units switch without tax
+
+
+def test_unfundable_tax_is_recorded_as_unpaid_and_the_path_continues():
+    from financial_simulations.rules.au.projection import ProjectionAssumptions, project_rulesets
+
+    years = project_rulesets(RULES, "2027-28", ProjectionAssumptions(0.025, 0.035))
+    path = market(end="2027-12-31")
+    # Salary is spent in full, so nothing is left when the 2026-27 assessment falls due on 31 October 2027.
+    result = run_ledger(path, scenario_with(Person("1985-01-01"), employment=Employment(120000, "2026-07-02"),
+                                            annual_spending=120000), years)
+    unpaid = result.outstanding["unpaid_tax"]
+    assert len(unpaid) == 1 and unpaid[0]["financial_year"] == "2026-27" and unpaid[0]["amount"] > 0
+    assert result.daily["tax_unpaid"].sum() == pytest.approx(unpaid[0]["amount"])
+    assert result.daily.index[-1] == pd.Timestamp("2027-12-31")
+
+
+def test_whole_balance_pension_transfer_stops_at_the_transfer_balance_cap():
+    scenario = scenario_with(Person("1964-08-01", retirement_date="2025-12-31"), super_units={"GL": 2500000},
+                             pension=Pension("2026-07-01"))
+    result = run_ledger(market(), scenario, YEARS)
+    commencement = result.events[result.events["event"] == "pension_commencement"].iloc[0]
+    assert commencement["amount"] == pytest.approx(RULES["transfer_balance_cap"])
+    assert result.daily["accumulation"].iloc[0] == pytest.approx(2500000 - RULES["transfer_balance_cap"])

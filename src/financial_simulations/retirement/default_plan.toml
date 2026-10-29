@@ -44,7 +44,7 @@ cpi_annual = 0.025
 wage_growth_annual = 0.035
 
 [market]
-paths = 96
-retirement_paths = 24
+paths = 1000
+retirement_paths = 100
 seed = 20261028
 block_length = 63

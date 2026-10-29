@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 
 
-COLORS = {"Outside super": "#126a63", "Inside super": "#386a98"}
+COLORS = {"Outside super": "#126a63", "Inside super": "#386a98", "Combined": "#b76a42"}
 
 
 def _figure(title, subtitle, *, height=5.5):
@@ -57,7 +57,7 @@ def write_plan_plots(output: Path, plan, market, portfolios, retirement_paths, r
     """Write portfolio calibration, forward paths and retirement diagnostics."""
     output = Path(output)
     with matplotlib.rc_context({"font.family": "DejaVu Sans"}):
-        fig, ax = _figure("Historical portfolio growth", "Full shared sample; USD total returns; buy and hold; reconstructed periods included")
+        fig, ax = _figure("Historical portfolio growth", "Full shared sample; USD total returns; each account's rebalancing policy; reconstructed periods included")
         for title, part in portfolios.historical.groupby("Portfolio", sort=False):
             ax.plot(pd.to_datetime(part["Date"]), part["Growth of 100"], label=title, color=COLORS[title], linewidth=1.5)
         ax.set_yscale("log")
@@ -66,12 +66,13 @@ def write_plan_plots(output: Path, plan, market, portfolios, retirement_paths, r
         ax.legend(frameon=False, loc="upper left")
         fig.savefig(output / "portfolio_history.png")
 
-        fig = Figure(figsize=(11, 7.6), dpi=150, facecolor="#fafaf7")
-        axes = fig.subplots(2, 1, sharex=True)
+        groups = list(portfolios.paths.groupby("Portfolio", sort=False))
+        fig = Figure(figsize=(11, 3.2 + 2.2 * len(groups)), dpi=150, facecolor="#fafaf7")
+        axes = fig.subplots(len(groups), 1, sharex=True)
         fig.subplots_adjust(left=0.10, right=0.97, top=0.85, bottom=0.11, hspace=0.24)
         fig.text(0.10, 0.95, "Future portfolio growth ranges", fontsize=16, fontweight="bold", color="#19353a")
         fig.text(0.10, 0.90, f"{plan['market']['paths']} shared stationary-bootstrap draws; growth of $100; USD-return convention", fontsize=9, color="#536369")
-        for ax, (title, part) in zip(axes, portfolios.paths.groupby("Portfolio", sort=False)):
+        for ax, (title, part) in zip(axes, groups):
             dates = pd.to_datetime(part["Date"])
             ax.fill_between(dates, part["P05"], part["P95"], color=COLORS[title], alpha=0.13, label="5th–95th percentile")
             ax.fill_between(dates, part["P25"], part["P75"], color=COLORS[title], alpha=0.25, label="25th–75th percentile")
@@ -85,20 +86,40 @@ def write_plan_plots(output: Path, plan, market, portfolios, retirement_paths, r
         axes[0].legend(frameon=False, ncol=3, fontsize=8, loc="upper left")
         fig.savefig(output / "portfolio_future.png")
 
-        fig, ax = _figure("Distribution of ending portfolio values", "Each point is one sampled daily path; $100 opening value; log scale")
-        ordered = ["Outside super", "Inside super"]
-        values = [portfolios.outcomes.loc[portfolios.outcomes["Portfolio"] == title, "Terminal growth of 100"].to_numpy() for title in ordered]
-        ax.boxplot(values, orientation="horizontal", tick_labels=ordered, showfliers=True, patch_artist=True,
-                   boxprops={"facecolor": "#c9d9d4", "edgecolor": "#496862"}, medianprops={"color": "#19353a"})
-        ax.set_xscale("log")
-        ax.set_xlabel("Ending value of $100 (log scale)")
-        ax.grid(axis="x", alpha=0.22)
-        fig.savefig(output / "portfolio_terminal.png")
+        fig = Figure(figsize=(11, 8.2), dpi=150, facecolor="#fafaf7")
+        axes = fig.subplots(2, 2)
+        fig.subplots_adjust(left=0.08, right=0.98, top=0.86, bottom=0.08, hspace=0.38, wspace=0.18)
+        fig.text(0.08, 0.95, "Distributions across simulated paths", fontsize=16, fontweight="bold", color="#19353a")
+        fig.text(0.08, 0.905, f"{plan['market']['paths']} shared daily paths; outside and inside super overlaid; "
+                 "dashed lines are medians", fontsize=9, color="#536369")
+        outcomes = portfolios.outcomes
+        for ax, (field, label, log) in zip(axes.flat, (("Terminal growth of 100", "Ending value of $100 (log scale)", True),
+                                                       ("Annualised growth", "Annualised growth", False),
+                                                       ("Annualised volatility", "Annualised daily volatility", False),
+                                                       ("Maximum drawdown", "Maximum drawdown", False))):
+            values = {t: outcomes.loc[outcomes["Portfolio"] == t, field].to_numpy() for t in ("Outside super", "Inside super")}
+            pooled = np.concatenate(list(values.values()))
+            bins = (np.geomspace(pooled.min(), pooled.max(), 31) if log and pooled.min() > 0
+                    else np.linspace(pooled.min(), pooled.max(), 31))
+            for title, data in values.items():
+                ax.hist(data, bins=bins, color=COLORS[title], alpha=0.45, label=title)
+                ax.axvline(np.median(data), color=COLORS[title], linestyle="--", linewidth=1.2)
+            if log:
+                ax.set_xscale("log")
+                ax.xaxis.set_major_formatter(FuncFormatter(_money))
+            else:
+                ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:.0%}"))
+            ax.set_title(label, fontsize=10, loc="left", color="#19353a")
+            ax.set_ylabel("Paths")
+            ax.spines[["top", "right"]].set_visible(False)
+            ax.set_facecolor("#fafaf7")
+        axes[0, 0].legend(frameon=False, fontsize=8)
+        fig.savefig(output / "portfolio_distributions.png")
 
-        complete = int((retirement_paths["Status"] == "complete").sum())
+        complete = int((retirement_paths["Status"] != "unsupported").sum())
         total = len(retirement_paths)
         wide = wide_wealth_range(retirement_bands)
-        subtitle = f"{complete} of {total} daily tax-ledger paths complete; nominal AUD proxy; unsupported draws excluded"
+        subtitle = f"{complete} of {total} daily tax-ledger paths calculated; nominal AUD proxy; unsupported draws excluded"
         if wide:
             subtitle += "\nLog-like y-axis above $1,000 keeps central paths visible beside the upper tail"
         fig, ax = _figure("Retirement wealth range", subtitle)

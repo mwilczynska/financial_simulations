@@ -52,9 +52,11 @@ Asset unit prices start at 1. On each day:
 5. **Non-concessional contributions** are scheduled from outside cash and
    checked against the bring-forward rules.
 6. **Pension commencement.** The person needs unrestricted access and must be
-   at least 60. The run credits the transfer balance account (it stops if the
-   cap would be exceeded), moves units pro rata from accumulation, and sets
-   the pro-rated minimum.
+   at least 60. The run credits the transfer balance account, moves units pro
+   rata from accumulation, and sets the pro-rated minimum. A whole-balance
+   transfer (`amount = None`) moves at most the unused transfer balance cap
+   and leaves the rest in accumulation. An explicit amount that would exceed
+   the cap stops the run, because excess transfer balance tax is not modelled.
 7. **Spending** is scheduled on the opening day and on each 1st of the month,
    at annual spending/12, rising by `spending_growth` at each 1 July. Needs
    are paid on the first observation day on or after their scheduled date,
@@ -69,8 +71,12 @@ Asset unit prices start at 1. On each day:
    never pays spending, so a bridge shortfall shows up even when total wealth
    is positive.
 8. **Tax settlements** due on or before the day are paid through the same
-   order. Refunds go to cash. A tax debt the scenario cannot pay stops the
-   run.
+   order. Refunds go to cash. When every account is exhausted, the unpaid
+   part is recorded in the daily `tax_unpaid` flow and
+   `outstanding["unpaid_tax"]`, and the run continues. Payment plans and the
+   general interest charge are not modelled. Before 2026-10-28 this case
+   stopped the run, which removed the worst market paths from planner
+   results.
 9. **Pension minimum instalments.** On the last observation of each month,
    (minimum − paid so far) / months remaining in the year goes to cash.
 10. **Surplus cash.** Cash above `cash_buffer` buys new outside parcels at the
@@ -126,8 +132,9 @@ transfers between the person's accounts.
 - `annual`: the full `TaxAssessment`, contributions against the cap,
   non-concessional total, fund tax, pension minimum and amount paid, TSB,
   spending, shortfall, unused cap history and transfer balance;
-- `outstanding`: tax liabilities, pending contributions, unpaid scheduled
-  spending, losses carried forward and unused caps at the horizon.
+- `outstanding`: tax liabilities, unpaid tax debts, pending contributions,
+  unpaid scheduled spending, losses carried forward and unused caps at the
+  horizon.
 
 `write_ledger_report` writes `daily.csv`, `events.csv`, `annual.json` (with
 the rule-set hash and assumptions) and `ledger.png` directly from Python.
