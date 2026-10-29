@@ -291,3 +291,18 @@ def test_cash_earns_daily_interest_that_is_taxed_and_reconciles():
     assert result.daily["total"].iloc[-1] == pytest.approx(100000 * 1.04 ** (days / 365.25))
     interest = result.daily["interest"].sum()
     assert result.annual[0]["assessment"].taxable_income == pytest.approx(int(interest), abs=1)
+
+
+def test_payg_withholding_spreads_salary_tax_and_settles_only_the_balance():
+    path = market()
+    plain = run_ledger(path, scenario_with(Person("1985-01-01"), employment=Employment(104000, "2026-07-02")), YEARS)
+    withheld = run_ledger(path, scenario_with(Person("1985-01-01"), employment=Employment(104000, "2026-07-02"),
+                                              payg_withholding=True), YEARS)
+    events = withheld.events[withheld.events["event"] == "payg_withholding"]
+    assessed = withheld.annual[0]["assessment"].net_tax
+    assert len(events) == 26
+    # Salary is the only income, so withholding equals the assessment and nothing is left to settle.
+    assert events["amount"].sum() == pytest.approx(assessed)
+    assert withheld.outstanding["tax_liabilities"][0]["amount"] == pytest.approx(0, abs=1e-6)
+    assert plain.outstanding["tax_liabilities"][0]["amount"] == pytest.approx(assessed)
+    assert withheld.daily["total"].iloc[-1] == pytest.approx(plain.daily["total"].iloc[-1] - assessed)

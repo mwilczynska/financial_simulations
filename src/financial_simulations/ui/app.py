@@ -502,11 +502,41 @@ def year_axis(frame, field="Date"):
 
 
 YEAR_TITLE = "Year ending 30 June"
+BORN = {"date": None}  # the current plan's birth date, set before results are drawn, for "Age" in tooltips
+
+
+def add_age(frame, field="Date"):
+    """Add an Age column (whole years on that date, or at 30 June for a financial year) when a birth date is known."""
+    born = BORN["date"]
+    if born is None or field not in frame:
+        return frame
+    frame = frame.copy()
+    if field == "FY ending":
+        days = [date(int(y), 6, 30) for y in frame[field]]
+    elif field == "Year":  # calendar years: age at 31 December
+        days = [date(int(y), 12, 31) for y in frame[field]]
+    else:
+        days = [pd.Timestamp(d).date() for d in frame[field]]
+    frame["Age"] = [age_on(born, d) if d >= born else None for d in days]
+    return frame
+
+
+def age_tooltip(frame):
+    import altair as alt
+
+    return [alt.Tooltip("Age:Q", title="Your age", format="d")] if "Age" in frame else []
 
 
 def period(end_year):
     """Plain wording for an Australian financial year, e.g. 2027 -> 'Jul 2026 – Jun 2027'."""
     return f"Jul {int(end_year) - 1} – Jun {int(end_year)}"
+
+
+def period_label(end_year):
+    """A financial year for tooltips, with the person's age at its 30 June when known."""
+    born = BORN["date"]
+    text = period(end_year)
+    return f"{text} (age {age_on(born, date(int(end_year), 6, 30))} at 30 June)" if born else text
 
 
 def fy_axis(frame, field="FY ending"):
@@ -539,6 +569,9 @@ def balances_chart(daily):
     long = monthly.melt("Date", var_name="account", value_name="balance")
     long["Account"] = long["account"].map(lambda a: ACCOUNTS[a][0])
     long["order"] = long["account"].map(list(ACCOUNTS).index)
+    long["Total"] = long.groupby("Date")["balance"].transform("sum")
+    long["Share"] = long["balance"] / long["Total"].where(long["Total"] > 0)
+    long = add_age(long)
     return zoomable(alt.Chart(long).mark_area().encode(
         x=alt.X("Date:T", title=None, axis=year_axis(long)),
         y=alt.Y("balance:Q", stack="zero", title="AUD (nominal)", axis=alt.Axis(format="$,.0f")),
@@ -546,7 +579,9 @@ def balances_chart(daily):
                         scale=alt.Scale(domain=[v[0] for v in ACCOUNTS.values()], range=[v[1] for v in ACCOUNTS.values()]),
                         legend=alt.Legend(orient="bottom", title=None)),
         order=alt.Order("order:Q"),
-        tooltip=[alt.Tooltip("Date:T", format="%b %Y"), "Account:N", alt.Tooltip("balance:Q", format="$,.0f")],
+        tooltip=[alt.Tooltip("Date:T", format="%b %Y"), *age_tooltip(long), "Account:N",
+                 alt.Tooltip("balance:Q", title="Balance", format="$,.0f"), alt.Tooltip("Share:Q", title="Share of wealth", format=".0%"),
+                 alt.Tooltip("Total:Q", title="Total wealth", format="$,.0f")],
     ).properties(height=530))
 
 
@@ -578,9 +613,12 @@ def band_chart(frame, title, *, log=False, symlog=False, color="#126a63", percen
         axis = alt.Axis(format=".0%" if percent else "$,.0f")
     number = ".1%" if percent else "$,.0f"
     y = alt.Y("P05:Q", title=title, scale=scale, axis=axis)
+    frame = add_age(frame, "Date" if x == "Date:T" else x.split(":")[0])
     when = (alt.Tooltip("Date:T", format="%b %Y") if x == "Date:T" else
             alt.Tooltip("Period:N", title="Year") if "Period" in frame else alt.Tooltip(x, format="d"))
-    tooltip = [when, *[alt.Tooltip(f"{q}:Q", format=number) for q in ("P05", "P25", "P50", "P75", "P95")]]
+    names = {"P05": "5th percentile (1 in 20 paths lower)", "P25": "25th percentile", "P50": "Median",
+             "P75": "75th percentile", "P95": "95th percentile (1 in 20 paths higher)"}
+    tooltip = [when, *age_tooltip(frame), *[alt.Tooltip(f"{q}:Q", title=names[q], format=number) for q in names]]
     base = alt.Chart(frame)
     outer = base.mark_area(opacity=0.13, color=color).encode(x=xs, y=y, y2="P95:Q", tooltip=tooltip)
     inner = base.mark_area(opacity=0.27, color=color).encode(x=xs, y="P25:Q", y2="P75:Q", tooltip=tooltip)
@@ -598,32 +636,50 @@ def quantile_bands(frame, by, field):
     q = frame.groupby(by)[field].quantile([0.05, 0.25, 0.5, 0.75, 0.95]).unstack().reset_index()
     q.columns = [by, "P05", "P25", "P50", "P75", "P95"]
     if by == "FY ending":
-        q["Period"] = q[by].map(period)
+        q["Period"] = q[by].map(period_label)
     return q
 
 
-def all_paths_chart(paths, marks):
-    """Every path's total wealth as a faint grey line: overlaps darken, so density is visible."""
+def all_paths_chart(paths, marks, outcomes=None):
+    """Every path's total wealth as a faint grey line (overlaps darken); the line under the pointer is highlighted."""
     import altair as alt
 
-    frame = paths.copy()
+    frame = add_age(paths)
+    if outcomes is not None:
+        keep = outcomes[["Path", "Ending wealth", "Spending shortfall", "First retired-year withdrawal rate"]]
+        frame = frame.merge(keep, on="Path", how="left")
     medians = frame.groupby("Date")["Total wealth"].median()
     wide = float(frame["Total wealth"].quantile(0.95)) > 20 * max(1000.0, float(medians.max()))
     count = frame["Path"].nunique()
     opacity = min(0.45, max(0.12, 15 / count))
     y = alt.Y("Total wealth:Q", title="Total wealth (nominal AUD" + (", log-like)" if wide else ")"),
               scale=alt.Scale(type="symlog", constant=1000) if wide else alt.Scale(zero=True), axis=alt.Axis(format="$,.0f"))
-    lines = alt.Chart(frame).mark_line(strokeWidth=1.2).encode(
-        x=alt.X("Date:T", title=None, axis=year_axis(frame)), y=y, detail="Path:N",
-        color=alt.Color("Status:N", scale=alt.Scale(domain=["funded", "depleted"], range=["#4a4a4a", "#b23a3a"]),
-                        legend=alt.Legend(orient="bottom", title=None)),
-        opacity=alt.condition(alt.datum.Status == "depleted", alt.value(0.7), alt.value(opacity)),
-        tooltip=[alt.Tooltip("Path:N"), "Status:N", alt.Tooltip("Date:T", format="%b %Y"),
-                 alt.Tooltip("Total wealth:Q", format="$,.0f")])
-    median = alt.Chart(medians.reset_index()).mark_line(color="#126a63", strokeWidth=3).encode(
+    hover = alt.selection_point(fields=["Path"], on="pointerover", nearest=True, clear="pointerout", empty=False)
+    extra = [alt.Tooltip(f, format=fmt, title=t) for f, fmt, t in
+             (("Ending wealth:Q", "$,.0f", "Path's ending wealth"), ("Spending shortfall:Q", "$,.0f", "Path's spending shortfall"),
+              ("First retired-year withdrawal rate:Q", ".1%", "Path's first retired-year withdrawal rate"))
+             if f.split(":")[0] in frame]
+    x = alt.X("Date:T", title=None, axis=year_axis(frame))
+    lines = alt.Chart(frame).mark_line().encode(
+        x=x, y=y, detail="Path:N",
+        color=alt.when(hover).then(alt.value("#0b3d45")).otherwise(
+            alt.Color("Status:N", scale=alt.Scale(domain=["funded", "depleted"], range=["#4a4a4a", "#b23a3a"]),
+                      legend=alt.Legend(orient="bottom", title=None))),
+        opacity=alt.when(hover).then(alt.value(1.0)).when(alt.datum.Status == "depleted").then(alt.value(0.7))
+        .otherwise(alt.value(opacity)),
+        strokeWidth=alt.when(hover).then(alt.value(3.5)).otherwise(alt.value(1.2)))
+    # Invisible points along every path carry the hover: Vega-Lite finds the nearest point, then its whole path
+    # (same Path value) is highlighted in the line layer above.
+    points = alt.Chart(frame).mark_point(opacity=0, size=60).encode(
         x="Date:T", y="Total wealth:Q",
-        tooltip=[alt.Tooltip("Date:T", format="%b %Y"), alt.Tooltip("Total wealth:Q", title="Median", format="$,.0f")])
-    return with_milestones(zoomable(alt.layer(lines, median).properties(height=620)), marks)
+        tooltip=[alt.Tooltip("Path:N", title="Path"), "Status:N", alt.Tooltip("Date:T", format="%b %Y"), *age_tooltip(frame),
+                 alt.Tooltip("Total wealth:Q", title="Wealth on this date", format="$,.0f"), *extra]).add_params(hover)
+    median_frame = add_age(medians.reset_index())
+    median = alt.Chart(median_frame).mark_line(color="#126a63", strokeWidth=3).encode(
+        x="Date:T", y="Total wealth:Q",
+        tooltip=[alt.Tooltip("Date:T", format="%b %Y"), *age_tooltip(median_frame),
+                 alt.Tooltip("Total wealth:Q", title="Median of all paths", format="$,.0f")])
+    return with_milestones(zoomable(alt.layer(lines, median, points).properties(height=620)), marks)
 
 
 def ending_wealth_chart(calculated, marks_text=True):
@@ -675,7 +731,9 @@ def overlay_histogram(frame, field, title, *, series=("Outside super", "Inside s
         y=alt.Y("count():Q", stack=None, title="Paths"),
         color=alt.Color("Portfolio:N", scale=scale_for(series),
                         legend=alt.Legend(orient="bottom", title=None, direction="vertical", labelLimit=200)),
-        tooltip=["Portfolio:N", alt.Tooltip("count():Q", title="Paths")])
+        tooltip=["Portfolio:N", alt.Tooltip("count():Q", title="Paths in this bar"),
+                 *([] if log else [alt.Tooltip(f"{value}:Q", bin=alt.Bin(maxbins=40), title="Range",
+                                               format="$,.0f" if money else ".1%" if percent else ",.2f")])])
     rules = alt.Chart(part).mark_rule(strokeDash=[5, 3], strokeWidth=2).encode(
         x=f"median({value}):Q", color=alt.Color("Portfolio:N", scale=scale_for(series), legend=None),
         tooltip=["Portfolio:N", alt.Tooltip(f"median({field}):Q", title="Median",
@@ -740,7 +798,8 @@ def allocation_pie(weights, tickers):
     base = alt.Chart(weights).encode(theta=alt.Theta("Weight:Q", stack=True), order=alt.Order("Weight:Q", sort="descending"))
     slices = base.mark_arc(innerRadius=45, outerRadius=95, stroke="#ffffff", strokeWidth=2).encode(
         color=alt.Color("Label:N", scale=scale, sort=labels, legend=None),
-        tooltip=["Ticker:N", alt.Tooltip("Weight:Q", format=".1%")])
+        tooltip=["Ticker:N", alt.Tooltip("Weight:Q", format=".1%"),
+                 *([alt.Tooltip("Amount:Q", title="Value today", format="$,.0f")] if "Amount" in weights else [])])
     text = base.mark_text(radius=70, fontSize=12, fontWeight="bold", color="#ffffff").encode(
         text=alt.Text("Weight:Q", format=".0%"))
     return (slices + text).properties(height=220)
@@ -765,7 +824,7 @@ def section_portfolios(run):
             balance = plan["outside"]["investment_balance"] if section == "outside" else plan["super"]["balance"]
             st.markdown(f"**{title}** · {compact(balance)}")
             st.caption("Rebalanced every January" if plan[section]["rebalance"] == "annual" else "Buy and hold")
-            weights = pd.DataFrame([{"Ticker": t, "Weight": w, "Label": f"{t} {w:.0%}"}
+            weights = pd.DataFrame([{"Ticker": t, "Weight": w, "Label": f"{t} {w:.0%}", "Amount": w * balance}
                                     for t, w in plan[section]["weights"].items()])
             st.altair_chart(allocation_pie(weights, tickers), width="stretch")
             st.markdown(allocation_legend(weights, tickers), unsafe_allow_html=True)
@@ -1055,15 +1114,15 @@ def typical_flows_section(annual, marks, paths):
     stats = long.groupby(["FY ending", "Flow"])["AUD"].quantile([0.25, 0.5, 0.75]).unstack().reset_index()
     stats.columns = ["FY ending", "Flow", "P25", "Median", "P75"]
     stats = stats.groupby("Flow").filter(lambda g: g[["P25", "Median", "P75"]].abs().max().max() > 1e-6)
-    stats["Period"] = stats["FY ending"].map(period)
+    stats["Period"] = stats["FY ending"].map(period_label)
     net = annual.groupby("FY ending")["Net change in wealth"].quantile([0.25, 0.5, 0.75]).unstack().reset_index()
     net.columns = ["FY ending", "P25", "Median", "P75"]
-    net["Period"] = net["FY ending"].map(period)
+    net["Period"] = net["FY ending"].map(period_label)
     order = [f for f in FLOW_COLOURS if f in set(stats["Flow"])]
     domain = [int(annual["FY ending"].min()) - 0.6, int(annual["FY ending"].max()) + 0.6]
     x = alt.X("FY ending:Q", axis=fy_axis(annual), scale=alt.Scale(domain=domain, nice=False))
     additions = annual.groupby("FY ending")["Added to outside investments"].median().reset_index(name="AUD")         if "Added to outside investments" in annual else pd.DataFrame(columns=["FY ending", "AUD"])
-    additions["Period"] = additions["FY ending"].map(period)
+    additions["Period"] = additions["FY ending"].map(period_label)
     y_domain = flow_domain(stats, "Median", (net["P25"], net["P75"], additions["AUD"] if len(additions) else [0.0]))
     bars = alt.Chart(stats).mark_bar(size=16).encode(
         x=x, y=alt.Y("Median:Q", stack=True, title="Median AUD per year", axis=alt.Axis(format="$,.0f"),
@@ -1165,11 +1224,12 @@ does not cover (excluded, with the reason shown). Returns are the USD histories 
                + "Total wealth includes super that may not yet be accessible.")
     if getattr(run, "wealth_paths", None) is not None:
         st.subheader("Wealth over time on every path")
-        st.altair_chart(all_paths_chart(run.wealth_paths, marks), width="stretch")
+        st.altair_chart(all_paths_chart(run.wealth_paths, marks, calculated), width="stretch")
         st.caption(f"Each faint grey line is one of the {len(calculated)} calculated paths' total wealth at each month end "
                    "(nominal). Lines are translucent, so where many paths overlap the grey darkens: the darkest areas are "
-                   "where most paths went. The teal line is the median at each month; red lines are depleted paths. Hover "
-                   "a line for its path number and value.")
+                   "where most paths went. The teal line is the median at each month; red lines are depleted paths. Point at "
+                   "a line to highlight that whole path and see its value, your age, and its ending wealth, shortfall and "
+                   "withdrawal rate; the path number can be opened in section 5.")
     st.subheader("Ending wealth on every path")
     st.altair_chart(ending_wealth_chart(calculated), width="stretch")
     st.caption(f"Each dot is one path's total wealth on {run.result.daily.index[-1].date()}, sorted from lowest (left) to "
@@ -1178,7 +1238,7 @@ does not cover (excluded, with the reason shown). Returns are the USD histories 
                "spending shortfall. Red dots are depleted paths. Dashed lines label the 10th percentile, median and 90th "
                "percentile.")
     annual = run.retirement_annual.copy()
-    annual["Period"] = annual["FY ending"].map(period)
+    annual["Period"] = annual["FY ending"].map(period_label)
     typical_flows_section(annual, marks, len(calculated))
     st.subheader("Withdrawal rate in each retired year")
     retired = annual.loc[annual["Full retired year"] & annual["Withdrawal rate"].notna()]
@@ -1225,7 +1285,7 @@ the same spending became a bigger share of it.
 total wealth; spending grows at {plan['spending']['annual_growth']:.1%} a year.
 """)
     stress = annual.groupby("FY ending").agg(**{"Paths with a shortfall": ("Shortfall", lambda x: (x > 0).mean())}).reset_index()
-    stress["Period"] = stress["FY ending"].map(period)
+    stress["Period"] = stress["FY ending"].map(period_label)
     a, b = st.columns(2)
     with a:
         bars = alt.Chart(stress).mark_bar(color="#8c2f2f", size=14).encode(
@@ -1317,7 +1377,7 @@ def section_ledger(run):
 
     st.subheader("Money in and out on this path, before and during retirement")
     household = household_flows(daily)
-    household["Period"] = household["FY ending"].map(period)
+    household["Period"] = household["FY ending"].map(period_label)
     shown = household.groupby("Flow").filter(lambda g: g["AUD"].abs().max() > 1e-6)
     colours = FLOW_COLOURS
     order = [f for f in colours if f in set(shown["Flow"])]
@@ -1326,7 +1386,7 @@ def section_ledger(run):
     moves = account_flows(daily, result.events)
     additions = (moves.loc[moves["Flow"] == "Savings invested"].groupby("FY ending")["AUD"].sum()
                  .reindex(sorted(household["FY ending"].unique()), fill_value=0.0).reset_index(name="AUD"))
-    additions["Period"] = additions["FY ending"].map(period)
+    additions["Period"] = additions["FY ending"].map(period_label)
     y_domain = flow_domain(shown, "AUD", (household["Net change"], additions["AUD"]))
     bars = alt.Chart(shown).mark_bar(size=16).encode(
         x=x, y=alt.Y("sum(AUD):Q", title="AUD per year", axis=alt.Axis(format="$,.0f"),
@@ -1360,7 +1420,7 @@ def section_ledger(run):
             if part.empty:
                 st.caption(f"{account}: no transfers on this path.")
                 continue
-            part["Period"] = part["FY ending"].map(period)
+            part["Period"] = part["FY ending"].map(period_label)
             chart = alt.Chart(part).mark_bar(size=14).encode(
                 x=alt.X("FY ending:Q", axis=fy_axis(household), scale=alt.Scale(domain=domain, nice=False)),
                 y=alt.Y("sum(AUD):Q", title=account, axis=alt.Axis(format="$,.0f")),
@@ -1463,6 +1523,7 @@ def results(plan):
         st.warning("Inputs have changed since this run. Press Run plan to refresh the results.")
     for note in run.notes:
         st.warning(note)
+    BORN["date"] = date.fromisoformat(run.plan["person"]["date_of_birth"])
     inflation_note(run.plan)
     section_portfolios(run)
     section_history(run)

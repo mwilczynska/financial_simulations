@@ -319,7 +319,10 @@ positions them.
    - **wealth over time on every path**: each calculated path's month-end
      total wealth as a translucent grey line, so overlapping paths darken and
      density shows. Depleted paths are red, and a teal line marks the monthly
-     median. The data are `PlanRun.wealth_paths`;
+     median. The data are `PlanRun.wealth_paths`. Pointing at the chart
+     highlights the nearest path: invisible points carry a Vega-Lite nearest
+     selection on `Path`. The tooltip gives date, age, value and the path's
+     ending wealth, shortfall and first retired-year withdrawal rate;
    - every path's ending wealth, sorted. Hovering gives exact nominal and
      today's-dollar values, the account split and any shortfall; labelled
      10th, median and 90th percentile lines; depleted paths in red;

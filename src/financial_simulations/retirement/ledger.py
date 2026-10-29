@@ -17,7 +17,9 @@ Scope and conventions (see docs/methodology/retirement-ledger.md):
   super it is a unit switch. Funds are assumed not to realise gains (no fund
   CGT), so super rebalancing is untaxed.
 * Salary is paid gross. Income tax is assessed at 30 June and settled on a
-  configurable later date. PAYG withholding is not modelled. Tax that no
+  configurable later date. With ``payg_withholding`` each payday withholds a
+  26th of the estimated tax on a full year's salary, and the settlement pays
+  or refunds only the balance. Tax that no
   account can fund is recorded as unpaid (``tax_unpaid``) and the run
   continues; ATO payment plans and the general interest charge are not
   modelled.
@@ -152,6 +154,7 @@ class LedgerScenario:
     outside_contribution_growth: float = 0.0  # applied each 1 July, like spending growth
     stop_investing_at_retirement: bool = False
     cash_interest: float = 0.0  # annual effective rate on outside cash, credited daily and taxed as interest
+    payg_withholding: bool = False  # withhold estimated salary tax each payday; the assessment settles the balance
 
 
 @dataclass
@@ -264,7 +267,17 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
         state.fy = {"rules": rules, "cap": cap, "concessional": 0.0, "non_concessional": 0.0, "labour": 0.0,
                     "sacrifice": 0.0, "unfranked": 0.0, "franked": 0.0, "credits": 0.0, "events": [],
                     "acc_income": 0.0, "acc_credits": 0.0, "pen_credits": 0.0, "spending": 0.0, "shortfall": 0.0,
-                    "interest": 0.0}
+                    "interest": 0.0, "withheld": 0.0, "withhold_per_pay": 0.0}
+        if scenario.payg_withholding and scenario.employment:
+            # Estimated tax on a full year's salary, spread over 26 paydays. Like PAYG it ignores investment
+            # income and part-year work; the 30 June assessment settles any difference.
+            employment = scenario.employment
+            sacrifice = employment.salary_sacrifice_per_payday * 26
+            concessional = rules["super_guarantee_rate"] * min(employment.annual_salary, rules["maximum_contribution_base"])
+            estimate = assess(IncomeYear(labour_income=employment.annual_salary - sacrifice, reportable_employer_super=sacrifice,
+                                         low_tax_contributions=concessional + sacrifice,
+                                         private_hospital_cover=person.private_hospital_cover), rules)
+            state.fy["withhold_per_pay"] = estimate.net_tax / 26
         if state.tba is not None:
             pension_value = _value(state.super_pen, state.prices)
             state.pension_minimum = minimum_pension_payment(pension_value, person.born, rules)
@@ -466,6 +479,12 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
             state.fy["sacrifice"] += sacrifice
             flows["salary"] += gross - sacrifice
             log("salary", gross - sacrifice, "outside", sacrifice=sacrifice, super_guarantee=sg)
+            withheld = state.fy["withhold_per_pay"]
+            if withheld > 0:
+                state.cash -= withheld
+                state.fy["withheld"] += withheld
+                flows["tax_paid"] += withheld
+                log("payg_withholding", withheld, "outside")
             if scenario.outside_contribution_per_payday:
                 saving_due += (scenario.outside_contribution_per_payday
                                * (1 + scenario.outside_contribution_growth) ** _years_since(start, day))
@@ -565,7 +584,8 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
             assessment = assess(year, rules)
             losses_bf = assessment.capital_losses_carried_forward
             due = date(rules.end.year + (scenario.tax_settlement_month_day[0] <= 6), *scenario.tax_settlement_month_day)
-            state.liabilities.append({"due": due, "amount": assessment.net_tax + assessment.division_293_tax,
+            # Withholding already paid counts against the assessment; a negative balance is a refund.
+            state.liabilities.append({"due": due, "amount": assessment.net_tax + assessment.division_293_tax - fy["withheld"],
                                       "financial_year": rules.financial_year})
             accumulation_tax = rules["fund_earnings_tax_rate"] * (fy["acc_income"] + fy["acc_credits"]) - fy["acc_credits"]
             if accumulation_tax > 0:
@@ -618,7 +638,7 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
                       "franking_credits": fy["credits"], "capital_gain_events": len(fy["events"]),
                       "net_realised_gains": sum(e.amount for e in fy["events"]),
                       "concessional_contributions": fy["concessional"], "accumulation_income": fy["acc_income"],
-                      "interest": fy["interest"]}
+                      "interest": fy["interest"], "payg_withheld": fy["withheld"]}
     outstanding = {"tax_liabilities": [dict(l, due=str(l["due"])) for l in state.liabilities],
                    "unpaid_tax": unpaid_tax,
                    "unassessed_year": unassessed,

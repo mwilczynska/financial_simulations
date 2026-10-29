@@ -123,7 +123,7 @@ transfers between the person's accounts.
 | --- | --- | --- |
 | Pay frequency | Fortnightly from `first_payday` | Engineering choice |
 | SG and sacrifice arrival | 7 business days after payday (weekdays only) | The legal deadline, ignoring public holidays; actual employer timing may be earlier |
-| PAYG withholding | Not modelled; tax settles annually | Simplification: cash timing differs from real pay slips |
+| PAYG withholding | Optional `payg_withholding` (ledger default off; planner on). In each financial year every payday withholds 1/26 of `assess` applied to a full year's salary less sacrifice (SG and sacrifice as low-tax contributions; cover as entered). The 30 June assessment's liability is net tax plus Division 293 less the year's withholding, so a negative balance is refunded at settlement | [ADR 0022](../decisions/0022-payg-withholding.md). An estimate, not the ATO withholding schedules; investment income and part-year work are settled at assessment |
 | Tax settlement | 31 October after the year | Engineering choice: a self-lodger's due date. Agents and assessment notices give other dates |
 | Distribution timing and size | Quarterly, at annual_yield/4 of price | Labelled assumption (estimated income mode) |
 | Franking credit ratio | 30% company tax | Assumption; base-rate entities pay 25% |
