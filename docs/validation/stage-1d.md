@@ -207,3 +207,18 @@ The first review found y-axis labels running into neighbouring panels, single
 tick labels on narrow log axes, a truncated portfolio label, a subtitle
 crowding the legend, clipped deflator-twin labels and an inaccurate PIT
 caption. All were fixed and re-rendered.
+
+### Clean-commit reproduction and hosted CI
+
+Fresh runs of both validators from clean commit `ec4b473` (`working_tree_dirty:
+false`, package Python-source SHA-256
+`13a48fb7bc1002920b0ea6be69f701f4e36249cf9e27e9ae3f12acee5c40b497`)
+reproduced every count above and passed every audit. The study validator ran
+without `--reuse`, so both studies were regenerated. The batched-engine
+timing is load-dependent. The clean run took 8.13 s for 1,000 fifty-year paths
+against 2.98 s per path for the full ledger, the same two-to-three
+orders of magnitude as the first run. Hosted CI for `acb8c41`
+([run 40788862177](https://github.com/mwilczynska/financial_simulations/actions/runs/40788862177))
+and `ec4b473`
+([run 40791083753](https://github.com/mwilczynska/financial_simulations/actions/runs/40791083753))
+passed on Python 3.11 and 3.14, including the repository check.
