@@ -23,6 +23,12 @@ Scope and conventions (see docs/methodology/retirement-ledger.md):
   account can fund is recorded as unpaid (``tax_unpaid``) and the run
   continues; ATO payment plans and the general interest charge are not
   modelled.
+* With ``age_pension``, the single Age Pension is paid into cash every
+  fortnight from a fortnight after Age Pension age, means-tested on the
+  previous close's balances (``rules/au/age_pension.py``). Its taxable part is
+  assessable income, and each income year in which the person reaches Age
+  Pension age is assessed with SAPTO. Without it, a ledger that reaches Age
+  Pension age stops with ``UnsupportedRule``.
 """
 
 from dataclasses import dataclass, field
@@ -33,6 +39,7 @@ import pandas as pd
 
 from financial_simulations.dates import as_date
 from financial_simulations.markets.path import MarketPath
+from financial_simulations.rules.au.age_pension import apply_work_bonus, fortnightly_rate
 from financial_simulations.rules.au.parameters import RuleSet, UnsupportedRule, financial_year_of
 from financial_simulations.rules.au.superannuation import (
     TransferBalanceAccount, access_date, add_business_days, age_on, apply_concessional, apply_non_concessional, birthday,
@@ -88,12 +95,18 @@ class Parcel:
 
 @dataclass(frozen=True)
 class Person:
+    """One person. ``homeowner`` and ``other_assets`` (assessable assets outside the ledger, such as cars and
+    contents, in nominal dollars) are used only by the Age Pension assets test."""
+
     born: date
     retirement_date: date | None = None
     private_hospital_cover: bool = True
+    homeowner: bool = True
+    other_assets: float = 0.0
 
     def __post_init__(self):
         object.__setattr__(self, "born", as_date(self.born))
+        _money(self.other_assets, "Other assessable assets")
         if self.retirement_date is not None:
             object.__setattr__(self, "retirement_date", as_date(self.retirement_date))
 
@@ -212,7 +225,8 @@ class LedgerScenario:
     cash_interest: float = 0.0  # annual effective rate on outside cash, credited daily and taxed as interest
     payg_withholding: bool = False
     retirement_spending: float | None = None  # annual spending from the retirement date (same base year), if different
-    spending_rule: SpendingRule = field(default_factory=SpendingRule)  # withhold estimated salary tax each payday; the assessment settles the balance
+    spending_rule: SpendingRule = field(default_factory=SpendingRule)
+    age_pension: bool = False  # pay the means-tested Age Pension and assess SAPTO from Age Pension age
 
 
 @dataclass
@@ -297,6 +311,16 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
             if payday >= start:
                 paydays.add(payday)
             payday += timedelta(days=14)
+    # Age Pension: paid fortnightly in arrears from a fortnight after Age Pension age.
+    pension_age_day = birthday(person.born, next(iter(rules_by_year.values()))["age_pension_age"])
+    pension_paydays = set()
+    if scenario.age_pension:
+        payday = pension_age_day + timedelta(days=14)
+        while payday <= end:
+            if payday >= start:
+                pension_paydays.add(payday)
+            payday += timedelta(days=14)
+    work_bonus = {"balance": 0.0, "earned": 0.0}
     nonconcessional = {}
     for when, amount in scenario.non_concessional:
         nonconcessional.setdefault(as_date(when), 0.0)
@@ -319,13 +343,15 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
 
     def start_year(rules):
         nonlocal unused
-        if birthday(person.born, rules["age_pension_age"]) <= rules.end:
-            raise UnsupportedRule(f"The person reaches Age Pension age by {rules.end}; SAPTO and Age Pension are not implemented.")
+        if not scenario.age_pension and birthday(person.born, rules["age_pension_age"]) <= rules.end:
+            raise UnsupportedRule(f"The person reaches Age Pension age by {rules.end}; run with age_pension=True to pay "
+                                  "the Age Pension and assess SAPTO.")
         cap = concessional_cap(rules, tsb_prior, unused)
         state.fy = {"rules": rules, "cap": cap, "concessional": 0.0, "non_concessional": 0.0, "labour": 0.0,
                     "sacrifice": 0.0, "unfranked": 0.0, "franked": 0.0, "credits": 0.0, "events": [],
                     "acc_income": 0.0, "acc_credits": 0.0, "pen_credits": 0.0, "spending": 0.0, "shortfall": 0.0,
-                    "interest": 0.0, "withheld": 0.0, "withhold_per_pay": 0.0}
+                    "interest": 0.0, "withheld": 0.0, "withhold_per_pay": 0.0, "age_pension": 0.0,
+                    "age_pension_taxable": 0.0}
         if scenario.payg_withholding and scenario.employment:
             # Estimated tax on a full year's salary, spread over 26 paydays. Like PAYG it ignores investment
             # income and part-year work; the 30 June assessment settles any difference.
@@ -564,7 +590,7 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
             log("cgt_reform_valuation", sum(p.reform_value or 0.0 for p in state.parcels), "outside")
         flows = {k: 0.0 for k in ("market_pnl", "salary", "employer_contributions", "contributions_tax", "spending_paid",
                                   "shortfall", "tax_paid", "tax_unpaid", "fund_tax", "distributions", "pension_payments",
-                                  "lump_sums", "interest")}
+                                  "lump_sums", "interest", "age_pension")}
         # Nothing changes overnight, so the opening value is the previous close.
         opening = closing if closing is not None else (state.cash + _value(state.outside_units, state.prices)
                                                        + _value(state.super_acc, state.prices) + _value(state.super_pen, state.prices))
@@ -621,6 +647,8 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
             state.fy["labour"] += gross - sacrifice
             state.fy["sacrifice"] += sacrifice
             flows["salary"] += gross - sacrifice
+            if day >= pension_age_day:
+                work_bonus["earned"] += gross - sacrifice  # employment income for the next Age Pension fortnight
             log("salary", gross - sacrifice, "outside", sacrifice=sacrifice, super_guarantee=sg)
             withheld = state.fy["withhold_per_pay"]
             if withheld > 0:
@@ -632,6 +660,21 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
                 saving_due += (scenario.outside_contribution_per_payday
                                * (1 + scenario.outside_contribution_growth) ** _years_since(start, day))
             state.pending.append((add_business_days(day, employment.contribution_lag_business_days), sg + sacrifice, sacrifice))
+        if day in pension_paydays:
+            # Means test on the previous close: every account is a financial asset at Age Pension age, and
+            # other assessable assets count in the assets test only.
+            financial = opening
+            employment, work_bonus["balance"] = apply_work_bonus(work_bonus["earned"], work_bonus["balance"], rules)
+            work_bonus["earned"] = 0.0
+            rate = fortnightly_rate(financial + person.other_assets, financial, employment, rules, homeowner=person.homeowner)
+            if rate.amount > 0:
+                state.cash += rate.amount
+                flows["age_pension"] += rate.amount
+                state.fy["age_pension"] += rate.amount
+                state.fy["age_pension_taxable"] += rate.taxable
+            log("age_pension", rate.amount, "outside", taxable=rate.taxable, assessed_assets=rate.assessed_assets,
+                assessed_income=rate.assessed_income, assets_reduction=rate.assets_reduction,
+                income_reduction=rate.income_reduction, binding_test=rate.binding_test)
         arrived = [p for p in state.pending if p[0] == day]
         state.pending = [p for p in state.pending if p[0] != day]
         for _, amount, sacrifice in arrived:
@@ -728,7 +771,11 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
                               franking_credits=fy["credits"], capital_events=tuple(fy["events"]),
                               capital_losses_brought_forward=losses_bf, reportable_employer_super=fy["sacrifice"],
                               low_tax_contributions=fy["concessional"],
-                              private_hospital_cover=person.private_hospital_cover)
+                              other_assessable_income=fy["age_pension_taxable"],
+                              private_hospital_cover=person.private_hospital_cover,
+                              # Age Pension age at any time in the year, residence assumed: SAPTO eligibility
+                              # holds even when the means test pays no pension.
+                              sapto_eligible=scenario.age_pension and pension_age_day <= rules.end)
             assessment = assess(year, rules)
             losses_bf = assessment.capital_losses_carried_forward
             due = date(rules.end.year + (scenario.tax_settlement_month_day[0] <= 6), *scenario.tax_settlement_month_day)
@@ -759,6 +806,8 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
                            "total_super_balance_30_june": tsb_prior, "spending_paid": fy["spending"],
                            "spending_rule_amount": fy.get("rule_amount"), "spending_rule_rate": fy.get("rule_rate"),
                            "shortfall": fy["shortfall"], "unused_concessional_after": dict(unused),
+                           "age_pension": fy["age_pension"], "age_pension_taxable": fy["age_pension_taxable"],
+                           "sapto": assessment.sapto,
                            "transfer_balance": state.tba.balance if state.tba else None})
             log("assessment", assessment.net_tax, "outside", financial_year=rules.financial_year,
                 taxable_income=assessment.taxable_income, division_293=assessment.division_293_tax)
@@ -766,6 +815,7 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
         acc_value, pen_value = _value(state.super_acc, state.prices), _value(state.super_pen, state.prices)
         total = state.cash + outside_value + acc_value + pen_value
         expected = (opening + flows["market_pnl"] + flows["salary"] + flows["employer_contributions"] + flows["interest"]
+                    + flows["age_pension"]
                     - flows["contributions_tax"] - flows["spending_paid"] - flows["tax_paid"] - flows["fund_tax"])
         if abs(total - expected) > 1e-6 + 1e-11 * abs(expected):
             raise ArithmeticError(f"Ledger reconciliation failed on {day}: {total} != {expected}.")
@@ -789,7 +839,7 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
                       "franking_credits": fy["credits"], "capital_gain_events": len(fy["events"]),
                       "net_realised_gains": sum(e.amount for e in fy["events"]),
                       "concessional_contributions": fy["concessional"], "accumulation_income": fy["acc_income"],
-                      "interest": fy["interest"], "payg_withheld": fy["withheld"]}
+                      "interest": fy["interest"], "payg_withheld": fy["withheld"], "age_pension": fy["age_pension"]}
     outstanding = {"tax_liabilities": [dict(l, due=str(l["due"])) for l in state.liabilities],
                    "unpaid_tax": unpaid_tax,
                    "unassessed_year": unassessed,

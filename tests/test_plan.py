@@ -75,16 +75,17 @@ def test_build_inputs_maps_portfolios_and_derived_income_onto_ledger(processed_f
     assert "AUD proxy" in notes[0]
 
 
-def test_horizon_stops_before_age_pension_year(processed_fixture):
+def test_horizon_runs_past_age_pension_age_with_the_age_pension(processed_fixture):
     plan = default_plan()
-    plan["person"]["date_of_birth"] = "1962-03-01"
+    plan["person"].update(date_of_birth="1962-03-01", homeowner=False, other_assets=25000.0)
     plan["pension"]["start_age"] = 0
     start, end, shortened = horizon(plan)
-    assert end == date(2028, 6, 30) and shortened
-    plan["person"]["date_of_birth"] = "1959-01-01"
+    assert end == date(2036, 6, 30) and not shortened  # ten years, through age 74
     market = load_plan_markets(plan["assets"], processed_fixture)
-    with pytest.raises(PlanError, match="Age Pension age"):
-        build_inputs(plan, market=market)
+    _, scenario, _, _ = build_inputs(plan, market=market)
+    assert scenario.age_pension and not scenario.person.homeowner and scenario.person.other_assets == 25000
+    plan["plan"]["years"] = 60
+    assert horizon(plan)[1:] == (date(2072, 2, 29), True)  # the day before age 110 (2072 is a leap year)
 
 
 def test_run_plan_writes_portfolio_and_retirement_reports(tmp_path, processed_fixture):

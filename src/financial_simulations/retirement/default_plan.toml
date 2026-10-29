@@ -11,6 +11,9 @@ years = 10
 date_of_birth = "1972-09-15"
 retirement_age = 55
 private_hospital_cover = true
+# Age Pension assets test: the home is exempt. other_assets: cars, contents and other assessable assets (AUD).
+homeowner = true
+other_assets = 0.0
 
 [employment]
 annual_salary = 160000.0

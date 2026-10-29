@@ -32,6 +32,7 @@ Decision records preserve why Financial Simulations makes a material modelling o
 | [0024](0024-salary-indexed-to-wage-growth.md) | 2026-10-29 | Accepted; implemented and locally validated | Salary and salary sacrifice rise each 1 July with the wage-growth assumption by default |
 | [0025](0025-spending-in-todays-dollars-and-percentage-starts.md) | 2026-10-29 | Accepted; implemented and locally validated | Spending in today's dollars rising with CPI; percentage-of-wealth retirement starts, required by rules; percent-of-wealth rule; maximum |
 | [0026](0026-results-in-todays-dollars.md) | 2026-10-29 | Accepted; implemented and locally validated | Results in today's dollars, with an Inflation flow; ledger, event log and history stay nominal |
+| [0027](0027-age-pension-and-sapto.md) | 2026-10-29 | Accepted; implemented and locally validated | Single Age Pension (assets and income tests, deeming, Work Bonus, tax), SAPTO and senior Medicare thresholds; runs pass Age Pension age |
 
 ## When to write a record
 

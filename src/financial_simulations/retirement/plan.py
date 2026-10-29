@@ -143,7 +143,7 @@ def normalize_plan(raw: dict) -> dict:
     meta, person, employment = section("plan"), section("person"), section("employment")
     outside, super_, spending, pension, assumptions, market = (section(n) for n in ("outside", "super", "spending", "pension", "assumptions", "market"))
     allowed = {"plan": {"name", "start_date", "years"},
-               "person": {"date_of_birth", "retirement_age", "private_hospital_cover"},
+               "person": {"date_of_birth", "retirement_age", "private_hospital_cover", "homeowner", "other_assets"},
                "employment": {"annual_salary", "salary_sacrifice_per_year", "salary_sacrifice_percent", "salary_indexed",
                               "first_payday"},
                "outside": {"cash", "cash_buffer", "investment_balance", "opening_cost_base", "opening_acquired", "weights",
@@ -168,7 +168,10 @@ def normalize_plan(raw: dict) -> dict:
         c.problems.append("plan.start_date: rules start on 2026-07-01")
     plan["person"] = {"date_of_birth": c.day(person, "date_of_birth", "person"),
                       "retirement_age": c.number(person, "retirement_age", "person", 60, low=18, high=80, integer=True),
-                      "private_hospital_cover": c.flag(person, "private_hospital_cover", "person", True)}
+                      "private_hospital_cover": c.flag(person, "private_hospital_cover", "person", True),
+                      # Age Pension assets test: the home is exempt; other_assets are cars, contents and the like.
+                      "homeowner": c.flag(person, "homeowner", "person", True),
+                      "other_assets": c.number(person, "other_assets", "person", 0.0, low=0, high=1e8)}
     plan["employment"] = {"annual_salary": c.number(employment, "annual_salary", "employment", 0.0, low=0, high=1e8),
                           "salary_sacrifice_per_year": c.number(employment, "salary_sacrifice_per_year", "employment", 0.0, low=0, high=1e7),
                           "salary_sacrifice_percent": c.number(employment, "salary_sacrifice_percent", "employment", 0.0, low=0, high=1),
@@ -315,11 +318,13 @@ def load_plan_text(text: str, filename: str = "plan.toml") -> dict:
 # ------------------------------------------------------------------ ledger inputs
 
 
+OLDEST_AGE = 110  # the planning age's upper bound; runs stop the day before this birthday
+
+
 def latest_supported_end(plan: dict) -> date:
-    """The day before the income year in which the person reaches Age Pension age (SAPTO is not modelled)."""
-    pension_birthday = birthday(plan["person"]["date_of_birth"], load_ruleset()["age_pension_age"])
-    first = pension_birthday.year if pension_birthday.month >= 7 else pension_birthday.year - 1
-    return date(first, 6, 30)
+    """The day before the person's 110th birthday. Age Pension and SAPTO are modelled, so runs can pass Age
+    Pension age."""
+    return birthday(plan["person"]["date_of_birth"], OLDEST_AGE) - timedelta(days=1)
 
 
 def horizon(plan: dict) -> tuple[date, date, bool]:
@@ -335,11 +340,11 @@ def build_inputs(plan: dict, *, market=None, returns=None):
     plan = normalize_plan(plan)
     start, end, shortened = horizon(plan)
     if end <= start:
-        raise PlanError(["person.date_of_birth: the person is already at or near Age Pension age; SAPTO and Age Pension are not modelled yet"])
+        raise PlanError([f"person.date_of_birth: the person is {OLDEST_AGE} or older at the start; runs stop before that age"])
     market = market or load_plan_markets(plan["assets"])
     notes = ["Selected histories and cash contributions are USD. The retirement ledger applies sampled USD returns as an AUD proxy; FX and Australian tax distribution components are not yet available."]
     if shortened:
-        notes.append(f"Horizon shortened to {end}: runs stop before the income year in which the person reaches Age Pension age.")
+        notes.append(f"Horizon shortened to {end}: runs stop the day before age {OLDEST_AGE}.")
     names = plan["assets"]
     dates = tuple(pd.bdate_range(start, end).date)
     if dates[0] != start:
@@ -352,7 +357,8 @@ def build_inputs(plan: dict, *, market=None, returns=None):
     path = MarketPath(dates, tuple(names), returns, "AUD")
     person = Person(plan["person"]["date_of_birth"],
                     retirement_date=birthday(plan["person"]["date_of_birth"], plan["person"]["retirement_age"]),
-                    private_hospital_cover=plan["person"]["private_hospital_cover"])
+                    private_hospital_cover=plan["person"]["private_hospital_cover"], homeowner=plan["person"]["homeowner"],
+                    other_assets=plan["person"]["other_assets"])
     employment = None
     if plan["employment"]["annual_salary"] > 0:
         first = plan["employment"]["first_payday"] or next(d for d in pd.date_range(start, periods=7).date if d.weekday() == 3).isoformat()
@@ -385,7 +391,8 @@ def build_inputs(plan: dict, *, market=None, returns=None):
         outside_contribution_per_payday=(plan["outside"]["contribution_per_year"] / 26 if plan["outside"]["saving"] == "fixed"
                                          else None),
         outside_contribution_growth=plan["assumptions"]["cpi_annual"] if plan["outside"]["contribution_indexed"] else 0.0,
-        stop_investing_at_retirement=True, cash_interest=plan["outside"]["cash_interest"], payg_withholding=True)
+        stop_investing_at_retirement=True, cash_interest=plan["outside"]["cash_interest"], payg_withholding=True,
+        age_pension=True)
     years = project_rulesets(load_ruleset("2026-27"), financial_year_of(end),
                              ProjectionAssumptions(plan["assumptions"]["cpi_annual"], plan["assumptions"]["wage_growth_annual"]))
     return path, scenario, years, notes

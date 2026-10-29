@@ -18,7 +18,8 @@ from financial_simulations.rules.au.superannuation import access_date, birthday
 
 
 HOUSEHOLD = (("salary", "Take-home salary", 1), ("employer_contributions", "Super contributions", 1),
-             ("market_pnl", "Investment returns", 1), ("interest", "Interest on cash", 1), ("spending_paid", "Spending", -1),
+             ("market_pnl", "Investment returns", 1), ("interest", "Interest on cash", 1), ("age_pension", "Age Pension", 1),
+             ("spending_paid", "Spending", -1),
              ("tax_paid", "Income tax", -1), ("contributions_tax", "Contributions tax", -1),
              ("fund_tax", "Super fund tax", -1))
 
@@ -44,7 +45,7 @@ def household_flows(daily: pd.DataFrame, inflation: bool = False) -> pd.DataFram
         opening = float(daily["total"].iloc[position - 1]) if position else float(part["total"].iloc[0] - _flows(part.iloc[:1]))
         closing = float(part["total"].iloc[-1])
         for column, label, sign in HOUSEHOLD:
-            rows.append({"FY ending": int(year), "Flow": label, "AUD": sign * float(part[column].sum()),
+            rows.append({"FY ending": int(year), "Flow": label, "AUD": sign * float(part[column].sum()) if column in part else 0.0,
                          "Opening": opening, "Closing": closing, "Net change": closing - opening,
                          "Days": len(part)})
         if inflation:
@@ -54,7 +55,7 @@ def household_flows(daily: pd.DataFrame, inflation: bool = False) -> pd.DataFram
 
 
 def _flows(rows: pd.DataFrame) -> float:
-    return float(sum(sign * rows[column].sum() for column, _, sign in HOUSEHOLD))
+    return float(sum(sign * rows[column].sum() for column, _, sign in HOUSEHOLD if column in rows))
 
 
 def account_flows(daily: pd.DataFrame, events: pd.DataFrame) -> pd.DataFrame:

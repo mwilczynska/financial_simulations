@@ -9,8 +9,17 @@ Each parameter is one of:
 * **Projected.** Statutorily indexed amounts, indexed with the assumed CPI or
   wage growth and rounded down to the statutory increment.
 * **Assumption.** Amounts set by legislation each year (Medicare low-income
-  thresholds), frozen at the latest value. Also the assumed index rates and
-  the Working Australians amount.
+  thresholds, including the SAPTO thresholds), frozen at the latest value.
+  Also the assumed index rates and the Working Australians amount.
+
+Age Pension amounts (single): the maximum basic rate grows with assumed wage
+growth, standing in for the MTAWE benchmark that has usually set increases
+since 2009. The pension supplement grows with CPI. The energy supplement is
+held at its current amount. Assets-test limits, the income-test free area and
+deeming thresholds grow with CPI each 1 July and are rounded to the published
+increments ($250, $2 and $200). Deeming rates, set by the Minister, and the
+Work Bonus are held at current values. SAPTO amounts are set by regulation
+and are frozen.
 
 Indexation compounds an unrounded tracked amount from the 2026-27 published
 value. The law indexes from base amounts with actual index ratios, so a
@@ -63,7 +72,13 @@ def project_rulesets(base: RuleSet, through: str, assumptions: ProjectionAssumpt
     rulesets = {base.financial_year: base}
     tracked = {"concessional_cap": float(base["concessional_cap"]), "transfer_balance_cap": float(base["transfer_balance_cap"]),
                "mls": [float(v) for v in base["mls_single_thresholds"]],
-               "large": float(base["division_296"]["large_balance"]), "very_large": float(base["division_296"]["very_large_balance"])}
+               "large": float(base["division_296"]["large_balance"]), "very_large": float(base["division_296"]["very_large_balance"]),
+               "basic": float(base["age_pension_rate"]["basic"]), "supplement": float(base["age_pension_rate"]["supplement"]),
+               "supplement_taxable": float(base["age_pension_rate"]["supplement_taxable"]),
+               "homeowner": float(base["age_pension_assets_test"]["homeowner"]),
+               "non_homeowner": float(base["age_pension_assets_test"]["non_homeowner"]),
+               "free_area": float(base["age_pension_income_test"]["free_area"]),
+               "deeming_threshold": float(base["deeming"]["threshold"])}
     previous = base
     wage, cpi = 1 + assumptions.wage_growth_annual, 1 + assumptions.cpi_annual
     for year in range(first + 1, last + 1):
@@ -73,12 +88,23 @@ def project_rulesets(base: RuleSet, through: str, assumptions: ProjectionAssumpt
         tracked["mls"] = [v * wage for v in tracked["mls"]]
         tracked["large"] *= cpi
         tracked["very_large"] *= cpi
+        tracked["basic"] *= wage
+        for name in ("supplement", "supplement_taxable", "homeowner", "non_homeowner", "free_area", "deeming_threshold"):
+            tracked[name] *= cpi
         cc = _round_down(tracked["concessional_cap"], 2500)
         tbc = _round_down(tracked["transfer_balance_cap"], 100000)
         ncc = 4 * cc
         projected = lambda name, value, why, units="": Parameter(name, value, "projected", "project-assumption", why, units)
         division = dict(previous["division_296"], large_balance=_round_down(tracked["large"], 150000),
                         very_large_balance=_round_down(tracked["very_large"], 500000))
+        nearest = lambda value, step: round(float(round(value / step) * step), 2)
+        pension_rate = dict(previous["age_pension_rate"], basic=nearest(tracked["basic"], 0.1),
+                            supplement=nearest(tracked["supplement"], 0.1),
+                            supplement_taxable=nearest(tracked["supplement_taxable"], 0.1))
+        assets_test = dict(previous["age_pension_assets_test"], homeowner=nearest(tracked["homeowner"], 250),
+                           non_homeowner=nearest(tracked["non_homeowner"], 250))
+        income_test = dict(previous["age_pension_income_test"], free_area=nearest(tracked["free_area"], 2))
+        deeming = dict(previous["deeming"], threshold=nearest(tracked["deeming_threshold"], 200))
         changes = {
             "resident_tax_rates": Parameter("resident_tax_rates", [0.14, 0.30, 0.37, 0.45], "enacted", "act-2025-28",
                                             "First marginal rate 14% from 2027-28 (Act No. 28, 2025)."),
@@ -104,6 +130,14 @@ def project_rulesets(base: RuleSet, through: str, assumptions: ProjectionAssumpt
                                                    "ato-medicare-low-income", "Set by legislation each year; frozen at the latest value."),
             "medicare_low_income_upper": Parameter("medicare_low_income_upper", previous["medicare_low_income_upper"], "assumption",
                                                    "ato-medicare-low-income", "Set by legislation each year; frozen at the latest value."),
+            "age_pension_rate": projected("age_pension_rate", pension_rate,
+                                          "Basic rate grown with assumed wage growth (MTAWE benchmark); pension supplement "
+                                          "with CPI; energy supplement held. Rounded to 10 cents a fortnight.", "AUD a fortnight; single"),
+            "age_pension_assets_test": projected("age_pension_assets_test", assets_test,
+                                                 "CPI-indexed each 1 July, rounded to $250; taper unchanged."),
+            "age_pension_income_test": projected("age_pension_income_test", income_test,
+                                                 "Free area CPI-indexed, rounded to $2 a fortnight; taper and Work Bonus unchanged."),
+            "deeming": projected("deeming", deeming, "Threshold CPI-indexed, rounded to $200; deeming rates held at current values."),
         }
         previous = previous.derive(label, changes, SOURCES)
         rulesets[label] = previous

@@ -449,3 +449,32 @@ def test_path_summary_reports_starting_spending_and_rate_in_todays_dollars():
     outcome, _, _ = _summarise(0, run_ledger(path, scenario, YEARS), date(2026, 9, 15), 0.025)
     assert outcome["Starting withdrawal rate"] == pytest.approx(0.04)
     assert 0.04 * 900000 < outcome["Starting retirement spending"] < 0.04 * 1000000
+
+
+def test_age_pension_is_paid_fortnightly_means_tested_and_taxed_with_sapto():
+    person = Person("1958-06-01", retirement_date="2020-01-01", homeowner=True, other_assets=10000)
+    scenario = scenario_with(person, outside_cash=500, outside_parcels=(Parcel("GL", 500000, 500000, "2020-01-01"),),
+                             annual_spending=40000, age_pension=True)
+    result = run_ledger(market(), scenario, YEARS)
+    paid = result.events[result.events["event"] == "age_pension"]
+    assert len(paid) == 26
+    first = paid.iloc[0]
+    # Assets test on the previous close plus other assets: $3 a fortnight less per $1,000 over $333,000.
+    before = result.daily["total"].loc[pd.Timestamp(first["date"]) - pd.Timedelta(days=1)]
+    assert first["assessed_assets"] == pytest.approx(before + 10000)
+    assert first["amount"] == pytest.approx(1237.70 - (first["assessed_assets"] - 333000) * 0.003)
+    assert first["binding_test"] == "assets"
+    # Spending runs wealth down, so later fortnights pay more.
+    assert paid["amount"].iloc[-1] > first["amount"]
+    year = result.annual[0]
+    assert year["age_pension"] == pytest.approx(paid["amount"].sum())
+    assert year["age_pension_taxable"] == pytest.approx(paid["amount"].sum() * (1135.40 + 30.70) / 1237.70)
+    # Taxable income is just above the tax-free threshold: SAPTO is available but LITO already removes the tax.
+    assert year["assessment"].lines["sapto_entitlement"] == 2230 and year["assessment"].net_tax <= 0
+    assert result.daily["age_pension"].sum() == pytest.approx(paid["amount"].sum())
+
+
+def test_without_the_age_pension_switch_the_ledger_still_stops_at_age_pension_age():
+    person = Person("1958-06-01", retirement_date="2020-01-01")
+    with pytest.raises(UnsupportedRule, match="age_pension=True"):
+        run_ledger(market(), scenario_with(person, outside_cash=500000), YEARS)

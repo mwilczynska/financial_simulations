@@ -22,7 +22,7 @@ from financial_simulations.retirement.paths import warm_pool
 from financial_simulations.retirement.real import real_daily, real_events, year_deflator
 from financial_simulations.retirement.run_plan import ledger_for_path, run_plan
 from financial_simulations.rules.au.parameters import UnsupportedRule, load_ruleset
-from financial_simulations.rules.au.superannuation import age_on
+from financial_simulations.rules.au.superannuation import age_on, birthday
 from financial_simulations.rules.au.tax import IncomeYear, assess
 
 
@@ -471,6 +471,22 @@ def inputs_retirement(plan):
         if not pension["transfer_all"]:
             pension["amount"] = money("Amount to move into the pension", pension["amount"], "pension_amount")
     st.caption("Before super is accessible, spending is paid from cash and outside investments; any gap is shown as a shortfall.")
+    st.subheader("Age Pension (from age 67)")
+    person = plan["person"]
+    a, b = st.columns(2)
+    with a:
+        person["homeowner"] = st.checkbox("I own my home", person["homeowner"], key=key("homeowner"),
+                                          help="Your home is exempt from the assets test. Non-homeowners have a higher "
+                                               "assets limit ($600,000 instead of $333,000 for a full pension).")
+    with b:
+        person["other_assets"] = money("Other assessable assets (AUD)", person["other_assets"], "other_assets",
+                                       help="Cars, caravans, home contents and other personal assets at what they would "
+                                            "sell for. They count in the assets test but are not invested.")
+    st.caption("From a fortnight after you turn 67 the planner works out the single Age Pension every fortnight: the "
+               "lower of the assets test (everything you hold except your home) and the income test (deemed income on "
+               "your investments and super, plus any wages after the Work Bonus). It is paid into cash and is partly "
+               "taxable, and the seniors and pensioners tax offset applies. It assumes you have lived in Australia for "
+               "at least 10 years and claim on time.")
 
 
 def inputs_assumptions(plan):
@@ -481,7 +497,8 @@ def inputs_assumptions(plan):
                                                    date(2040, 6, 30), key=key("start"), format="YYYY-MM-DD").isoformat()
     with b:
         plan["plan"]["years"] = int(st.number_input("Years to simulate", 1, 60, int(plan["plan"]["years"]), 1, key=key("years"),
-                                                    help="Runs stop before the year you reach Age Pension age (not yet modelled)."))
+                                                    help="Runs can go past Age Pension age; set this to reach your planning "
+                                                         "age to see the whole retirement in the tax ledger."))
     st.subheader("Economic assumptions")
     a, b = st.columns(2)
     with a:
@@ -1174,8 +1191,8 @@ keeps its buying power. Example: a 4% rate on \\$1,000,000 is \\$40,000 a year i
 taken monthly.
 
 The planner tests every simulated market path from your retirement date ({portfolios.retirement_start}) for
-{years:.0f} years, to age {age}. These paths are separate from the tax-ledger paths, because the ledger stops before
-Age Pension age. For each path it solves two questions exactly:
+{years:.0f} years, to age {age}. These paths are separate from the tax-ledger paths: they are pre-tax and have no
+Age Pension, so they test the portfolio alone. For each path it solves two questions exactly:
 
 1. **Lasts to age {age}.** The highest rate at which the portfolio is spent down to exactly \\$0 on the last day.
    Nothing is left over, so this is the most aggressive way to read the result.
@@ -1320,7 +1337,7 @@ block in the source, and they treat every era as equally likely.
 
 
 FLOW_COLOURS = {"Take-home salary": "#126a63", "Super contributions": "#386a98", "Investment returns": "#9a8a2e",
-                "Interest on cash": "#4f8f3a",
+                "Interest on cash": "#4f8f3a", "Age Pension": "#d08c2f",
                 "Spending": "#b76a42", "Income tax": "#8c2f2f", "Contributions tax": "#c2577a", "Super fund tax": "#8363a0",
                 "Inflation": "#9aa3a8"}
 
@@ -1418,7 +1435,7 @@ def ruin_statistics(run, calculated, marks):
     c, d = st.columns(2)
     a.metric(f"Risk of ruin to {end.year}", share(len(depleted) / total),
              help=f"Share of the {total} tax-ledger paths where some spending could not be paid, or tax could not be "
-                  f"paid, before the horizon ({end}). The planner's horizon stops before Age Pension age.")
+                  f"paid, before the horizon ({end}).")
     b.metric("Ran short before super was accessible", share(early / total),
              help="Paths whose first shortfall came before super could be withdrawn: outside money alone was not "
                   "enough to bridge to the access date.")
@@ -1429,14 +1446,18 @@ def ruin_statistics(run, calculated, marks):
                   "have been available).")
     combined = run.portfolios.outcomes.loc[run.portfolios.outcomes["Portfolio"] == "Combined", "Sustainable withdrawal rate"]
     rate = calculated["First retired-year withdrawal rate"].median()
-    if combined.notna().any() and np.isfinite(rate):
-        age = plan["assumptions"]["planning_age"]
+    age = plan["assumptions"]["planning_age"]
+    if age_on(born, end) >= age - 1:
+        st.caption(f"The tax ledger runs to {end} (age {age_on(born, end)}), so the risk of ruin above covers your "
+                   f"retirement to your planning age of {age}, with tax and the Age Pension.")
+    elif combined.notna().any() and np.isfinite(rate):
         estimate = float((combined < rate).mean())
         st.caption(f"**Estimated chance of running out by age {age}: {estimate:.0%}.** Your median first retired-year "
                    f"withdrawal is {rate:.1%} of wealth; in {estimate:.0%} of the combined portfolio's market paths from "
                    f"retirement to {age}, that rate (rising with inflation) would run the portfolio to zero. This is "
                    "a pre-tax, portfolio-only estimate that ignores the Age Pension and assumes fixed spending; the figures "
-                   "above come from the full tax ledger but stop before Age Pension age."
+                   f"above come from the full tax ledger but stop at {end}. Set *Years to simulate* to reach age {age} to "
+                   "replace this estimate with the ledger's own result."
                    + (" Your spending rule cuts spending when markets fall, so this estimate overstates your risk."
                       if plan["spending"]["rule"] != "fixed" else ""))
 
@@ -1511,6 +1532,43 @@ def spending_section(plan, annual, calculated, marks):
                "spending that varies. Judge a rule on both: the risk of ruin above, and how low spending goes here.")
 
 
+def age_pension_section(plan, annual, calculated, marks):
+    """How much Age Pension the paths received, and when it started: the safety net under late retirement."""
+    st.subheader("Age Pension")
+    born = date.fromisoformat(plan["person"]["date_of_birth"])
+    eligible_from = birthday(born.isoformat(), load_ruleset("2026-27")["age_pension_age"])
+    end_year = int(annual["FY ending"].max()) if not annual.empty else 0
+    if not len(annual) or eligible_from > date(end_year, 6, 30):
+        st.info(f"You reach Age Pension age on {eligible_from}, after the horizon. Set *Years to simulate* on the "
+                "Assumptions tab to run past it.")
+        return
+    dollars = lambda value: compact(value).replace("$", "\\$")  # two $ in one Markdown string would render as maths
+    received = calculated["Age Pension received"] > 0
+    first = pd.to_datetime(calculated.loc[received, "Age Pension first paid"])
+    ages = [age_on(born, d.date()) for d in first]
+    years = annual.loc[annual["FY ending"] > eligible_from.year + (eligible_from.month >= 7)]
+    paid_years = years.loc[years["Age Pension"] > 0, "Age Pension"]
+    a, b, c, d = st.columns(4)
+    a.metric("Paths that receive Age Pension", share(float(received.mean())),
+             help="Share of paths paid at least one fortnight of Age Pension before the horizon.")
+    b.metric("Median age it starts", f"{int(np.median(ages))}" if ages else "–",
+             help="Among paths that receive it, the median age at the first payment. Later than 67 means the assets "
+                  "or income test paid nothing until wealth fell.")
+    c.metric("Typical year's Age Pension", dollars(float(paid_years.median())) if len(paid_years) else "–",
+             help="Median Age Pension in the years it is paid, today's dollars. The full single rate is about "
+                  f"{dollars(26 * 1237.70)} a year now.")
+    d.metric("Total received (median path)", dollars(float(calculated["Age Pension received"].median())),
+             help="Each path's Age Pension over the horizon, in today's dollars; the median across paths.")
+    if len(years):
+        st.altair_chart(band_chart(quantile_bands(years, "FY ending", "Age Pension"), "Age Pension per year, today's dollars",
+                                   color="#d08c2f", x="FY ending:Q", marks=marks), width="stretch")
+    st.caption("Age Pension paid each financial year from Age Pension age, across paths, in today's dollars (zero where the "
+               "means test paid nothing). It rises as your own wealth falls: on paths where markets did badly it pays more, "
+               "which cushions late retirement. Paths with large balances get none until their assets fall below the "
+               "assets-test cut-off (about \\$746,000 for a homeowner today). Rules follow Services Australia's single "
+               "rates, assets and income tests and deeming; see the methodology for what is approximated.")
+
+
 @st.fragment
 def wealth_bands(run, calculated, marks):
     """Wealth bands for the chosen account; a fragment so switching accounts redraws only this chart."""
@@ -1555,6 +1613,10 @@ the same rules:
    earnings are exempt.
 6. **Pension.** At the chosen age the accumulation balance moves into an account-based pension, up to the
    transfer balance cap; the age-based minimum is paid monthly.
+7. **Age Pension.** From a fortnight after age 67, the single Age Pension is worked out each fortnight from the
+   previous day's balances: the maximum rate less the larger of the assets-test and income-test reductions, with
+   deemed income on all your investments and super. It is paid into cash; its taxable part is income, and the
+   seniors and pensioners tax offset applies.
 
 A path is **funded** if every spending need and tax bill was paid, **depleted** if any spending went unmet or
 tax could not be paid (both included in every statistic), and **unsupported** if it reached a rule the model
@@ -1598,7 +1660,8 @@ does not cover (excluded, with the reason shown). Returns are the USD histories 
                     f"{grey} of the {total - red} paths that never ran out are drawn, spread evenly from the lowest to "
                     "the highest ending wealth so they show the same spread as all of them; every path that ran out is "
                     "drawn. ")
-                   + (f"The {clipped} highest paths run off the top: the axis stops there so the band where most paths "
+                   + ((f"The {clipped} highest paths run" if clipped != 1 else "The highest path runs")
+                      + " off the top: the axis stops there so the band where most paths "
                       "sit stays readable; the ending-wealth chart below shows them in full. "
                       if clipped else "")
                    + "Each grey line is one path's total wealth at each month end, in today's dollars. The lines are "
@@ -1621,6 +1684,7 @@ does not cover (excluded, with the reason shown). Returns are the USD histories 
     annual["Period"] = annual["FY ending"].map(period_label)
     typical_flows_section(annual, marks, len(calculated))
     spending_section(plan, annual, calculated, marks)
+    age_pension_section(plan, annual, calculated, marks)
     st.subheader("Withdrawal rate in each retired year")
     retired = annual.loc[annual["Full retired year"] & annual["Withdrawal rate"].notna()]
     if retired.empty:
@@ -1646,7 +1710,7 @@ does not cover (excluded, with the reason shown). Returns are the USD histories 
         with st.expander("How to read the withdrawal rate", expanded=True):
             st.markdown(f"""
 **What it is.** For each financial year (1 July to 30 June) that starts after you retire, the money taken out of your
-wealth that year (spending paid plus personal tax paid) divided by your **total** wealth on that 1 July, outside and
+wealth that year (spending paid plus personal tax paid, less any Age Pension received) divided by your **total** wealth on that 1 July, outside and
 inside super together. A rate of 5% means that year used 5% of what you had at its start.
 
 **What the bands show.** Each path has its own rate every year. The line is the median across paths; the dark band
@@ -1832,6 +1896,7 @@ def section_ledger(run):
                      "Cap available": x["concessional_cap_available"] / flow,
                      "Spending paid": x["spending_paid"] / flow, "Shortfall": x["shortfall"] / flow,
                      "Pension minimum": (x["pension_minimum"] or 0.0) / flow, "Pension paid": (x["pension_paid"] or 0.0) / flow,
+                     "Age Pension": x.get("age_pension", 0.0) / flow, "SAPTO": x["assessment"].sapto / flow,
                      "Transfer balance": (x["transfer_balance"] or 0.0) / balance,
                      "Super at 30 June": x["total_super_balance_30_june"] / balance,
                      "FY ending": end_year})

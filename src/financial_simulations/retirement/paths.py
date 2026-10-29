@@ -45,18 +45,20 @@ def _summarise(path: int, result: LedgerResult, retire: date, cpi: float):
     monthly = {name: series.resample("ME").last().to_numpy() for name, series in totals.items()}
     shortfall_days = daily.index[daily["shortfall"] > 0]
     depleted = daily.index[(outside <= 1.0) & (daily.index.date > first)]
-    flows = daily[["spending_paid", "tax_paid", "shortfall", "pension_payments", "lump_sums"]].resample("YE-JUN").sum()
+    flows = daily[["spending_paid", "tax_paid", "shortfall", "pension_payments", "lump_sums", "age_pension"]].resample("YE-JUN").sum()
     rows = []
     for end, values in flows.iterrows():
         begin = _fy_start(end.date())
         before = daily.index[daily.index.date < begin]
         opening = float(daily["total"].iloc[0] if before.empty else daily["total"].loc[before[-1]])
         retired = begin >= retire and end.date() <= last
-        withdrawal = float(values["spending_paid"] + max(values["tax_paid"], 0.0))
+        # The draw on your own wealth: spending and tax, less the Age Pension that paid part of them.
+        withdrawal = max(0.0, float(values["spending_paid"] + max(values["tax_paid"], 0.0) - values["age_pension"]))
         rows.append({"Path": path, "Financial year": f"{begin.year}-{str(begin.year + 1)[2:]}", "FY ending": begin.year + 1,
                      "Full retired year": retired, "Wealth at 1 July": opening, "Spending paid": float(values["spending_paid"]),
                      "Tax paid": float(values["tax_paid"]), "Shortfall": float(values["shortfall"]),
                      "Pension payments": float(values["pension_payments"]), "Super lump sums": float(values["lump_sums"]),
+                     "Age Pension": float(values["age_pension"]),
                      "Withdrawal rate": withdrawal / opening if retired and opening > 1 else np.nan})
     # Each year's money in and out on this path, so the app can show medians across paths.
     yearly = household_flows(daily, inflation=True)
@@ -76,6 +78,7 @@ def _summarise(path: int, result: LedgerResult, retire: date, cpi: float):
     unpaid = sum(item["amount"] / step(int(item["financial_year"][:4]) + 1) for item in result.outstanding["unpaid_tax"])
     shortfall = float(daily["shortfall"].sum())
     pension_start = daily.index[daily["pension"] > 0]
+    age_pension_paid = daily.index[daily["age_pension"] > 0]
     outcome = {"Path": path, "Status": "depleted" if shortfall > 0 or unpaid > 0 else "funded", "Reason": "",
                "Ending wealth": float(daily["total"].iloc[-1]),
                "Ending wealth, nominal": float(nominal["total"].iloc[-1]),
@@ -93,6 +96,8 @@ def _summarise(path: int, result: LedgerResult, retire: date, cpi: float):
                "Fund tax": float(daily["fund_tax"].sum()),
                "Pension payments": float(daily["pension_payments"].sum()),
                "Pension balance at start": float(daily["pension"].loc[pension_start[0]]) if len(pension_start) else 0.0,
+               "Age Pension received": float(daily["age_pension"].sum()),
+               "Age Pension first paid": str(age_pension_paid[0].date()) if len(age_pension_paid) else "",
                "First retired-year withdrawal rate": retired_rates[0] if retired_rates else np.nan,
                "Highest withdrawal rate": max(retired_rates) if retired_rates else np.nan,
                "Median withdrawal rate": float(np.median(retired_rates)) if retired_rates else np.nan,

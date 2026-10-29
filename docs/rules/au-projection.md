@@ -22,7 +22,13 @@ previous one. Each parameter is treated as follows:
 | Bring-forward thresholds | Transfer balance cap less two or one non-concessional caps | Projected |
 | MLS thresholds | AWOTE-indexed, rounded down to $1,000 | Projected |
 | Division 296 thresholds | CPI-indexed in $150,000 and $500,000 increments | Projected |
-| Medicare low-income thresholds | Set by legislation each year; frozen at the latest value | **Assumption** |
+| Medicare low-income thresholds, including the SAPTO thresholds | Set by legislation each year; frozen at the latest value | **Assumption** |
+| SAPTO maximum, shading-out and cut-out | Set by regulation; frozen | **Assumption** |
+| Age Pension maximum basic rate | Grown with assumed wage growth, standing in for the 41.76% of MTAWE benchmark (DSS Guide 5.1.8.50), rounded to 10 cents | Projected |
+| Pension supplement (and its taxable part) | CPI, rounded to 10 cents | Projected |
+| Energy supplement | Held at $14.10 a fortnight | **Assumption** (inherited) |
+| Age Pension assets limits, income free area, deeming threshold | CPI each 1 July, rounded to $250, $2 and $200 | Projected |
+| Deeming rates, tapers, Work Bonus | Held at current values | Inherited |
 | `assumed_cpi_annual`, `assumed_wage_growth_annual` | Declared inputs | **Assumption** |
 
 ## Indexation approximation

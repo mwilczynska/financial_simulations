@@ -140,6 +140,65 @@ title = "Who can get Age Pension (Services Australia)"
 url = "https://www.servicesaustralia.gov.au/who-can-get-age-pension"
 
 [[sources]]
+id = "services-australia-age-pension-rates"
+title = "How much Age Pension you can get (Services Australia)"
+url = "https://www.servicesaustralia.gov.au/how-much-age-pension-you-can-get"
+page_updated = "2026-10-29"
+
+[[sources]]
+id = "dss-guide-basic-rates"
+title = "Social Security Guide 5.2.2.10 Maximum basic rates of pension (DSS)"
+url = "https://guides.dss.gov.au/social-security-guide/5/2/2/10"
+page_updated = "2026-09-21"
+
+[[sources]]
+id = "dva-rates-2026-09-20"
+title = "Income Support Payment Rates 20 September 2026 (DVA CLIK), pension supplement components"
+url = "https://clik.dva.gov.au/book/export/html/86936"
+page_updated = "2026-10-29"
+
+[[sources]]
+id = "services-australia-pension-supplement"
+title = "Pension Supplement 108-08020000 (Services Australia Operational Blueprint)"
+url = "https://operational.servicesaustralia.gov.au/public/Pages/income-assests-and-rates-of-payment/108-08020000-01.html"
+page_updated = "2026-10-29"
+
+[[sources]]
+id = "services-australia-assets-test"
+title = "Assets test for Age Pension (Services Australia)"
+url = "https://www.servicesaustralia.gov.au/assets-test-for-age-pension"
+page_updated = "2026-10-29"
+
+[[sources]]
+id = "services-australia-income-test"
+title = "Income test for Age Pension (Services Australia)"
+url = "https://www.servicesaustralia.gov.au/income-test-for-age-pension"
+page_updated = "2026-10-29"
+
+[[sources]]
+id = "dss-guide-deeming"
+title = "Social Security Guide 4.4.1.10 Overview of deeming, deeming rates and thresholds (DSS)"
+url = "https://guides.dss.gov.au/social-security-guide/4/4/1/10"
+page_updated = "2026-09-21"
+
+[[sources]]
+id = "services-australia-work-bonus"
+title = "How a Work Bonus works (Services Australia)"
+url = "https://www.servicesaustralia.gov.au/how-work-bonus-works"
+page_updated = "2026-10-29"
+
+[[sources]]
+id = "ato-sapto"
+title = "Seniors and pensioners tax offset (ATO)"
+url = "https://www.ato.gov.au/individuals-and-families/income-deductions-offsets-and-records/tax-offsets/seniors-and-pensioners-tax-offset"
+page_updated = "2026-10-02"
+
+[[sources]]
+id = "ato-income-tests"
+title = "Income tests: rebate income (ATO)"
+url = "https://www.ato.gov.au/individuals-and-families/income-deductions-offsets-and-records/income-tests"
+
+[[sources]]
 id = "ato-ecpi"
 title = "Exempt current pension income (ATO)"
 url = "https://www.ato.gov.au/individuals-and-families/super-for-individuals-and-families/self-managed-super-funds-smsf/smsf-administration-and-reporting/exempt-current-pension-income"
@@ -174,6 +233,25 @@ value = 35013
 status = "assumption"
 source = "ato-medicare-low-income"
 note = "2025-26 single upper threshold; see medicare_low_income_lower."
+
+[parameters.medicare_sapto_lower]
+value = 44268
+status = "assumption"
+source = "ato-medicare-low-income"
+note = "2025-26 single threshold for a taxpayer entitled to at least $1 of SAPTO, the latest published; 2026-27 is not yet set."
+
+[parameters.medicare_sapto_upper]
+value = 55335
+status = "assumption"
+source = "ato-medicare-low-income"
+note = "2025-26 single upper threshold for a taxpayer entitled to SAPTO; see medicare_sapto_lower."
+
+[parameters.sapto]
+value = { maximum = 2230, shade_out = 34919, cut_out = 52759, taper = 0.125 }
+units = "AUD a year of rebate income; single"
+status = "assumption"
+source = "ato-sapto"
+note = "2025-26 single amounts, the latest published (page updated 2 October 2026). The offset falls by 12.5c per dollar of rebate income above the shading-out threshold and is rounded up to the whole dollar; it is non-refundable. Rebate income is taxable income plus reportable super contributions, net investment losses and adjusted fringe benefits (ato-income-tests)."
 
 [parameters.medicare_low_income_shade_rate]
 value = 0.10
@@ -314,4 +392,37 @@ note = "From 1 July 2026 (Act No. 8, 2026). 2026-27 liability depends only on TS
 value = 67
 status = "enacted"
 source = "services-australia-age-pension"
-note = "SAPTO eligibility starts from Age Pension age; SAPTO is not implemented, so ledgers stop before a person reaches it."
+note = "Age Pension and SAPTO eligibility start from Age Pension age. Residence of 10 years (5 continuous) is assumed met."
+
+# ---------------------------------------------------------------- Age Pension (single, normal rates)
+# Rates and thresholds below are those in force from 20 September 2026 (deeming thresholds and the assets
+# full-pension limits from 1 July 2026). The rule set holds one value for the whole financial year, so
+# 1 July to 19 September 2026 uses the September values: an approximation of under 3% for that period.
+
+[parameters.age_pension_rate]
+value = { basic = 1135.40, supplement = 88.20, supplement_taxable = 30.70, energy = 14.10 }
+units = "AUD a fortnight; single"
+status = "published_indexed"
+source = "services-australia-age-pension-rates"
+note = "Maximum basic rate $1,135.40 from 20 September 2026 (dss-guide-basic-rates: $29,520.40 a year). Pension supplement $88.20: the basic part ($30.70) is taxable, the minimum and remaining parts ($57.50) are not (dva-rates-2026-09-20, services-australia-pension-supplement). Energy supplement $14.10 is tax-free."
+
+[parameters.age_pension_assets_test]
+value = { homeowner = 333000, non_homeowner = 600000, taper_per_1000 = 3.0 }
+units = "AUD of assessable assets; taper in AUD a fortnight per $1,000 over"
+status = "published_indexed"
+source = "services-australia-assets-test"
+note = "Single full-pension limits. The $3 a fortnight per $1,000 taper reproduces the published part-pension cut-offs ($745,750 homeowner, $1,012,750 non-homeowner from 20 September 2026). The principal home is exempt."
+
+[parameters.age_pension_income_test]
+value = { free_area = 226, taper = 0.50, work_bonus_credit = 300, work_bonus_cap = 11800 }
+units = "AUD a fortnight (Work Bonus cap is a balance)"
+status = "published_indexed"
+source = "services-australia-income-test"
+note = "Single free area $226 a fortnight and 50c reduction per dollar over; cut-off $2,701.40 (= free area + 2 x maximum rate). Work Bonus: $300 credit a fortnight up to an $11,800 balance, offsetting employment income (services-australia-work-bonus)."
+
+[parameters.deeming]
+value = { threshold = 66800, lower_rate = 0.0175, upper_rate = 0.0375 }
+units = "AUD of financial assets; annual rates"
+status = "published_indexed"
+source = "dss-guide-deeming"
+note = "Single pensioner: 1.75% on the first $66,800 and 3.75% above, from 20 September 2026. Financial assets include cash, listed investments, account-based pensions and, from Age Pension age, superannuation in accumulation."

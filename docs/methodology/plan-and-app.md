@@ -127,10 +127,11 @@ untaxed unit switch.
 
 The future target is a weekday accounting template from plan start to its
 supported end, not a forecast of exchange holidays. The ledger also
-processes calendar events on closed dates. The planner stops before the
-income year in which the person reaches Age Pension age, because SAPTO and
-Age Pension are unsupported. A longer requested horizon is shortened and
-reported.
+processes calendar events on closed dates. The planner runs past Age
+Pension age with the single Age Pension and SAPTO
+([age-pension.md](age-pension.md)). It stops only the day before age 110;
+a longer requested horizon is shortened and reported. `person.homeowner`
+(default true) and `person.other_assets` (default 0) feed the assets test.
 
 Three series are reported: each account's portfolio and a **combined**
 portfolio. The combined series starts in proportion to the opening outside

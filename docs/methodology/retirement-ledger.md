@@ -188,8 +188,13 @@ the rule-set hash and assumptions) and `ledger.png` directly from Python.
 ## Limitations
 
 - **Horizon.** Years after 2026-27 depend on an assumed CPI and wage growth.
-  Runs stop before Age Pension age (SAPTO is not implemented). A horizon
-  ending before 30 June reports the partial year as `unassessed_year`.
+  A horizon ending before 30 June reports the partial year as
+  `unassessed_year`.
+- **Age Pension.** With `age_pension=True` (the planner's setting), the
+  single Age Pension is paid fortnightly from a fortnight after Age Pension
+  age, means-tested on the previous close. SAPTO applies from the year Age
+  Pension age is reached ([age-pension.md](age-pension.md)). Without it, a
+  run reaching Age Pension age stops with `UnsupportedRule`.
 - **CGT reform.** On 1 July 2027 each parcel held records its 30 June
   close as the deemed reacquisition value. Later sales split into a deferred
   gain and an indexed post-reform gain. Opening parcels for runs starting

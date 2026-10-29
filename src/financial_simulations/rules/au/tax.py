@@ -1,9 +1,11 @@
 """Australian resident individual income tax for one full income year.
 
 Scope: full-year resident, single, no dependants, entitled to the full
-tax-free threshold. Unsupported situations (SAPTO, foreign tax beyond the
-$1,000 no-calculation limit) raise ``UnsupportedRule`` rather than being
-approximated.
+tax-free threshold. A person eligible for the seniors and pensioners tax
+offset (``sapto_eligible``) gets SAPTO on rebate income and the higher senior
+Medicare levy low-income thresholds. Unsupported situations (foreign tax
+beyond the $1,000 no-calculation limit) raise ``UnsupportedRule`` rather than
+being approximated.
 
 Capital gains carry a category. ``standard`` is an event before the 1 July
 2027 reform. ``deferred`` is the pre-reform part of a gain on an asset held
@@ -15,7 +17,7 @@ and enters the 30% minimum tax (Act No. 49, 2026).
 
 from dataclasses import dataclass, field
 from datetime import date
-from math import floor, isfinite
+from math import ceil, floor, isfinite
 
 from financial_simulations.dates import as_date
 from financial_simulations.rules.au.parameters import RuleSet, UnsupportedRule
@@ -151,6 +153,7 @@ class TaxAssessment:
     net_tax: float
     division_293_tax: float
     lines: dict = field(default_factory=dict)
+    sapto: float = 0.0
 
 
 def net_capital_gain(events, losses_brought_forward, discount, *, with_minimum_tax_base=False):
@@ -190,8 +193,31 @@ def low_income_tax_offset(taxable_income, lito):
     return max(0.0, lito["second_base"] - lito["second_taper"] * (taxable_income - lito["second_threshold"]))
 
 
-def medicare_levy(taxable_income, rules: RuleSet):
-    lower, upper = rules["medicare_low_income_lower"], rules["medicare_low_income_upper"]
+def rebate_income(taxable_income, year: "IncomeYear") -> float:
+    """ATO rebate income: taxable income plus reportable super contributions and reportable fringe benefits.
+
+    Net investment losses are nil here, because a loss year has nil taxable income in this model. Reportable
+    fringe benefits are taken at their full (non-exempt employer) amount.
+    """
+    return (taxable_income + year.reportable_employer_super + year.deductible_super_contributions
+            + year.reportable_fringe_benefits)
+
+
+def seniors_pensioners_offset(rebate, rules: RuleSet) -> float:
+    """SAPTO for a single person: the maximum less 12.5c per dollar of rebate income above the shading-out
+    threshold, rounded up to the whole dollar; nil at or above the cut-out threshold."""
+    sapto = rules["sapto"]
+    if rebate >= sapto["cut_out"]:
+        return 0.0
+    return float(max(0, ceil(round(sapto["maximum"] - sapto["taper"] * max(0.0, rebate - sapto["shade_out"]), 6))))
+
+
+def medicare_levy(taxable_income, rules: RuleSet, *, senior=False):
+    """Medicare levy with the low-income reduction; ``senior`` uses the thresholds for a person entitled to SAPTO."""
+    if senior:
+        lower, upper = rules["medicare_sapto_lower"], rules["medicare_sapto_upper"]
+    else:
+        lower, upper = rules["medicare_low_income_lower"], rules["medicare_low_income_upper"]
     full = rules["medicare_levy_rate"] * taxable_income
     if taxable_income <= lower:
         return 0.0
@@ -208,8 +234,6 @@ def medicare_levy_surcharge(mls_income, surcharge_base, rules: RuleSet):
 
 def assess(year: IncomeYear, rules: RuleSet, *, last_day=None) -> TaxAssessment:
     """Assess one resident income year. ``last_day`` bounds CGT event dates (defaults to year end)."""
-    if year.sapto_eligible:
-        raise UnsupportedRule("The seniors and pensioners tax offset is not implemented; it is deferred to the Age Pension module.")
     if year.foreign_tax_paid > 1000:
         raise UnsupportedRule("Foreign income tax offsets above the $1,000 no-calculation limit are not implemented.")
     reform = as_date(rules["cgt_reform_start"])
@@ -239,7 +263,9 @@ def assess(year: IncomeYear, rules: RuleSet, *, last_day=None) -> TaxAssessment:
         wato = float(rules["wato"]["amount"])
     excess_offset = rules["contributions_tax_rate"] * year.excess_concessional_contributions
     foreign_offset = year.foreign_tax_paid
-    after_offsets = max(0.0, basic - lito - wato - excess_offset - foreign_offset)
+    # SAPTO is non-refundable, like LITO: together they can reduce basic tax to nil but not below.
+    sapto = seniors_pensioners_offset(rebate_income(taxable, year), rules) if year.sapto_eligible else 0.0
+    after_offsets = max(0.0, basic - lito - wato - sapto - excess_offset - foreign_offset)
     # Division 119: 30% of the minimum tax capital gain less the basic tax attributable to it
     # (tax with and without the gain), rounded down to whole dollars. It is extra income tax,
     # added after offsets here.
@@ -250,7 +276,8 @@ def assess(year: IncomeYear, rules: RuleSet, *, last_day=None) -> TaxAssessment:
         # Round away floating-point noise below a cent before the statutory round-down.
         minimum_tax = max(0.0, floor(round(rules["minimum_capital_gains_rate"] * minimum_base - (basic - without), 6)))
     after_offsets += minimum_tax
-    levy = medicare_levy(taxable, rules)
+    # Entitlement to at least $1 of SAPTO gives the higher senior Medicare low-income thresholds.
+    levy = medicare_levy(taxable, rules, senior=sapto >= 1)
     surcharge = 0.0
     if not year.private_hospital_cover:
         mls_income = taxable + year.reportable_fringe_benefits + year.reportable_employer_super + year.deductible_super_contributions
@@ -264,4 +291,6 @@ def assess(year: IncomeYear, rules: RuleSet, *, last_day=None) -> TaxAssessment:
                          excess_offset, foreign_offset, after_offsets, minimum_base, minimum_tax, levy, surcharge,
                          year.franking_credits, net,
                          div293, {"assessable_income": assessable, "deductions": deductions,
-                                  "standard_deduction_available": standard, "income_for_division_293": income_293})
+                                  "standard_deduction_available": standard, "income_for_division_293": income_293,
+                                  "rebate_income": rebate_income(taxable, year), "sapto_entitlement": sapto},
+                         min(sapto, max(0.0, basic - lito - wato)))

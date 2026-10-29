@@ -76,6 +76,17 @@ For one resident full year:
     contributions, taxable income + fringe benefits + low-tax contributions −
     $250,000). Net investment losses are not modelled.
 
+### Seniors and pensioners tax offset
+
+`IncomeYear.sapto_eligible` applies SAPTO on rebate income: taxable income
+plus reportable employer super, deductible super contributions and
+reportable fringe benefits. The single offset is $2,230, less 12.5c per
+dollar above $34,919, rounded up to the dollar; it is nil from $52,759. It is
+non-refundable, applied with LITO before the Medicare levy. Entitlement to at
+least $1 switches the Medicare levy to the senior low-income thresholds
+($44,268 and $55,335). The values are the latest published (2025-26) and are
+held as assumptions for 2026-27. See [age-pension.md](age-pension.md).
+
 ## Super (`rules/au/superannuation.py`)
 
 ### Ages and access

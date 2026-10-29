@@ -17,7 +17,8 @@ RULES = load_ruleset("2026-27")
 
 def test_rule_set_provenance_and_assumptions_are_explicit():
     assert RULES.start == date(2026, 7, 1) and RULES.end == date(2027, 6, 30)
-    assert {p.name for p in RULES.assumptions()} == {"medicare_low_income_lower", "medicare_low_income_upper"}
+    assert {p.name for p in RULES.assumptions()} == {"medicare_low_income_lower", "medicare_low_income_upper",
+                                                     "medicare_sapto_lower", "medicare_sapto_upper", "sapto"}
     assert all(p.source in RULES.sources for p in RULES.parameters.values())
     assert len(RULES.manifest()["sha256"]) == 64
     assert financial_year_of("2026-06-30") == "2025-26" and financial_year_of("2026-07-01") == "2026-27"
@@ -86,9 +87,26 @@ def test_franking_credits_are_refundable_and_division_293_uses_low_tax_contribut
     assert high.taxable_income == 240000 and high.division_293_tax == pytest.approx(3000)
 
 
+def test_sapto_matches_the_ato_example_and_unlocks_the_senior_medicare_thresholds():
+    from financial_simulations.rules.au.tax import seniors_pensioners_offset
+
+    # ATO example: single pensioner, rebate income $39,000: $2,230 - 12.5% x ($39,000 - $34,919) = $1,719.875 -> $1,720.
+    assert seniors_pensioners_offset(39000, RULES) == 1720
+    assert seniors_pensioners_offset(34919, RULES) == 2230 and seniors_pensioners_offset(52759, RULES) == 0
+    senior = assess(IncomeYear(other_assessable_income=39000, sapto_eligible=True), RULES)
+    other = assess(IncomeYear(other_assessable_income=39000), RULES)
+    assert senior.sapto == 1720 and senior.medicare_levy == 0  # below the $44,268 senior threshold
+    assert other.sapto == 0 and other.medicare_levy == pytest.approx(780)
+    assert senior.net_tax == pytest.approx(other.net_tax - 1720 - 780)
+    # Rebate income adds reportable super contributions: salary sacrifice can remove SAPTO.
+    sacrificed = assess(IncomeYear(other_assessable_income=39000, reportable_employer_super=20000, sapto_eligible=True), RULES)
+    assert sacrificed.sapto == 0 and sacrificed.lines["rebate_income"] == 59000
+    # SAPTO is non-refundable: it cannot take income tax below nil.
+    low = assess(IncomeYear(other_assessable_income=22000, sapto_eligible=True), RULES)
+    assert low.income_tax_after_offsets == 0 and low.sapto == pytest.approx(low.basic_tax - low.lito)
+
+
 def test_unsupported_tax_situations_fail_explicitly():
-    with pytest.raises(UnsupportedRule, match="seniors"):
-        assess(IncomeYear(sapto_eligible=True), RULES)
     with pytest.raises(UnsupportedRule, match="1,000"):
         assess(IncomeYear(foreign_income=20000, foreign_tax_paid=3000), RULES)
     with pytest.raises(ValueError, match="outside"):
@@ -185,5 +203,30 @@ def test_every_rule_parameter_and_assumption_is_documented_in_the_register():
     for parameter in RULES.assumptions():
         row = next(line for line in register.splitlines() if f"`{parameter.name}`" in line)
         assert "Assumption" in row
-    assert all(s["url"].startswith(("https://www.ato.gov.au/", "https://www.legislation.gov.au/", "https://www.servicesaustralia.gov.au/"))
+    assert all(s["url"].startswith(("https://www.ato.gov.au/", "https://www.legislation.gov.au/", "https://www.servicesaustralia.gov.au/",
+                                    "https://operational.servicesaustralia.gov.au/", "https://guides.dss.gov.au/",
+                                    "https://clik.dva.gov.au/"))
                for s in RULES.sources.values())
+
+
+def test_age_pension_assets_and_income_tests_match_published_figures():
+    from financial_simulations.rules.au.age_pension import apply_work_bonus, deemed_income, fortnightly_rate, maximum_rate
+
+    assert maximum_rate(RULES) == pytest.approx(1237.70)
+    # Deeming: 1.75% on the first $66,800, 3.75% above.
+    assert deemed_income(500000, RULES) == pytest.approx(66800 * 0.0175 + 433200 * 0.0375)
+    # Homeowner with $500,000: assets test binds ($3 a fortnight per $1,000 over $333,000).
+    homeowner = fortnightly_rate(500000, 500000, 0.0, RULES)
+    assert homeowner.amount == pytest.approx(1237.70 - 167 * 3) and homeowner.binding_test == "assets"
+    # Non-homeowner with $500,000: under the $600,000 limit, so the income test binds on deemed income.
+    renter = fortnightly_rate(500000, 500000, 0.0, RULES, homeowner=False)
+    deemed = deemed_income(500000, RULES) / 26
+    assert renter.amount == pytest.approx(1237.70 - 0.5 * (deemed - 226)) and renter.binding_test == "income"
+    # Published cut-offs: no pension at $745,750 of assets (homeowner) or $2,701.40 a fortnight of income.
+    assert fortnightly_rate(745750, 0, 0.0, RULES).amount < 1 and fortnightly_rate(0, 0, 2701.40, RULES).amount == pytest.approx(0)
+    # Taxable part: the basic rate and the basic pension supplement.
+    full = fortnightly_rate(0, 0, 0.0, RULES)
+    assert full.taxable == pytest.approx(1135.40 + 30.70)
+    # Work Bonus: $300 credit a fortnight offsets employment income; unused credit accrues to $11,800.
+    assert apply_work_bonus(500, 0.0, RULES) == (200, 0.0)
+    assert apply_work_bonus(0, 11700, RULES) == (0, 11800)

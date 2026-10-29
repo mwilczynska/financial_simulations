@@ -18,7 +18,7 @@ from financial_simulations.retirement.real import real_daily, real_events
 
 COLORS = {"Outside super": "#126a63", "Inside super": "#386a98", "Combined": "#b76a42"}
 FLOW_COLOURS = {"Take-home salary": "#126a63", "Super contributions": "#386a98", "Investment returns": "#9a8a2e",
-                "Interest on cash": "#4f8f3a",
+                "Interest on cash": "#4f8f3a", "Age Pension": "#d08c2f",
                 "Spending": "#b76a42", "Income tax": "#8c2f2f", "Contributions tax": "#c2577a", "Super fund tax": "#8363a0",
                 "Inflation": "#9aa3a8"}
 
