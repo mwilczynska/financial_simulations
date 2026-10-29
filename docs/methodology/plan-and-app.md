@@ -271,7 +271,9 @@ are nominal and which are adjusted for inflation. Everything is in nominal
 dollars unless it says "today's dollars".
 
 - Spending grows by its own growth rate.
-- Salary is not indexed.
+- Salary and salary sacrifice rise each 1 July by the wage-growth assumption
+  when `employment.salary_indexed` is true (the default; ADR 0024). Otherwise
+  they stay constant in nominal dollars.
 - Fixed outside additions are indexed only when that option is ticked.
 - Rule thresholds are projected with CPI and wages.
 - Withdrawal rates rise with spending growth; the perpetual rate keeps the

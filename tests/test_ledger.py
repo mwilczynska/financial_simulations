@@ -308,6 +308,30 @@ def test_payg_withholding_spreads_salary_tax_and_settles_only_the_balance():
     assert withheld.daily["total"].iloc[-1] == pytest.approx(plain.daily["total"].iloc[-1] - assessed)
 
 
+def test_salary_and_sacrifice_grow_each_first_of_july_and_withholding_follows():
+    from financial_simulations.rules.au.projection import ProjectionAssumptions, project_rulesets
+
+    years = project_rulesets(RULES, "2027-28", ProjectionAssumptions(0.025, 0.035))
+    employment = Employment(104000, "2026-07-02", salary_sacrifice_per_payday=100, annual_growth=0.04)
+    result = run_ledger(market(end="2028-06-30"), scenario_with(Person("1985-01-01"), employment=employment,
+                                                                payg_withholding=True), years)
+    salary = result.events[result.events["event"] == "salary"]
+    first = salary[pd.to_datetime(salary["date"]) < pd.Timestamp("2027-07-01")]
+    second = salary[pd.to_datetime(salary["date"]) >= pd.Timestamp("2027-07-01")]
+    assert first["amount"].unique().tolist() == pytest.approx([4000 - 100])
+    assert second["amount"].unique().tolist() == pytest.approx([(4000 - 100) * 1.04])
+    assert second["sacrifice"].unique().tolist() == pytest.approx([104.0])
+    withheld = result.events[result.events["event"] == "payg_withholding"]
+    later = withheld[pd.to_datetime(withheld["date"]) >= pd.Timestamp("2027-07-01")]["amount"]
+    # The second year's withholding is estimated on that year's grown salary and sacrifice.
+    salary, sacrifice = 104000 * 1.04, 2600 * 1.04
+    rules = years["2027-28"]
+    estimate = assess(IncomeYear(labour_income=salary - sacrifice, reportable_employer_super=sacrifice,
+                                 low_tax_contributions=rules["super_guarantee_rate"] * salary + sacrifice,
+                                 private_hospital_cover=True), rules)
+    assert later.unique().tolist() == pytest.approx([estimate.net_tax / 26])
+
+
 def test_retirement_spending_replaces_working_spending_from_the_retirement_date():
     result = run_ledger(market(), scenario_with(Person("1966-03-01", retirement_date="2027-01-01"), outside_cash=200000,
                                                 cash_buffer=200000, annual_spending=60000, retirement_spending=36000), YEARS)

@@ -44,7 +44,9 @@ Asset unit prices start at 1. On each day:
    fund, and the fund tracks income and credits for fund tax. Total return is
    unchanged: the distribution only moves value from price to cash.
 3. **Payday.** On fortnightly paydays before the retirement date, gross salary
-   less salary sacrifice goes to cash as labour income. SG is 12% of the gross
+   less salary sacrifice goes to cash as labour income. Salary and sacrifice
+   are multiplied by `(1 + annual_growth)^n`, where `n` is the number of whole
+   financial years since the opening year (ADR 0024). SG is 12% of the gross
    (qualifying) earnings, stopping at the maximum contribution base. SG plus
    the sacrifice is queued to reach the fund after the configured number of
    business days (default 7).

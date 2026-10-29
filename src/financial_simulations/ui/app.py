@@ -219,7 +219,12 @@ def inputs_you(plan):
     a, b = st.columns(2)
     with a:
         employment["annual_salary"] = money("Gross annual salary (AUD, excluding super)", employment["annual_salary"], "salary",
-                                            help="Paid fortnightly until retirement; constant in nominal terms.")
+                                            help="Paid fortnightly until retirement. This is this year's salary.")
+        employment["salary_indexed"] = st.checkbox(
+            f"Salary rises each year with wage growth ({plan['assumptions']['wage_growth_annual']:.1%}, set on the Assumptions tab)",
+            employment.get("salary_indexed", True), key=key("salary_indexed"),
+            help="Each 1 July salary and salary sacrifice rise by the wage-growth assumption. Untick to keep salary "
+                 "the same dollar amount every year, which means a real pay cut each year.")
     with b:
         mode = st.radio("Salary sacrifice to super, on top of the 12% super guarantee", ["% of salary", "Dollars per year"],
                         index=0 if employment["salary_sacrifice_per_year"] == 0 else 1, horizontal=True, key=key("sacrifice_mode"))
@@ -273,7 +278,9 @@ def work_summary(plan):
     st.caption("How saving outside super works: each fortnight your salary after sacrifice goes into cash. Spending (monthly) "
                "and tax (each 31 October) are paid from it. Then either everything above the cash buffer, or your fixed "
                "contribution, buys the outside portfolio (choose on the Investments tab). New investing stops at "
-               "retirement. The figures are first-year estimates before investment income; salary is constant in dollars.")
+               "retirement. The figures are first-year estimates before investment income; "
+               + ("salary rises with wage growth after that." if employment.get("salary_indexed", True)
+                  else "salary stays the same dollar amount after that."))
 
 
 def inputs_investments(plan):
@@ -452,7 +459,8 @@ def inputs_assumptions(plan):
                                                     help="Indexes CGT cost bases from 1 July 2027 and CPI-linked thresholds.")
     with b:
         plan["assumptions"]["wage_growth_annual"] = percent("Wage growth %/yr", plan["assumptions"]["wage_growth_annual"], "wages",
-                                                            low=-10, high=20, help="Indexes contribution caps and MLS thresholds.")
+                                                            low=-10, high=20, help="Raises salary each year (if ticked on the You tab) and indexes "
+                                                                                     "contribution caps and MLS thresholds.")
     plan["assumptions"]["planning_age"] = int(st.number_input(
         "Plan retirement income to age", 60, 110, int(plan["assumptions"]["planning_age"]), 1, key=key("planning_age"),
         help="Sustainable withdrawal rates test whether the portfolios last from retirement to this age."))
@@ -890,7 +898,7 @@ nominal \\$1,000,000 in 20 years buys what about \\${1e6 / (1 + cpi) ** 20:,.0f}
 | Market returns, portfolio values, wealth bands, balances, tax | Nominal (USD total-return history applied as AUD) |
 | "Ending wealth, today's dollars" and the "…in today's dollars" metric | Inflation adjusted: divided by (1 + CPI) per year |
 | Spending | Grows each 1 July by your spending growth ({plan['spending']['annual_growth']:.1%}). Equal to CPI means constant buying power |
-| Salary | Not indexed: the same dollar amount each year until retirement |
+| Salary | {"Rises each 1 July by wage growth (" + format(plan['assumptions']['wage_growth_annual'], '.1%') + ")" if plan['employment'].get('salary_indexed', True) else "Not indexed: the same dollar amount each year until retirement"} |
 | Fixed yearly additions to outside investments | Indexed to CPI only if you tick the inflation box |
 | Tax brackets and super caps after 2026-27 | Projected with the CPI and wage-growth assumptions |
 | Withdrawal rates (section 3) | Withdrawals rise with spending growth; "lasts indefinitely" keeps the portfolio's value grown by CPI |

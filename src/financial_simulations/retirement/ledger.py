@@ -100,12 +100,17 @@ class Person:
 
 @dataclass(frozen=True)
 class Employment:
-    """Fortnightly gross salary until the retirement date; salary sacrifice is per payday."""
+    """Fortnightly gross salary until the retirement date; salary sacrifice is per payday.
+
+    ``annual_growth`` raises salary and salary sacrifice together each 1 July (the same whole financial years as
+    spending growth), so sacrifice stays the same share of pay. 0 keeps both constant in nominal dollars.
+    """
 
     annual_salary: float
     first_payday: date
     salary_sacrifice_per_payday: float = 0.0
     contribution_lag_business_days: int = 7
+    annual_growth: float = 0.0
 
     def __post_init__(self):
         object.__setattr__(self, "first_payday", as_date(self.first_payday))
@@ -113,6 +118,12 @@ class Employment:
         _money(self.salary_sacrifice_per_payday, "Salary sacrifice")
         if self.salary_sacrifice_per_payday > self.annual_salary / 26:
             raise ValueError("Salary sacrifice cannot exceed the gross payday salary.")
+        if not -0.5 < self.annual_growth < 1:
+            raise ValueError("Salary growth must be an annual rate between -50% and 100%.")
+
+    def factor(self, start, day):
+        """Salary growth multiplier for the financial year containing ``day``."""
+        return (1 + self.annual_growth) ** _years_since(start, day)
 
 
 @dataclass(frozen=True)
@@ -304,9 +315,10 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
             # Estimated tax on a full year's salary, spread over 26 paydays. Like PAYG it ignores investment
             # income and part-year work; the 30 June assessment settles any difference.
             employment = scenario.employment
-            sacrifice = employment.salary_sacrifice_per_payday * 26
-            concessional = rules["super_guarantee_rate"] * min(employment.annual_salary, rules["maximum_contribution_base"])
-            estimate = assess(IncomeYear(labour_income=employment.annual_salary - sacrifice, reportable_employer_super=sacrifice,
+            grown = employment.factor(start, rules.start)
+            salary, sacrifice = employment.annual_salary * grown, employment.salary_sacrifice_per_payday * 26 * grown
+            concessional = rules["super_guarantee_rate"] * min(salary, rules["maximum_contribution_base"])
+            estimate = assess(IncomeYear(labour_income=salary - sacrifice, reportable_employer_super=sacrifice,
                                          low_tax_contributions=concessional + sacrifice,
                                          private_hospital_cover=person.private_hospital_cover), rules)
             state.fy["withhold_per_pay"] = estimate.net_tax / 26
@@ -553,8 +565,9 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
                         buy(units_map, super_weights, cash, account)
         if day in paydays:
             employment = scenario.employment
-            gross = employment.annual_salary / 26
-            sacrifice = employment.salary_sacrifice_per_payday
+            grown = employment.factor(start, day)
+            gross = employment.annual_salary * grown / 26
+            sacrifice = employment.salary_sacrifice_per_payday * grown
             sg = super_guarantee(gross, state.fy["labour"] + state.fy["sacrifice"], rules)
             state.cash += gross - sacrifice
             state.fy["labour"] += gross - sacrifice

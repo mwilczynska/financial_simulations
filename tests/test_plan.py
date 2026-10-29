@@ -232,6 +232,17 @@ def test_salary_sacrifice_percentage_adds_to_the_dollar_amount(processed_fixture
         normalize_plan(plan)
 
 
+def test_salary_follows_wage_growth_unless_switched_off(processed_fixture):
+    plan = default_plan()
+    assert plan["employment"]["salary_indexed"] is True
+    market = load_plan_markets(plan["assets"], processed_fixture)
+    _, scenario, _, _ = build_inputs(plan, market=market)
+    assert scenario.employment.annual_growth == pytest.approx(plan["assumptions"]["wage_growth_annual"])
+    plan["employment"]["salary_indexed"] = False
+    _, scenario, _, _ = build_inputs(normalize_plan(plan), market=market)
+    assert scenario.employment.annual_growth == 0.0
+
+
 def test_run_progress_covers_every_stage_in_order(processed_fixture):
     plan = quick_plan()
     plan["market"]["retirement_paths"] = 2

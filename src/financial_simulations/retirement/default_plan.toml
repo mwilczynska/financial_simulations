@@ -15,6 +15,8 @@ private_hospital_cover = true
 [employment]
 annual_salary = 160000.0
 salary_sacrifice_per_year = 10400.0
+# Salary (and salary sacrifice) rise each 1 July by the wage-growth assumption.
+salary_indexed = true
 
 [outside]
 cash = 15000.0

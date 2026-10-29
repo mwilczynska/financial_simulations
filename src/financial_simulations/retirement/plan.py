@@ -143,7 +143,8 @@ def normalize_plan(raw: dict) -> dict:
     outside, super_, spending, pension, assumptions, market = (section(n) for n in ("outside", "super", "spending", "pension", "assumptions", "market"))
     allowed = {"plan": {"name", "start_date", "years"},
                "person": {"date_of_birth", "retirement_age", "private_hospital_cover"},
-               "employment": {"annual_salary", "salary_sacrifice_per_year", "salary_sacrifice_percent", "first_payday"},
+               "employment": {"annual_salary", "salary_sacrifice_per_year", "salary_sacrifice_percent", "salary_indexed",
+                              "first_payday"},
                "outside": {"cash", "cash_buffer", "investment_balance", "opening_cost_base", "opening_acquired", "weights",
                            "rebalance", "saving", "contribution_per_year", "contribution_indexed", "cash_interest"},
                "super": {"balance", "weights", "rebalance", "total_super_balance_prior_30_june"},
@@ -169,6 +170,7 @@ def normalize_plan(raw: dict) -> dict:
     plan["employment"] = {"annual_salary": c.number(employment, "annual_salary", "employment", 0.0, low=0, high=1e8),
                           "salary_sacrifice_per_year": c.number(employment, "salary_sacrifice_per_year", "employment", 0.0, low=0, high=1e7),
                           "salary_sacrifice_percent": c.number(employment, "salary_sacrifice_percent", "employment", 0.0, low=0, high=1),
+                          "salary_indexed": c.flag(employment, "salary_indexed", "employment", True),
                           "first_payday": c.day(employment, "first_payday", "employment", optional=True)}
     if sacrifice_per_year(plan) > plan["employment"]["annual_salary"] + 1e-9:
         c.problems.append("employment: salary sacrifice (dollars plus percentage) cannot exceed the salary")
@@ -336,7 +338,8 @@ def build_inputs(plan: dict, *, market=None, returns=None):
     employment = None
     if plan["employment"]["annual_salary"] > 0:
         first = plan["employment"]["first_payday"] or next(d for d in pd.date_range(start, periods=7).date if d.weekday() == 3).isoformat()
-        employment = Employment(plan["employment"]["annual_salary"], first, sacrifice_per_year(plan) / 26)
+        growth = plan["assumptions"]["wage_growth_annual"] if plan["employment"]["salary_indexed"] else 0.0
+        employment = Employment(plan["employment"]["annual_salary"], first, sacrifice_per_year(plan) / 26, annual_growth=growth)
     pension = None
     if plan["pension"]["start_age"] > 0:
         pension = Pension(max(start, birthday(plan["person"]["date_of_birth"], int(plan["pension"]["start_age"]))),
