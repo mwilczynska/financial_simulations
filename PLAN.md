@@ -227,7 +227,10 @@ single-person daily [ledger](docs/methodology/retirement-ledger.md)
 [validation](docs/validation/stage-2a.md)). Later years use [projected rule sets](docs/rules/au-projection.md)
 under an assumed CPI and wage growth, including the enacted 1 July 2027 CGT
 reform ([ADR 0015](docs/decisions/0015-projected-rules-and-cgt-reform.md)). Runs
-stop before Age Pension age until SAPTO and Age Pension are modelled.
+stop before Age Pension age until SAPTO and Age Pension are modelled. A single
+plan file with a local browser app ([guide](docs/methodology/plan-and-app.md),
+[ADR 0016](docs/decisions/0016-plan-file-and-browser-app.md)) is the input
+surface, with import/export and one output folder per plan.
 
 Before connecting thousands of paths, document the supported Australian rules, their sources, effective dates and boundary examples. Use ATO, legislation and Services Australia as the authoritative sources, with ASIC Moneysmart for explanatory cross-checks.
 

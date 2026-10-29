@@ -25,6 +25,24 @@ tested tax and super rule functions and a daily single-person
 Later years use projected rule sets with an assumed CPI, including the 2027
 CGT reform. AUD FX and Australian CPI data remain planned.
 
+## Plan a retirement in the browser
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -e '.[ui]'
+.\.venv\Scripts\python.exe -m financial_simulations ui
+```
+
+This opens a local app at http://localhost:8501. Enter your details (date of
+birth, retirement age, salary, holdings, super, portfolio mixes, spending,
+pension start and assumptions), press **Run plan**, and read the results.
+Import or export the plan as TOML or JSON, or save it to the git-ignored
+`plans/` folder. Every run writes one folder, `output/plans/<plan-name>/`.
+The same file runs from the command line:
+`python -m financial_simulations plan plans/<name>.toml`. Until AUD market
+data are added, returns are deterministic assumed AUD growth per asset, and
+runs stop before Age Pension age. See the
+[plan and app guide](docs/methodology/plan-and-app.md).
+
 ## Development
 
 Use Python 3.11 or newer:

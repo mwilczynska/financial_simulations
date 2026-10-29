@@ -27,7 +27,21 @@ def main(argv=None) -> int:
     holdout = commands.add_parser("holdout", help="Score generators against realised rolling holdouts.")
     holdout.add_argument("study")
     holdout.add_argument("--output", required=True)
+    plan = commands.add_parser("plan", help="Run a retirement plan file into output/plans/<plan-name>/.")
+    plan.add_argument("plan_file")
+    plan.add_argument("--output", default="output/plans", help="Parent folder for the plan's output folder.")
+    ui = commands.add_parser("ui", help="Open the browser app for editing, importing, exporting and running plans.")
+    ui.add_argument("--port", type=int, default=8501)
     args = parser.parse_args(argv)
+    if args.command == "ui":
+        import subprocess
+        import sys
+        from pathlib import Path
+
+        app = Path(__file__).resolve().parent / "ui" / "app.py"
+        return subprocess.call([sys.executable, "-m", "streamlit", "run", str(app), "--server.port", str(args.port),
+                                "--server.headless", "true", "--browser.gatherUsageStats", "false",
+                                "--client.toolbarMode", "minimal"])
     try:
         if args.command in ("paired", "holdout"):
             from financial_simulations import studies
@@ -45,6 +59,20 @@ def main(argv=None) -> int:
 
             manifest = run_comparison(load_comparison(args.experiment), args.output)
             print(json.dumps({key: manifest[key] for key in ("model", "cases", "paths_evaluated", "trace_paths")}, indent=2))
+            return 0
+        if args.command == "plan":
+            from pathlib import Path
+
+            from financial_simulations.retirement.plan import load_plan_text
+            from financial_simulations.retirement.run_plan import run_plan
+
+            file = Path(args.plan_file)
+            run = run_plan(load_plan_text(file.read_text(encoding="utf-8"), file.name), args.output)
+            final = run.result.annual[-1] if run.result.annual else None
+            print(json.dumps({"folder": str(run.folder), "notes": run.notes, "years_assessed": len(run.result.annual),
+                              "end_wealth": round(float(run.result.daily["total"].iloc[-1]), 2),
+                              "total_shortfall": round(sum(a["shortfall"] for a in run.result.annual), 2),
+                              "last_year": final["financial_year"] if final else None}, indent=2))
             return 0
         scenario = load_scenario(args.scenario)
         if args.command == "run":

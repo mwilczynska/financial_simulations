@@ -1,0 +1,64 @@
+# Invented example plan: edit it in the browser app or here, then export your own copy.
+schema_version = 1
+
+[plan]
+name = "Example early retirement"
+start_date = "2026-07-01"
+years = 10
+
+[person]
+date_of_birth = "1972-09-15"
+retirement_age = 55
+private_hospital_cover = true
+
+[employment]
+annual_salary = 160000.0
+salary_sacrifice_per_year = 10400.0
+
+[[assets]]
+name = "AUSHARES"
+label = "Australian shares"
+annual_return = 0.07
+income_yield = 0.04
+franked_fraction = 0.8
+
+[[assets]]
+name = "GLOBAL"
+label = "Global shares"
+annual_return = 0.065
+income_yield = 0.02
+franked_fraction = 0.0
+
+[outside]
+cash = 15000.0
+cash_buffer = 10000.0
+weights = {AUSHARES = 0.5, GLOBAL = 0.5}
+
+[[outside.holdings]]
+asset = "AUSHARES"
+value = 250000.0
+cost_base = 180000.0
+acquired = "2015-03-02"
+
+[[outside.holdings]]
+asset = "GLOBAL"
+value = 200000.0
+cost_base = 150000.0
+acquired = "2018-08-01"
+
+[super]
+balance = 650000.0
+weights = {AUSHARES = 0.3, GLOBAL = 0.7}
+total_super_balance_prior_30_june = 650000.0
+
+[spending]
+annual = 75000.0
+annual_growth = 0.025
+
+[pension]
+start_age = 60
+transfer_all = true
+
+[assumptions]
+cpi_annual = 0.025
+wage_growth_annual = 0.035

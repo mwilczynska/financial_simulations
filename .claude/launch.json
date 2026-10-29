@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "planner",
+      "runtimeExecutable": ".venv/Scripts/python.exe",
+      "runtimeArgs": ["-m", "streamlit", "run", "src/financial_simulations/ui/app.py", "--server.port", "8501", "--server.headless", "true", "--browser.gatherUsageStats", "false", "--client.toolbarMode", "minimal"],
+      "port": 8501
+    }
+  ]
+}

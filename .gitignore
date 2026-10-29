@@ -15,6 +15,7 @@ htmlcov/
 
 # Local/private financial inputs and outputs
 scenarios/private/
+plans/
 output/
 data/local/
 data/interim/

@@ -21,6 +21,7 @@ Decision records preserve why Financial Simulations makes a material modelling o
 | [0013](0013-stage-2a-rule-register-scope.md) | 2026-10-28 | Accepted; 2026-27 rules implemented and tested | Sourced 2026-27 rule register with explicit unsupported cases |
 | [0014](0014-single-person-ledger-conventions.md) | 2026-10-28 | Accepted; 2026-27 ledger implemented and tested | Daily single-person ledger conventions |
 | [0015](0015-projected-rules-and-cgt-reform.md) | 2026-10-28 | Accepted; implemented and tested | Projected later-year rules and the 2027 CGT reform under an assumed CPI |
+| [0016](0016-plan-file-and-browser-app.md) | 2026-10-28 | Accepted; implemented and tested | One plan file with a local browser app |
 
 ## When to write a record
 

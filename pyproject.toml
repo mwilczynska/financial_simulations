@@ -13,6 +13,7 @@ dependencies = ["numpy>=1.26,<3", "pandas>=2.2,<4", "matplotlib>=3.9,<4"]
 [project.optional-dependencies]
 dev = ["pytest>=8,<10"]
 parquet = ["pyarrow>=16"]
+ui = ["streamlit>=1.60,<2"]
 
 [project.scripts]
 financial-simulations = "financial_simulations.cli:main"
@@ -22,6 +23,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "financial_simulations.rules.au" = ["*.toml"]
+"financial_simulations.retirement" = ["*.toml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

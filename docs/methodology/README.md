@@ -26,6 +26,7 @@ rules are implemented for 2026-27 ([register](../rules/au-2026-27.md)); the acco
 | Australian personal tax | [Australian rules](australian-rules.md): 2026-27 rules implemented; ledger timing planned | Dated rules, income components, AUD cost bases, gains/losses, credits and payment timing |
 | Super accumulation and contributions | [Australian rules](australian-rules.md): 2026-27 caps, SG and fund tax implemented | Eligibility, contribution history, caps, fund-return conventions and costs |
 | Single-person retirement ledger | [Retirement ledger](retirement-ledger.md): implemented for 2026-27 | Daily accounts, distributions, CGT parcels, contributions timing, pensions, annual assessment and shortfalls |
+| Plan files and browser app | [Plan and app](plan-and-app.md): implemented | Single plan format, validation, import/export, browser UI and consolidated outputs |
 | Super access and retirement pensions | [Australian rules](australian-rules.md): access dates, minimum payments and transfer balance implemented | Release conditions, access dates, transfer records, minimum payments and mixed withdrawals |
 | Age Pension and longevity | Planned | Eligibility, means tests, residence, mortality sources and improvement assumptions |
 | Couples | Planned | Individual ownership/tax, separate access dates, household spending and survivor extensions |

@@ -331,9 +331,10 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
                 flows["pension_payments"] += extra
                 log("pension_payment", extra, "pension", purpose=kind)
             paid += extra
-        shortfall = max(0.0, need - paid)
-        if shortfall > TOLERANCE:
-            log("shortfall", shortfall, "outside", purpose=kind)
+        shortfall = need - paid
+        if shortfall <= TOLERANCE:  # rounding residue from proportional sales, not an unmet need
+            return paid, 0.0
+        log("shortfall", shortfall, "outside", purpose=kind)
         return paid, shortfall
 
     start_year(rules_by_year[financial_year_of(start)])

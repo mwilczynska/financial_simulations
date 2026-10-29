@@ -22,6 +22,7 @@ Generate PNGs directly from Python; never create PDFs.
 | Gaussian benchmark, assumption grid | `compare` with `[parametric]` | [parametric](methodology/parametric.md), ADR [0007](decisions/0007-daily-parametric-assumptions.md) | [stage 1C](validation/stage-1c.md) |
 | GARCH(1,1) filtered historical simulation | `[volatility]` or `garch_fhs` | [volatility](methodology/volatility.md), ADR [0011](decisions/0011-garch-filtered-historical-simulation.md) | `tests/test_volatility.py` |
 | Calendar evaluation, targets, recovery, MC error | `compare` with `[evaluation]` | [evaluation](methodology/evaluation.md), ADR [0008](decisions/0008-calendar-evaluation-and-sampling-error.md) | [stage 1D](validation/stage-1d.md) |
+| Plan file and browser app | `financial-simulations ui`, `financial-simulations plan` | [plan and app](methodology/plan-and-app.md), ADR [0016](decisions/0016-plan-file-and-browser-app.md) | `tests/test_plan.py` |
 | Single-person daily retirement ledger | `run_ledger`, `scripts/ledger_example.py` | [ledger](methodology/retirement-ledger.md), ADR [0014](decisions/0014-single-person-ledger-conventions.md) | [stage 2A](validation/stage-2a.md), `tests/test_ledger.py` |
 | Australian 2026-27 tax and super rules | `rules.au` | [Australian rules](methodology/australian-rules.md), ADR [0013](decisions/0013-stage-2a-rule-register-scope.md), [register](rules/au-2026-27.md) | `tests/test_au_rules.py` |
 | Paired portfolios, source segments, tail diagnostic, holdouts | `paired`, `holdout` | [evaluation](methodology/evaluation.md#paired-portfolio-source-segment-and-holdout-studies), ADR [0012](decisions/0012-paired-holdout-and-segment-studies.md) | [stage 1D](validation/stage-1d.md), `tests/test_studies.py` |
@@ -68,8 +69,10 @@ These are conditional, nominal-USD results, not forecasts:
 - Multi-year runs work with projected rule sets under an assumed CPI and
   wage growth (ADR 0015). Next: SAPTO and Age Pension (runs stop before 67),
   wealth-dependent withdrawal policies reconciled to the ledger, and
-  stochastic paths (2D). The user wants to discuss consolidating inputs and
-  outputs into one user-friendly, customisable surface before more modelling.
+  stochastic paths (2D).
+- The browser app and plan file (ADR 0016) are the user's input surface.
+  The user plans to add AUD market data next, so plan runs can use real
+  returns and the Stage 1 generators instead of deterministic assumed growth.
 - Refresh the 2026-27 Medicare low-income thresholds when the ATO publishes
   them (currently a labelled assumption).
 - Optional Stage 1 extensions: residual trimming or stress scenarios for
