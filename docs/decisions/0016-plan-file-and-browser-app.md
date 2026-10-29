@@ -1,6 +1,8 @@
 # ADR 0016: one plan file with a local browser app
 
-Date: 2026-10-28. Status: accepted; implemented and tested.
+Date: 2026-10-28. Status: the local plan-file and browser-app decision remains
+accepted; schema version 1 inputs and deterministic market assumptions were
+superseded by [ADR 0017](0017-ticker-portfolios-and-interactive-results.md).
 
 ## Context
 

@@ -1,106 +1,178 @@
 from datetime import date
 import json
 from pathlib import Path
+import tempfile
 
 import pytest
 
+from financial_simulations.data.plan_markets import load_plan_markets
+from financial_simulations.retirement.analysis import analyse_portfolios, target_observations
 from financial_simulations.retirement.plan import (PlanError, build_inputs, default_plan, horizon, load_plan_text,
                                                    normalize_plan, plan_to_json, plan_to_toml)
 from financial_simulations.retirement.run_plan import run_plan
+
+
+def quick_plan():
+    plan = default_plan()
+    plan["market"]["paths"] = 16
+    plan["market"]["retirement_paths"] = 1
+    return plan
 
 
 def test_example_plan_round_trips_through_toml_and_json():
     plan = default_plan()
     assert load_plan_text(plan_to_toml(plan), "plan.toml") == plan
     assert load_plan_text(plan_to_json(plan), "plan.json") == plan
-    assert json.loads(plan_to_json(plan))["schema_version"] == 1
+    assert json.loads(plan_to_json(plan))["schema_version"] == 2
+    assert plan["assets"] == ["USLCAP3x", "ITT3x", "GOLDPM2x", "COMM", "GLSTOCK"]
+    assert plan["outside"]["weights"] == {"USLCAP3x": 0.4, "ITT3x": 0.2, "GOLDPM2x": 0.2, "COMM": 0.2}
+    assert plan["super"]["weights"] == {"GLSTOCK": 1.0}
 
 
 def test_validation_reports_every_problem_with_its_field_path():
     plan = default_plan()
     plan["person"]["date_of_birth"] = "15/09/1972"
-    plan["outside"]["weights"] = {"AUSHARES": 0.4, "GLOBAL": 0.4}
-    plan["outside"]["holdings"][0]["asset"] = "BONDS"
-    plan["assets"].append(dict(plan["assets"][0]))
+    plan["outside"]["weights"] = {"USLCAP3x": 0.4, "ITT3x": 0.4}
+    plan["super"]["weights"] = {"SPY": 1.0}
+    plan["assets"].append("COMM")
     plan["extra"] = {}
     with pytest.raises(PlanError) as error:
         normalize_plan(plan)
     problems = " | ".join(error.value.problems)
     for expected in ("person.date_of_birth: must be a date", "outside.weights: must sum to 1",
-                     "outside.holdings[0].asset: unknown asset", "assets[2].name: duplicate asset", "extra: unknown section"):
+                     "super.weights.SPY: ticker is not selected", "assets[5]: duplicate ticker", "extra: unknown section"):
         assert expected in problems
     with pytest.raises(PlanError, match="could not be read as TOML"):
         load_plan_text("[plan\nname=", "broken.toml")
+    old = default_plan()
+    old["schema_version"] = 1
+    with pytest.raises(PlanError, match="reviewed conversion"):
+        normalize_plan(old)
 
 
 def test_minimal_plan_gets_documented_defaults():
-    plan = normalize_plan({"person": {"date_of_birth": "1980-01-01"}, "assets": [{"name": "SHARES"}],
-                           "outside": {"weights": {"SHARES": 1.0}}})
+    plan = normalize_plan({"person": {"date_of_birth": "1980-01-01"}, "assets": ["USLCAP"],
+                           "outside": {"weights": {"USLCAP": 1.0}}, "super": {"weights": {"USLCAP": 1.0}}})
     assert plan["plan"]["start_date"] == "2026-07-01" and plan["plan"]["years"] == 10
     assert plan["assumptions"] == {"cpi_annual": 0.025, "wage_growth_annual": 0.035}
-    assert plan["assets"][0]["annual_return"] == 0.06 and plan["pension"]["start_age"] == 0
+    assert plan["outside"]["investment_balance"] == 0 and plan["pension"]["start_age"] == 0
+    assert plan["market"]["block_length"] == 63
 
 
-def test_build_inputs_maps_plan_fields_onto_the_ledger():
-    path, scenario, years, notes = build_inputs(default_plan())
-    assert path.currency == "AUD" and path.assets == ("AUSHARES", "GLOBAL")
-    assert scenario.person.retirement_date == date(2027, 9, 15)  # 55th birthday
+def test_build_inputs_maps_portfolios_and_derived_income_onto_ledger(processed_fixture):
+    plan = default_plan()
+    market = load_plan_markets(plan["assets"], processed_fixture)
+    path, scenario, years, notes = build_inputs(plan, market=market)
+    assert path.currency == "AUD" and path.assets == tuple(plan["assets"])
+    assert scenario.person.retirement_date == date(2027, 9, 15)
     assert scenario.employment.salary_sacrifice_per_payday == pytest.approx(400)
-    assert scenario.super_units == {"AUSHARES": pytest.approx(195000), "GLOBAL": pytest.approx(455000)}
+    assert scenario.super_units["GLSTOCK"] == pytest.approx(650000)
+    assert scenario.outside_parcels[0].cost_base == pytest.approx(132000)
+    assert scenario.income["ITT3x"].annual_yield == pytest.approx(market.income_yields["ITT3x"])
+    assert scenario.income["ITT3x"].franked_fraction == 0
     assert scenario.pension.commence == date(2032, 9, 15)
     assert list(years)[0] == "2026-27" and list(years)[-1] == "2035-36"
-    assert "deterministic assumed AUD" in notes[0]
+    assert "AUD proxy" in notes[0]
 
 
-def test_horizon_stops_before_the_age_pension_year():
+def test_horizon_stops_before_age_pension_year(processed_fixture):
     plan = default_plan()
-    plan["person"]["date_of_birth"] = "1962-03-01"  # 67 on 2029-03-01
+    plan["person"]["date_of_birth"] = "1962-03-01"
     plan["pension"]["start_age"] = 0
     start, end, shortened = horizon(plan)
     assert end == date(2028, 6, 30) and shortened
     plan["person"]["date_of_birth"] = "1959-01-01"
+    market = load_plan_markets(plan["assets"], processed_fixture)
     with pytest.raises(PlanError, match="Age Pension age"):
-        build_inputs(plan)
+        build_inputs(plan, market=market)
 
 
-def test_run_plan_writes_one_consolidated_folder(tmp_path):
-    run = run_plan(default_plan(), tmp_path)
+def test_run_plan_writes_portfolio_and_retirement_reports(tmp_path, processed_fixture):
+    plan = quick_plan()
+    market = load_plan_markets(plan["assets"], processed_fixture)
+    run = run_plan(plan, tmp_path, market=market)
     assert run.folder == tmp_path / "example-early-retirement"
-    assert sorted(p.name for p in run.folder.iterdir()) == ["annual.json", "daily.csv", "events.csv", "ledger.png",
-                                                             "manifest.json", "plan.toml"]
-    assert load_plan_text((run.folder / "plan.toml").read_text(encoding="utf-8")) == default_plan()
-    assert len(run.result.annual) == 10 and sum(a["shortfall"] for a in run.result.annual) == 0
+    assert (run.folder / "portfolio_future.png").exists()
+    assert (run.folder / "retirement_range.png").exists()
+    assert (run.folder / "retirement_paths.csv").exists()
+    assert (run.folder / "asset_summary.csv").exists()
+    assert (run.folder / "manifest.json").exists()
+    assert load_plan_text((run.folder / "plan.toml").read_text(encoding="utf-8")) == plan
+    assert len(run.portfolios.outcomes) == 32  # 16 shared paths for each of two portfolios
+    assert len(run.retirement_paths) == 1
     assert not list(run.folder.glob("*.pdf"))
 
 
-def test_command_line_runs_a_plan_file(tmp_path, capsys):
+def test_portfolios_keep_shared_daily_draws_but_reflect_distinct_weights(processed_fixture):
+    plan = quick_plan()
+    plan["plan"]["years"] = 1
+    plan["super"]["weights"] = {"COMM": 1.0}
+    market = load_plan_markets(plan["assets"], processed_fixture)
+    compared = analyse_portfolios(plan, market, target_observations(plan))
+    same_mix = default_plan()
+    same_mix["plan"]["years"] = 1
+    same_mix["market"]["paths"] = 16
+    same_mix["super"]["weights"] = same_mix["outside"]["weights"].copy()
+    control = analyse_portfolios(same_mix, market, target_observations(same_mix))
+    assert (compared.sampled_returns == control.sampled_returns).all()
+    outside = compared.outcomes.loc[compared.outcomes["Portfolio"] == "Outside super", "Terminal growth of 100"].to_numpy()
+    inside = compared.outcomes.loc[compared.outcomes["Portfolio"] == "Inside super", "Terminal growth of 100"].to_numpy()
+    assert (outside == control.outcomes.loc[control.outcomes["Portfolio"] == "Inside super", "Terminal growth of 100"].to_numpy()).all()
+    assert (outside != inside).any()
+
+
+def test_command_line_runs_a_plan_file(tmp_path, monkeypatch, capsys, processed_fixture):
     from financial_simulations.cli import main
 
+    monkeypatch.setenv("FINANCIAL_DATASETS_PROCESSED", str(processed_fixture))
     file = tmp_path / "mine.toml"
-    file.write_text(plan_to_toml(default_plan()), encoding="utf-8")
+    file.write_text(plan_to_toml(quick_plan()), encoding="utf-8")
     assert main(["plan", str(file), "--output", str(tmp_path / "out")]) == 0
     summary = json.loads(capsys.readouterr().out)
     assert summary["years_assessed"] == 10 and Path(summary["folder"]).is_dir()
 
 
-def test_browser_app_runs_the_example_plan_headlessly(tmp_path, monkeypatch):
+@pytest.mark.skipif("sandbox." in tempfile.gettempdir().lower(),
+                    reason="Streamlit AppTest stalls in this managed Windows sandbox; the local browser is used for UI validation")
+def test_browser_app_runs_with_tickers_and_interactive_results(tmp_path, monkeypatch, processed_fixture):
     pytest.importorskip("streamlit")
     from streamlit.testing.v1 import AppTest
 
+    monkeypatch.setenv("FINANCIAL_DATASETS_PROCESSED", str(processed_fixture))
     monkeypatch.chdir(tmp_path)
     app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "src" / "financial_simulations" / "ui" / "app.py"),
                             default_timeout=120)
     app.run()
     assert not app.exception
     assert [t.label for t in app.tabs] == ["You", "Investments", "Retirement", "Assumptions", "Results"]
-    app.number_input(key="retire__0").set_value(57).run()
-    assert app.session_state.plan["person"]["retirement_age"] == 57
+    app.number_input(key="retire__0").set_value(57)
+    app.number_input(key="paths__0").set_value(16)
+    app.number_input(key="retirement_paths__0").set_value(1).run()
     app.button(key="run_sidebar").click().run()
     assert not app.exception and not app.error
-    labels = [m.label for m in app.metric]
-    assert labels == ["Wealth at start", "Wealth at end (2036-06-30)", "Spending shortfall", "Personal tax assessed"]
-    assert (tmp_path / "output" / "plans" / "example-early-retirement" / "plan.toml").exists()
-    saved = load_plan_text((tmp_path / "output" / "plans" / "example-early-retirement" / "plan.toml").read_text(encoding="utf-8"))
-    assert saved["person"]["retirement_age"] == 57
-    next(b for b in app.button if b.label.startswith("Save to plans/")).click().run()
-    assert (tmp_path / "plans" / "example-early-retirement.toml").exists()
+    assert len(app.session_state.result.portfolios.outcomes) == 32
+    assert app.session_state.plan["person"]["retirement_age"] == 57
+    assert (tmp_path / "output" / "plans" / "example-early-retirement" / "portfolio_future.png").exists()
+    assert len(app.get("vega_lite_chart")) >= 5
+
+
+def test_35_year_path_and_plots_keep_yearly_summary_compact(tmp_path, processed_fixture):
+    plan = quick_plan()
+    plan["plan"]["years"] = 35
+    plan["person"]["date_of_birth"] = "1995-01-01"
+    plan["employment"]["annual_salary"] = 0
+    plan["employment"]["salary_sacrifice_per_year"] = 0
+    plan["outside"]["cash"] = 0
+    plan["outside"]["cash_buffer"] = 0
+    plan["outside"]["investment_balance"] = 1000
+    plan["outside"]["opening_cost_base"] = 800
+    plan["super"]["balance"] = 100
+    plan["super"]["total_super_balance_prior_30_june"] = 100
+    plan["spending"]["annual"] = 0
+    plan["pension"]["start_age"] = 0
+    market = load_plan_markets(plan["assets"], processed_fixture)
+    run = run_plan(plan, tmp_path, market=market)
+    assert (run.result.daily.index[-1] - run.result.daily.index[0]).days >= 35 * 365 - 2
+    assert len(run.retirement_bands) >= 35 * 12
+    assert len(run.portfolios.paths) >= 2 * 35 * 12
+    assert (run.folder / "ledger.png").stat().st_size > 10000

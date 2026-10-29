@@ -6,12 +6,11 @@ so the browser form, the command line and hand-edited files all share one
 format. ``build_inputs`` turns a valid plan into ledger inputs: a market path,
 a ``LedgerScenario`` and projected rule sets.
 
-Until AUD market data are added, a plan's market input is a deterministic AUD
-path built from each asset's assumed annual total return. It is labelled as
-such in every output.
+The planner loads ticker histories from local processed data. Portfolio paths
+resample joint USD returns; until FX data exist, retirement paths explicitly
+apply those returns as an AUD proxy rather than claiming an observed AUD series.
 """
 
-from copy import deepcopy
 from datetime import date, timedelta
 from importlib.resources import files
 import json
@@ -23,6 +22,7 @@ import numpy as np
 import pandas as pd
 
 from financial_simulations.dates import as_date
+from financial_simulations.data.plan_markets import load_plan_markets, ticker_name
 from financial_simulations.markets.path import MarketPath
 from financial_simulations.retirement.ledger import (AssetIncome, Employment, LedgerScenario, Parcel, Pension, Person)
 from financial_simulations.rules.au.parameters import financial_year_of, load_ruleset
@@ -30,7 +30,7 @@ from financial_simulations.rules.au.projection import ProjectionAssumptions, pro
 from financial_simulations.rules.au.superannuation import birthday
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 RULES_START = date(2026, 7, 1)
 
 
@@ -99,8 +99,8 @@ class _Checker:
         clean = {}
         for name, value in weights.items():
             if name not in assets:
-                self.problems.append(f"{path}.weights.{name}: unknown asset (define it under [[assets]])")
-            elif isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
+                self.problems.append(f"{path}.weights.{name}: ticker is not selected under assets")
+            elif isinstance(value, bool) or not isinstance(value, (int, float)) or not isfinite(value) or value < 0:
                 self.problems.append(f"{path}.weights.{name}: must be a nonnegative fraction")
             elif value > 0:
                 clean[name] = float(value)
@@ -114,10 +114,10 @@ def normalize_plan(raw: dict) -> dict:
     if not isinstance(raw, dict):
         raise PlanError(["plan: must be a table of sections"])
     c = _Checker()
-    known = {"schema_version", "plan", "person", "employment", "assets", "outside", "super", "spending", "pension", "assumptions"}
+    known = {"schema_version", "plan", "person", "employment", "assets", "outside", "super", "spending", "pension", "assumptions", "market"}
     c.problems += [f"{k}: unknown section" for k in raw if k not in known]
     if raw.get("schema_version", SCHEMA_VERSION) != SCHEMA_VERSION:
-        c.problems.append(f"schema_version: this tool reads version {SCHEMA_VERSION}")
+        c.problems.append(f"schema_version: this tool reads version {SCHEMA_VERSION}; version 1 holdings need a reviewed conversion to portfolio balances and tax positions")
     def section(name):
         value = raw.get(name, {})
         if not isinstance(value, dict):
@@ -126,7 +126,21 @@ def normalize_plan(raw: dict) -> dict:
         return value
 
     meta, person, employment = section("plan"), section("person"), section("employment")
-    outside, super_, spending, pension, assumptions = (section(n) for n in ("outside", "super", "spending", "pension", "assumptions"))
+    outside, super_, spending, pension, assumptions, market = (section(n) for n in ("outside", "super", "spending", "pension", "assumptions", "market"))
+    allowed = {"plan": {"name", "start_date", "years"},
+               "person": {"date_of_birth", "retirement_age", "private_hospital_cover"},
+               "employment": {"annual_salary", "salary_sacrifice_per_year", "first_payday"},
+               "outside": {"cash", "cash_buffer", "investment_balance", "opening_cost_base", "opening_acquired", "weights"},
+               "super": {"balance", "weights", "total_super_balance_prior_30_june"},
+               "spending": {"annual", "annual_growth"},
+               "pension": {"start_age", "transfer_all", "amount"},
+               "assumptions": {"cpi_annual", "wage_growth_annual"},
+               "market": {"paths", "retirement_paths", "seed", "block_length"}}
+    for name, table in (("plan", meta), ("person", person), ("employment", employment), ("outside", outside),
+                        ("super", super_), ("spending", spending), ("pension", pension),
+                        ("assumptions", assumptions), ("market", market)):
+        c.problems.extend(f"{name}.{key}: unknown field in schema version {SCHEMA_VERSION}"
+                          for key in table if key not in allowed[name])
     plan = {"schema_version": SCHEMA_VERSION,
             "plan": {"name": c.text(meta, "name", "plan", "My plan"),
                      "start_date": c.day(meta, "start_date", "plan", RULES_START.isoformat()),
@@ -142,35 +156,28 @@ def normalize_plan(raw: dict) -> dict:
     assets, names = [], set()
     entries = raw.get("assets", [])
     if not isinstance(entries, list) or not entries:
-        c.problems.append("assets: define at least one [[assets]] entry")
+        c.problems.append("assets: select at least one processed ticker")
         entries = []
     for i, entry in enumerate(entries):
-        path = f"assets[{i}]"
-        entry = entry if isinstance(entry, dict) else {}
-        name = c.text(entry, "name", path)
-        if name and not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", name):
-            c.problems.append(f"{path}.name: use letters, digits and underscores, starting with a letter")
+        try:
+            name = ticker_name(entry)
+        except ValueError as exc:
+            c.problems.append(f"assets[{i}]: {exc}")
+            continue
         if name in names:
-            c.problems.append(f"{path}.name: duplicate asset {name}")
+            c.problems.append(f"assets[{i}]: duplicate ticker {name}")
         names.add(name)
-        assets.append({"name": name, "label": entry.get("label", name) if isinstance(entry.get("label", name), str) else name,
-                       "annual_return": c.number(entry, "annual_return", path, 0.06, low=-0.5, high=0.5),
-                       "income_yield": c.number(entry, "income_yield", path, 0.0, low=0, high=0.5),
-                       "franked_fraction": c.number(entry, "franked_fraction", path, 0.0, low=0, high=1)})
+        assets.append(name)
     plan["assets"] = assets
-    holdings = []
-    for i, entry in enumerate(outside.get("holdings", []) if isinstance(outside.get("holdings", []), list) else []):
-        path = f"outside.holdings[{i}]"
-        entry = entry if isinstance(entry, dict) else {}
-        asset = entry.get("asset")
-        if asset not in names:
-            c.problems.append(f"{path}.asset: unknown asset {asset!r}")
-        holdings.append({"asset": asset, "value": c.number(entry, "value", path, 0.0, low=0, high=1e9),
-                         "cost_base": c.number(entry, "cost_base", path, 0.0, low=0, high=1e9),
-                         "acquired": c.day(entry, "acquired", path)})
     plan["outside"] = {"cash": c.number(outside, "cash", "outside", 0.0, low=0, high=1e9),
                        "cash_buffer": c.number(outside, "cash_buffer", "outside", 0.0, low=0, high=1e9),
-                       "weights": c.weights(outside, "outside", names), "holdings": holdings}
+                       "investment_balance": c.number(outside, "investment_balance", "outside", 0.0, low=0, high=1e9),
+                       "opening_cost_base": c.number(outside, "opening_cost_base", "outside", 0.0, low=0, high=1e9),
+                       "opening_acquired": c.day(outside, "opening_acquired", "outside", plan["plan"]["start_date"]),
+                       "weights": c.weights(outside, "outside", names)}
+    if (plan["outside"]["opening_acquired"] and plan["plan"]["start_date"]
+            and plan["outside"]["opening_acquired"] > plan["plan"]["start_date"]):
+        c.problems.append("outside.opening_acquired: must be on or before plan.start_date")
     plan["super"] = {"balance": c.number(super_, "balance", "super", 0.0, low=0, high=1e9),
                      "weights": c.weights(super_, "super", names),
                      "total_super_balance_prior_30_june": c.number(super_, "total_super_balance_prior_30_june", "super",
@@ -184,8 +191,16 @@ def normalize_plan(raw: dict) -> dict:
                        "amount": c.number(pension, "amount", "pension", 0.0, low=0, high=1e9)}
     plan["assumptions"] = {"cpi_annual": c.number(assumptions, "cpi_annual", "assumptions", 0.025, low=-0.1, high=0.2),
                            "wage_growth_annual": c.number(assumptions, "wage_growth_annual", "assumptions", 0.035, low=-0.1, high=0.2)}
+    plan["market"] = {"paths": c.number(market, "paths", "market", 96, low=16, high=512, integer=True),
+                      "retirement_paths": c.number(market, "retirement_paths", "market", 24, low=1, high=128, integer=True),
+                      "seed": c.number(market, "seed", "market", 20261028, low=0, high=2147483647, integer=True),
+                      "block_length": c.number(market, "block_length", "market", 63, low=1, high=1260, integer=True)}
     if not plan["outside"]["weights"]:
-        c.problems.append("outside.weights: required; surplus cash and income are invested at these weights")
+        c.problems.append("outside.weights: an outside-super portfolio is required for current and future investments")
+    if not plan["super"]["weights"]:
+        c.problems.append("super.weights: an inside-super portfolio is required for current and future contributions")
+    if plan["market"]["retirement_paths"] > plan["market"]["paths"]:
+        c.problems.append("market.retirement_paths: cannot exceed market.paths")
     if c.problems:
         raise PlanError(c.problems)
     return plan
@@ -216,24 +231,14 @@ def plan_to_toml(plan: dict) -> str:
     """Write a normalized plan as readable TOML (tables, inline weight tables, arrays of tables)."""
     plan = normalize_plan(plan)
     lines = [f"# Retirement plan file, schema version {SCHEMA_VERSION}. Edit here or in the browser app.",
-             f"schema_version = {SCHEMA_VERSION}", ""]
-    for section in ("plan", "person", "employment", "outside", "super", "spending", "pension", "assumptions"):
+             f"schema_version = {SCHEMA_VERSION}", f"assets = {_toml_value(plan['assets'])}", ""]
+    for section in ("plan", "person", "employment", "outside", "super", "spending", "pension", "assumptions", "market"):
         lines.append(f"[{section}]")
         for key, value in plan[section].items():
-            if value is None or key == "holdings":
+            if value is None:
                 continue
             lines.append(f"{key} = {_toml_value(value)}")
         lines.append("")
-        if section == "outside":
-            for holding in plan["outside"]["holdings"]:
-                lines.append("[[outside.holdings]]")
-                lines += [f"{k} = {_toml_value(v)}" for k, v in holding.items()]
-                lines.append("")
-        if section == "employment":
-            for asset in plan["assets"]:
-                lines.append("[[assets]]")
-                lines += [f"{k} = {_toml_value(v)}" for k, v in asset.items()]
-                lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -268,21 +273,26 @@ def horizon(plan: dict) -> tuple[date, date, bool]:
     return start, min(requested, limit), requested > limit
 
 
-def build_inputs(plan: dict):
+def build_inputs(plan: dict, *, market=None, returns=None):
     """Market path, ledger scenario, rule sets and notes for a normalized plan."""
     plan = normalize_plan(plan)
     start, end, shortened = horizon(plan)
     if end <= start:
         raise PlanError(["person.date_of_birth: the person is already at or near Age Pension age; SAPTO and Age Pension are not modelled yet"])
-    notes = ["Market returns are deterministic assumed AUD growth per asset (AUD market data not yet added)."]
+    market = market or load_plan_markets(plan["assets"])
+    notes = ["Selected histories and cash contributions are USD. The retirement ledger applies sampled USD returns as an AUD proxy; FX and Australian tax distribution components are not yet available."]
     if shortened:
         notes.append(f"Horizon shortened to {end}: runs stop before the income year in which the person reaches Age Pension age.")
-    names = [a["name"] for a in plan["assets"]]
+    names = plan["assets"]
     dates = tuple(pd.bdate_range(start, end).date)
     if dates[0] != start:
         dates = (start, *dates)
-    daily = np.expm1(np.log1p(np.array([a["annual_return"] for a in plan["assets"]])) / 252)
-    path = MarketPath(dates, tuple(names), np.tile(daily, (len(dates) - 1, 1)), "AUD")
+    if returns is None:
+        rates = market.asset_summary.set_index("Ticker").loc[names, "Full-sample CAGR"].to_numpy()
+        daily = np.expm1(np.log1p(rates) / 252)
+        returns = np.tile(daily, (len(dates) - 1, 1))
+        notes.append("This reference path uses each ticker's full-sample CAGR at a constant daily rate.")
+    path = MarketPath(dates, tuple(names), returns, "AUD")
     person = Person(plan["person"]["date_of_birth"],
                     retirement_date=birthday(plan["person"]["date_of_birth"], plan["person"]["retirement_age"]),
                     private_hospital_cover=plan["person"]["private_hospital_cover"])
@@ -296,11 +306,13 @@ def build_inputs(plan: dict):
                           None if plan["pension"]["transfer_all"] else plan["pension"]["amount"])
     scenario = LedgerScenario(
         person, outside_cash=plan["outside"]["cash"], cash_buffer=plan["outside"]["cash_buffer"],
-        outside_parcels=tuple(Parcel(h["asset"], h["value"], h["cost_base"], h["acquired"]) for h in plan["outside"]["holdings"] if h["value"] > 0),
+        outside_parcels=tuple(Parcel(ticker, plan["outside"]["investment_balance"] * weight,
+                                     plan["outside"]["opening_cost_base"] * weight, plan["outside"]["opening_acquired"])
+                              for ticker, weight in plan["outside"]["weights"].items() if plan["outside"]["investment_balance"] * weight > 0),
         outside_weights=plan["outside"]["weights"],
         super_units={a: plan["super"]["balance"] * w for a, w in plan["super"]["weights"].items()},
         super_weights=plan["super"]["weights"],
-        income={a["name"]: AssetIncome(a["income_yield"], a["franked_fraction"]) for a in plan["assets"]},
+        income={ticker: AssetIncome(market.income_yields[ticker], 0.0) for ticker in names},
         employment=employment, annual_spending=plan["spending"]["annual"], spending_growth=plan["spending"]["annual_growth"],
         pension=pension, tsb_prior_30_june=plan["super"]["total_super_balance_prior_30_june"])
     years = project_rulesets(load_ruleset("2026-27"), financial_year_of(end),

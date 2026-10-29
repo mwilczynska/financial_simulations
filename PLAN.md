@@ -230,7 +230,13 @@ reform ([ADR 0015](docs/decisions/0015-projected-rules-and-cgt-reform.md)). Runs
 stop before Age Pension age until SAPTO and Age Pension are modelled. A single
 plan file with a local browser app ([guide](docs/methodology/plan-and-app.md),
 [ADR 0016](docs/decisions/0016-plan-file-and-browser-app.md)) is the input
-surface, with import/export and one output folder per plan.
+surface, with import/export and one output folder per plan. Schema version 2
+selects processed tickers and separate outside/inside portfolio mixes
+([ADR 0017](docs/decisions/0017-ticker-portfolios-and-interactive-results.md)).
+The planner's first 2D pass now resamples joint daily returns for both
+portfolios, displays interactive return/risk results, and runs a selected
+number of those draws through the tax ledger. USD returns remain an explicit
+AUD proxy, and the more robust policy comparisons below remain planned.
 
 Before connecting thousands of paths, document the supported Australian rules, their sources, effective dates and boundary examples. Use ATO, legislation and Services Australia as the authoritative sources, with ASIC Moneysmart for explanatory cross-checks.
 
@@ -278,7 +284,13 @@ Deliverable: inspectable examples of retiring before super access, retiring afte
 
 ### 2D. Stochastic retirement and withdrawal policies
 
-Connect the validated ledger to the Stage 1 generators. First compare constant real spending, a percentage of current wealth, and a guardrail policy with an essential-spending floor and adjustable discretionary spending.
+The first connection of stationary-bootstrap daily market paths to the
+validated ledger is implemented in the planner. Complete-path results and
+unsupported draws are reported separately. Next compare constant real
+spending, a percentage of current wealth, and a guardrail policy with an
+essential-spending floor and adjustable discretionary spending. Extend
+generator comparison and data/currency sensitivity before drawing planning
+conclusions.
 
 Use fixed planning horizons, including very long early-retirement cases. Then add survival-weighted outcomes using Australian mortality data and explicit mortality-improvement assumptions. The ABS period life tables do not themselves include assumed future improvements; see [ABS methodology](https://www.abs.gov.au/methodologies/life-expectancy-methodology/2022-2024).
 

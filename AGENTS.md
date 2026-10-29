@@ -5,7 +5,7 @@
 - This repository is `mwilczynska/financial_simulations`. Use `financial_simulations` for the working-folder and Python-package name.
 - Keep the simulation core in Python. Consume local processed data from the sibling `financial_datasets` project and portfolio weights from `portfolio_optimisation` through explicit adapters.
 - Daily returns are required throughout loading, calibration, replay, resampling, generated paths, portfolio compounding and retirement accounting. Monthly/annual values are report summaries. Do not replace the core with a monthly or annual return engine.
-- For the current reporting pass, generate PNG plot images directly from Python and inspect them visually. Interactive plots are a later step. Do not create PDFs.
+- Generate PNG plot images directly from Python and inspect them visually. The retirement planner also has interactive plots; keep both outputs consistent. Do not create PDFs.
 - The default portfolio is `USLCAP3x` 40%, `ITT3x` 20%, `GOLDPM2x` 20% and `COMM` 20%, selected by the user from the `Optimised CURRENT` entry in the local `portfolio_plot17.py`. Audit relevant existing calculations there before replacing conventions; keep private script paths/content out of tracked files.
 - Distinguish trading observations from calendar days and scheduled events. Do not fabricate daily observed CPI or silently insert zero returns for missing trading data.
 - Initial retirement scope: one Australian tax resident, then couples. Preserve individual ownership, access dates and tax positions in the design.

@@ -32,15 +32,22 @@ CGT reform. AUD FX and Australian CPI data remain planned.
 .\.venv\Scripts\python.exe -m financial_simulations ui
 ```
 
-This opens a local app at http://localhost:8501. Enter your details (date of
-birth, retirement age, salary, holdings, super, portfolio mixes, spending,
-pension start and assumptions), press **Run plan**, and read the results.
+This opens a local app at http://localhost:8501. Select local processed
+tickers, set separate portfolio allocations and opening balances outside and
+inside super, then enter work, spending, pension and horizon details. Press
+**Run plan** to inspect each portfolio's historical behaviour and simulated
+return/risk ranges before the retirement outcomes. Charts are interactive,
+with hover values and explanations. The invented default uses the selected
+40/20/20/20 mix outside super and 100% `GLSTOCK` inside super.
 Import or export the plan as TOML or JSON, or save it to the git-ignored
 `plans/` folder. Every run writes one folder, `output/plans/<plan-name>/`.
 The same file runs from the command line:
-`python -m financial_simulations plan plans/<name>.toml`. Until AUD market
-data are added, returns are deterministic assumed AUD growth per asset, and
-runs stop before Age Pension age. See the
+`python -m financial_simulations plan plans/<name>.toml`. The app derives
+full-sample descriptive returns and a cash-contribution proxy from local
+processed data; no annual return or yield is entered. It resamples joint
+daily USD returns and explicitly uses them as an AUD proxy in the retirement
+ledger until FX and Australian distribution data are available. Runs stop
+before Age Pension age. See the
 [plan and app guide](docs/methodology/plan-and-app.md).
 
 ## Development
@@ -68,9 +75,10 @@ checkouts, as described in [the plan](PLAN.md). From this repository:
 .\.venv\Scripts\python.exe -m financial_simulations run scenarios/examples/cash_flows.toml --output output/cash-flows
 ```
 
-Each run writes `wealth.png`, `drawdown.png` and `allocation.png` directly from
-Python/Matplotlib. These are the first-pass plot deliverables; interactive plots
-are a later extension. No PDFs are generated. The local HTML report embeds the
+Each Stage 1 baseline run writes `wealth.png`, `drawdown.png` and
+`allocation.png` directly from Python/Matplotlib. The retirement planner
+also provides interactive portfolio and ledger charts. No PDFs are generated.
+The local HTML report embeds the
 same images and links the full daily ledger, source observations, monthly/annual
 summaries and a versioned input/code manifest. All generated output stays ignored.
 

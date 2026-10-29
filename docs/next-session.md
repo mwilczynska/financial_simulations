@@ -10,9 +10,12 @@ Stage 1 (portfolio futures, 1A-1D) is implemented and validated within its
 documented scope. The user started Stage 2 on 2026-10-28. Stage 2A has a
 sourced 2026-27 rule register, tested rule functions and an auditable
 single-person daily ledger for that income year. AUD FX and Australian inflation are deferred
-by the user to a later date. Keep the user-selected default portfolio:
+by the user to a later date. Keep the Stage 1 user-selected default portfolio:
 `USLCAP3x` 40%, `ITT3x` 20%, `GOLDPM2x` 20%, `COMM` 20%, annual rebalancing.
-Generate PNGs directly from Python; never create PDFs.
+The retirement planner's invented default uses that mix outside super and
+100% `GLSTOCK` inside super; the planner compounds those holdings buy and hold.
+Generate PNGs directly from Python; the retirement planner also has
+interactive charts. Never create PDFs.
 
 | Area | Entry point | Method / decision | Evidence |
 | --- | --- | --- | --- |
@@ -22,7 +25,7 @@ Generate PNGs directly from Python; never create PDFs.
 | Gaussian benchmark, assumption grid | `compare` with `[parametric]` | [parametric](methodology/parametric.md), ADR [0007](decisions/0007-daily-parametric-assumptions.md) | [stage 1C](validation/stage-1c.md) |
 | GARCH(1,1) filtered historical simulation | `[volatility]` or `garch_fhs` | [volatility](methodology/volatility.md), ADR [0011](decisions/0011-garch-filtered-historical-simulation.md) | `tests/test_volatility.py` |
 | Calendar evaluation, targets, recovery, MC error | `compare` with `[evaluation]` | [evaluation](methodology/evaluation.md), ADR [0008](decisions/0008-calendar-evaluation-and-sampling-error.md) | [stage 1D](validation/stage-1d.md) |
-| Plan file and browser app | `financial-simulations ui`, `financial-simulations plan` | [plan and app](methodology/plan-and-app.md), ADR [0016](decisions/0016-plan-file-and-browser-app.md) | `tests/test_plan.py` |
+| Ticker plan and browser app | `financial-simulations ui`, `financial-simulations plan` | [plan and app](methodology/plan-and-app.md), ADR [0016](decisions/0016-plan-file-and-browser-app.md), [0017](decisions/0017-ticker-portfolios-and-interactive-results.md) | [planner validation](validation/plan-portfolios.md), `tests/test_plan.py`, `tests/test_plan_markets.py` |
 | Single-person daily retirement ledger | `run_ledger`, `scripts/ledger_example.py` | [ledger](methodology/retirement-ledger.md), ADR [0014](decisions/0014-single-person-ledger-conventions.md) | [stage 2A](validation/stage-2a.md), `tests/test_ledger.py` |
 | Australian 2026-27 tax and super rules | `rules.au` | [Australian rules](methodology/australian-rules.md), ADR [0013](decisions/0013-stage-2a-rule-register-scope.md), [register](rules/au-2026-27.md) | `tests/test_au_rules.py` |
 | Paired portfolios, source segments, tail diagnostic, holdouts | `paired`, `holdout` | [evaluation](methodology/evaluation.md#paired-portfolio-source-segment-and-holdout-studies), ADR [0012](decisions/0012-paired-holdout-and-segment-studies.md) | [stage 1D](validation/stage-1d.md), `tests/test_studies.py` |
@@ -67,16 +70,19 @@ These are conditional, nominal-USD results, not forecasts:
 ## Open next steps
 
 - Multi-year runs work with projected rule sets under an assumed CPI and
-  wage growth (ADR 0015). Next: SAPTO and Age Pension (runs stop before 67),
-  wealth-dependent withdrawal policies reconciled to the ledger, and
-  stochastic paths (2D).
-- The browser app and plan file (ADR 0016) are the user's input surface.
-  The user plans to add AUD market data next, so plan runs can use real
-  returns and the Stage 1 generators instead of deterministic assumed growth.
+  wage growth (ADR 0015). The planner now resamples processed joint daily
+  returns for separate outside/inside portfolios and runs selected draws
+  through the tax ledger (ADR 0017). Next: SAPTO and Age Pension (runs stop
+  before 67), wealth-dependent withdrawal policies, generator comparison,
+  and sensitivity to reconstructed history.
+- The browser app and schema-v2 plan file are the user's input surface.
+  The retirement ledger applies sampled USD returns as an explicit AUD
+  proxy. USD/AUD FX and Australian distribution tax data are needed before
+  interpreting results as Australian market scenarios.
 - Refresh the 2026-27 Medicare low-income thresholds when the ATO publishes
   them (currently a labelled assumption).
 - Optional Stage 1 extensions: residual trimming or stress scenarios for
-  GARCH-FHS, time-varying correlation, outer parameter sampling, and
-  interactive plots (a later reporting step).
+  GARCH-FHS, time-varying correlation and outer parameter sampling. The
+  retirement browser already has interactive charts.
 - AUD FX and Australian CPI datasets belong in `financial_datasets` when the
   user schedules them.
