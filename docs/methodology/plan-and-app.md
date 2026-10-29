@@ -316,6 +316,10 @@ positions them.
      nominal and in today's dollars, wealth at retirement, withdrawal rates,
      total tax);
    - wealth bands selectable by account;
+   - **wealth over time on every path**: each calculated path's month-end
+     total wealth as a translucent grey line, so overlapping paths darken and
+     density shows. Depleted paths are red, and a teal line marks the monthly
+     median. The data are `PlanRun.wealth_paths`;
    - every path's ending wealth, sorted. Hovering gives exact nominal and
      today's-dollar values, the account split and any shortfall; labelled
      10th, median and 90th percentile lines; depleted paths in red;

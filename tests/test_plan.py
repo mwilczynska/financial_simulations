@@ -277,3 +277,13 @@ def test_perpetual_withdrawal_rate_keeps_real_capital():
     assert ending == pytest.approx(1.025 ** 30)
     flat = np.full((1, months + 1), 100.0)
     assert perpetual_withdrawal_rates(flat, 0, 0.0, 0.025, 30)[0] == 0
+
+
+def test_run_keeps_every_paths_monthly_wealth(processed_fixture):
+    plan = quick_plan()
+    plan["market"]["retirement_paths"] = 3
+    run = run_plan(plan, None, market=load_plan_markets(plan["assets"], processed_fixture))
+    paths = run.wealth_paths
+    assert paths["Path"].nunique() == 3
+    median = paths.groupby("Date")["Total wealth"].median().to_numpy()
+    assert median == pytest.approx(run.retirement_bands["P50"].to_numpy())

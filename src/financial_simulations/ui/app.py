@@ -602,6 +602,30 @@ def quantile_bands(frame, by, field):
     return q
 
 
+def all_paths_chart(paths, marks):
+    """Every path's total wealth as a faint grey line: overlaps darken, so density is visible."""
+    import altair as alt
+
+    frame = paths.copy()
+    medians = frame.groupby("Date")["Total wealth"].median()
+    wide = float(frame["Total wealth"].quantile(0.95)) > 20 * max(1000.0, float(medians.max()))
+    count = frame["Path"].nunique()
+    opacity = min(0.45, max(0.12, 15 / count))
+    y = alt.Y("Total wealth:Q", title="Total wealth (nominal AUD" + (", log-like)" if wide else ")"),
+              scale=alt.Scale(type="symlog", constant=1000) if wide else alt.Scale(zero=True), axis=alt.Axis(format="$,.0f"))
+    lines = alt.Chart(frame).mark_line(strokeWidth=1.2).encode(
+        x=alt.X("Date:T", title=None, axis=year_axis(frame)), y=y, detail="Path:N",
+        color=alt.Color("Status:N", scale=alt.Scale(domain=["funded", "depleted"], range=["#4a4a4a", "#b23a3a"]),
+                        legend=alt.Legend(orient="bottom", title=None)),
+        opacity=alt.condition(alt.datum.Status == "depleted", alt.value(0.7), alt.value(opacity)),
+        tooltip=[alt.Tooltip("Path:N"), "Status:N", alt.Tooltip("Date:T", format="%b %Y"),
+                 alt.Tooltip("Total wealth:Q", format="$,.0f")])
+    median = alt.Chart(medians.reset_index()).mark_line(color="#126a63", strokeWidth=3).encode(
+        x="Date:T", y="Total wealth:Q",
+        tooltip=[alt.Tooltip("Date:T", format="%b %Y"), alt.Tooltip("Total wealth:Q", title="Median", format="$,.0f")])
+    return with_milestones(zoomable(alt.layer(lines, median).properties(height=620)), marks)
+
+
 def ending_wealth_chart(calculated, marks_text=True):
     """Every path's ending wealth, sorted: hover a dot for its exact values; the median and 10th/90th are labelled."""
     import altair as alt
@@ -1139,6 +1163,13 @@ does not cover (excluded, with the reason shown). Returns are the USD histories 
                + ("The axis is linear up to $1,000 and logarithmic above, so a very high upper tail does not flatten "
                   "the median. " if wide else "")
                + "Total wealth includes super that may not yet be accessible.")
+    if run.wealth_paths is not None:
+        st.subheader("Wealth over time on every path")
+        st.altair_chart(all_paths_chart(run.wealth_paths, marks), width="stretch")
+        st.caption(f"Each faint grey line is one of the {len(calculated)} calculated paths' total wealth at each month end "
+                   "(nominal). Lines are translucent, so where many paths overlap the grey darkens: the darkest areas are "
+                   "where most paths went. The teal line is the median at each month; red lines are depleted paths. Hover "
+                   "a line for its path number and value.")
     st.subheader("Ending wealth on every path")
     st.altair_chart(ending_wealth_chart(calculated), width="stretch")
     st.caption(f"Each dot is one path's total wealth on {run.result.daily.index[-1].date()}, sorted from lowest (left) to "
