@@ -224,8 +224,10 @@ tested rule functions ([methodology](docs/methodology/australian-rules.md),
 [ADR 0013](docs/decisions/0013-stage-2a-rule-register-scope.md)) and the auditable
 single-person daily [ledger](docs/methodology/retirement-ledger.md)
 ([ADR 0014](docs/decisions/0014-single-person-ledger-conventions.md),
-[validation](docs/validation/stage-2a.md)). Later-year rule sets, including the
-enacted 1 July 2027 CGT reform, are needed before multi-year runs.
+[validation](docs/validation/stage-2a.md)). Later years use [projected rule sets](docs/rules/au-projection.md)
+under an assumed CPI and wage growth, including the enacted 1 July 2027 CGT
+reform ([ADR 0015](docs/decisions/0015-projected-rules-and-cgt-reform.md)). Runs
+stop before Age Pension age until SAPTO and Age Pension are modelled.
 
 Before connecting thousands of paths, document the supported Australian rules, their sources, effective dates and boundary examples. Use ATO, legislation and Services Australia as the authoritative sources, with ASIC Moneysmart for explanatory cross-checks.
 

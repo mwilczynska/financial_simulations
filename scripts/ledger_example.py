@@ -1,8 +1,10 @@
-"""Run two illustrative 2026-27 single-person ledgers on a synthetic AUD market path.
+"""Run two illustrative five-year single-person ledgers on a synthetic AUD market path.
 
 The people, balances and market path are invented. Companion market data are
 USD, and AUD conversion is deferred, so this is a mechanics demonstration,
-not a projection. Outputs (CSV, JSON, PNG) go under output/stage2a-ledger.
+not a projection. Years after 2026-27 use projected rule sets with an assumed
+2.5% CPI and 3.5% wage growth. Outputs (CSV, JSON, PNG) go under
+output/stage2a-ledger.
 """
 
 import argparse
@@ -16,16 +18,19 @@ from financial_simulations.reporting.ledger import write_ledger_report
 from financial_simulations.retirement.ledger import (AssetIncome, Employment, LedgerScenario, Parcel, Pension, Person,
                                                      run_ledger)
 from financial_simulations.rules.au.parameters import load_ruleset
+from financial_simulations.rules.au.projection import ProjectionAssumptions, project_rulesets
 from financial_simulations.runner import code_manifest
 
 
-def synthetic_path(seed=2026):
-    dates = tuple(pd.bdate_range("2026-07-01", "2027-06-30").date)
-    rng = np.random.default_rng(seed)
-    # Daily log returns with 7%/6% annual drift and 15%/14% volatility; illustrative only.
-    drift, vol = np.array([0.07, 0.06]) / 252, np.array([0.15, 0.14]) / np.sqrt(252)
-    returns = np.expm1(drift - vol ** 2 / 2 + vol * rng.standard_normal((len(dates) - 1, 2)))
-    return MarketPath(dates, ("AUSHARES", "GLOBAL"), returns, "AUD")
+def synthetic_path():
+    """Deterministic 7% and 6% annual total-return growth: a mechanics fixture, not a market model.
+
+    Stochastic paths belong to the Stage 1 generators; a single random draw
+    would make this demonstration depend on an arbitrary seed.
+    """
+    dates = tuple(pd.bdate_range("2026-07-01", "2031-06-30").date)
+    daily = np.log1p(np.array([0.07, 0.06])) / 252
+    return MarketPath(dates, ("AUSHARES", "GLOBAL"), np.tile(np.expm1(daily), (len(dates) - 1, 1)), "AUD")
 
 
 SCENARIOS = {
@@ -49,16 +54,21 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", default="output/stage2a-ledger")
     args = parser.parse_args()
-    rules = load_ruleset("2026-27")
+    assumptions = ProjectionAssumptions(cpi_annual=0.025, wage_growth_annual=0.035)
+    years = project_rulesets(load_ruleset("2026-27"), "2030-31", assumptions)
     path = synthetic_path()
     for name, (title, scenario) in SCENARIOS.items():
-        result = run_ledger(path, scenario, {"2026-27": rules})
+        result = run_ledger(path, scenario, years)
         write_ledger_report(result, Path(args.output) / name, title,
-                            {"rules": rules.manifest(), "code": code_manifest(), "market": "synthetic AUD, seed 2026"})
-        annual = result.annual[0]
-        print(name, {"taxable_income": annual["assessment"].taxable_income, "net_tax": round(annual["assessment"].net_tax, 2),
-                     "spending_paid": round(annual["spending_paid"], 2), "shortfall": round(annual["shortfall"], 2),
-                     "end_total": round(result.daily["total"].iloc[-1], 2)})
+                            {"rules": {fy: r.manifest() for fy, r in years.items()}, "projection": vars(assumptions),
+                             "code": code_manifest(), "market": "deterministic synthetic AUD: 7% and 6% annual growth"})
+        for annual in result.annual:
+            a = annual["assessment"]
+            print(name, annual["financial_year"], {"taxable_income": a.taxable_income, "net_tax": round(a.net_tax, 2),
+                                                   "minimum_cgt": a.capital_gains_minimum_tax, "wato": a.wato,
+                                                   "spending_paid": round(annual["spending_paid"], 2),
+                                                   "shortfall": round(annual["shortfall"], 2)})
+        print(name, "end total", round(result.daily["total"].iloc[-1], 2))
 
 
 if __name__ == "__main__":

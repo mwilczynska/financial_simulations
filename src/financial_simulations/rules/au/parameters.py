@@ -10,7 +10,8 @@ import tomllib
 from financial_simulations.dates import as_date
 
 
-STATUSES = ("enacted", "published_indexed", "assumption")
+# projected: statutory indexation applied with an assumed index path (later years only).
+STATUSES = ("enacted", "published_indexed", "assumption", "projected")
 
 
 class UnsupportedRule(ValueError):
@@ -47,11 +48,24 @@ class RuleSet:
         return self.start <= as_date(day) <= self.end
 
     def assumptions(self) -> list[Parameter]:
-        return [p for p in self.parameters.values() if p.status == "assumption"]
+        return [p for p in self.parameters.values() if p.status in ("assumption", "projected")]
 
     def manifest(self) -> dict:
         return {"financial_year": self.financial_year, "verified": str(self.verified), "sha256": self.sha256,
                 "assumptions": {p.name: p.note for p in self.assumptions()}}
+
+    def derive(self, financial_year: str, changes: dict, sources: dict | None = None) -> "RuleSet":
+        """A later year's rule set: unchanged parameters keep their value and status, ``changes`` replace them."""
+        first = int(financial_year[:4])
+        parameters = dict(self.parameters)
+        all_sources = {**self.sources, **(sources or {})}
+        for name, parameter in changes.items():
+            if parameter.status not in STATUSES or parameter.source not in all_sources:
+                raise ValueError(f"{name}: invalid status or source.")
+            parameters[name] = parameter
+        digest = sha256((self.sha256 + financial_year + repr(sorted((k, repr(v)) for k, v in changes.items()))).encode())
+        return RuleSet(financial_year, date(first, 7, 1), date(first + 1, 6, 30), self.verified,
+                       MappingProxyType(parameters), MappingProxyType(all_sources), digest.hexdigest())
 
 
 def load_ruleset(financial_year: str = "2026-27") -> RuleSet:

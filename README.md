@@ -21,8 +21,9 @@ scoring. A batched many-path ledger with dated cash flows is ready for Stage 2.
 Stage 2A provides a sourced [2026-27 Australian rule register](docs/rules/au-2026-27.md),
 tested tax and super rule functions and a daily single-person
 [retirement ledger](docs/methodology/retirement-ledger.md) for that year
-(`python scripts/ledger_example.py` runs two synthetic examples). Multi-year
-runs, AUD FX and Australian inflation remain planned.
+(`python scripts/ledger_example.py` runs two five-year synthetic examples).
+Later years use projected rule sets with an assumed CPI, including the 2027
+CGT reform. AUD FX and Australian CPI data remain planned.
 
 ## Development
 

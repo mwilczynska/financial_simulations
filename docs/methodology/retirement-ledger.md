@@ -1,8 +1,9 @@
 # Single-person retirement ledger (Stage 2A)
 
-Date: 2026-10-28. Status: implemented for the 2026-27 income year and tested
-against hand calculations, the stand-alone rule functions and a daily
-reconciliation identity. Multi-year runs wait for later-year rule sets.
+Date: 2026-10-28. Status: implemented and tested against hand calculations,
+the stand-alone rule functions and a daily reconciliation identity. It runs
+across income years with [projected rule sets](../rules/au-projection.md)
+([ADR 0015](../decisions/0015-projected-rules-and-cgt-reform.md)).
 Decision: [ADR 0014](../decisions/0014-single-person-ledger-conventions.md).
 Rules: [Australian rules](australian-rules.md) and the
 [2026-27 register](../rules/au-2026-27.md). Evidence:
@@ -133,10 +134,13 @@ the rule-set hash and assumptions) and `ledger.png` directly from Python.
 
 ## Limitations
 
-- **Horizon.** Only 2026-27 rules exist, so runs cannot cross 1 July 2027. The
-  2027-28 rule set needs the enacted 14% rate, the Working Australians Tax
-  Offset and the CGT reform. The CGT reform needs Australian CPI and a
-  1 July 2027 valuation.
+- **Horizon.** Years after 2026-27 depend on an assumed CPI and wage growth.
+  Runs stop before Age Pension age (SAPTO is not implemented). A horizon
+  ending before 30 June reports the partial year as `unassessed_year`.
+- **CGT reform.** On 1 July 2027 each parcel held records its 30 June
+  close as the deemed reacquisition value. Later sales split into a deferred
+  gain and an indexed post-reform gain. Opening parcels for runs starting
+  after the reform must supply that value.
 - **Income split.** The income split is an assumption, not a fund's actual tax
   statement. Foreign income and credits, AMIT cost-base adjustments and
   capital-gain distributions are not modelled.

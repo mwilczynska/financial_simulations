@@ -135,6 +135,11 @@ title = "When you can withdraw your super (ATO)"
 url = "https://www.ato.gov.au/individuals-and-families/super-for-individuals-and-families/super/withdrawing-and-using-your-super/super-withdrawal-options"
 
 [[sources]]
+id = "services-australia-age-pension"
+title = "Who can get Age Pension (Services Australia)"
+url = "https://www.servicesaustralia.gov.au/who-can-get-age-pension"
+
+[[sources]]
 id = "ato-ecpi"
 title = "Exempt current pension income (ATO)"
 url = "https://www.ato.gov.au/individuals-and-families/super-for-individuals-and-families/self-managed-super-funds-smsf/smsf-administration-and-reporting/exempt-current-pension-income"
@@ -304,3 +309,9 @@ value = { large_balance = 3000000, very_large_balance = 10000000, rate = 0.15, a
 status = "enacted"
 source = "ato-div296-thresholds"
 note = "From 1 July 2026 (Act No. 8, 2026). 2026-27 liability depends only on TSB at 30 June 2027. Not implemented: scenarios above the large balance threshold are rejected."
+
+[parameters.age_pension_age]
+value = 67
+status = "enacted"
+source = "services-australia-age-pension"
+note = "SAPTO eligibility starts from Age Pension age; SAPTO is not implemented, so ledgers stop before a person reaches it."

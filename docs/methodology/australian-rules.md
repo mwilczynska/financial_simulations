@@ -31,7 +31,9 @@ that disagrees with the file name. It records the file's SHA-256 hash. The
 manifest lists every assumption and its reason, so a later report can show
 which results depend on values the law has not yet set.
 
-No future year is filled in silently. In law, the personal brackets, LITO
+Later years come from `project_rulesets` with a declared treatment per
+parameter; see the [projection register](../rules/au-projection.md) and
+[ADR 0015](../decisions/0015-projected-rules-and-cgt-reform.md). No future year is filled in silently. In law, the personal brackets, LITO
 and the Division 293 threshold are unindexed. Caps and the transfer balance
 cap are indexed in steps. The Medicare low-income thresholds are set by
 legislation each year. A later rule set must declare which of these
@@ -161,4 +163,21 @@ Pension, or the 2027 reforms. Whenever the ATO publishes the 2026-27 Medicare
 thresholds or other values change, update the TOML file, the register and
 the verification date in the same change.
 
-Revision history: 2026-10-28, first 2026-27 rule set and functions.
+## CGT reform, minimum tax and WATO (from 2027-28)
+
+Capital gain events carry a category: `standard` (before 1 July 2027),
+`deferred` (the pre-reform part of an asset held on 30 June 2027) or
+`post_reform`. Losses reduce post-reform gains first, then other
+non-discount gains, then discountable gains (taxpayer-favourable order).
+`indexation_factor` and `post_reform_gain` follow s960-275(1B) and
+s110-36(1A). The s119-10 minimum tax and the Working Australians Tax Offset
+(non-refundable) apply where the rule set defines them. Worked cases:
+
+- A $100,000 post-reform gain alone in 2027-28 gives 30% x $100,000 − $20,252
+  = $9,748 extra tax.
+- A $40,000 deferred gain plus a $10,000 post-reform gain gives $3,000 −
+  ($1,652 − $252) = $1,600.
+- Eight quarters at 2.5% CPI give an indexation factor of 1.051.
+
+Revision history: 2026-10-28, first 2026-27 rule set and functions; projected
+rule sets, CGT reform, minimum tax and WATO.

@@ -11,6 +11,7 @@ matplotlib.use("Agg")
 from matplotlib.figure import Figure
 from matplotlib.ticker import FuncFormatter
 import numpy as np
+import pandas as pd
 
 
 ACCOUNTS = (("cash", "Outside cash", "#9a8a2e"), ("outside_investments", "Outside investments", "#126a63"),
@@ -38,9 +39,9 @@ def write_ledger_report(result, output, title, manifest=None):
     with matplotlib.rc_context({"font.family": "DejaVu Sans", "font.size": 9}):
         figure = Figure(figsize=(12, 9.5), dpi=150, facecolor="#fafaf7")
         top, bottom = figure.subplots(2, 1, height_ratios=(3, 2))
-        figure.subplots_adjust(left=0.09, right=0.97, top=0.86, bottom=0.08, hspace=0.35)
+        figure.subplots_adjust(left=0.09, right=0.97, top=0.86, bottom=0.11, hspace=0.35)
         figure.suptitle(title, fontsize=16, fontweight="bold", x=0.035, ha="left", y=0.97)
-        figure.text(0.035, 0.925, "Daily account balances (AUD, nominal) | synthetic market path | tax liabilities settle after 30 June",
+        figure.text(0.035, 0.925, "Daily account balances (AUD, nominal) | synthetic market input | tax liabilities settle after 30 June",
                     color="#536369")
         stack = np.vstack([daily[column].to_numpy() for column, _, _ in ACCOUNTS])
         top.stackplot(daily.index, stack, labels=[label for _, label, _ in ACCOUNTS],
@@ -56,15 +57,16 @@ def write_ledger_report(result, output, title, manifest=None):
         columns = (("salary", "Salary (cash)", "#126a63", 1), ("employer_contributions", "Concessional contributions", "#386a98", 1),
                    ("pension_payments", "Pension payments", "#8363a0", 1), ("lump_sums", "Super lump sums", "#5b6770", 1),
                    ("spending_paid", "Spending paid", "#b76a42", -1), ("shortfall", "Spending shortfall", "#8c2f2f", -1))
-        monthly = daily[[c for c, *_ in columns]].resample("MS").sum()
+        quarterly = daily.index[-1] - daily.index[0] > pd.Timedelta(days=760)
+        monthly = daily[[c for c, *_ in columns]].resample("QS-JUL" if quarterly else "MS").sum()
         x = np.arange(len(monthly))
         width = 0.8 / len(columns)
         for i, (column, label, color, sign) in enumerate(columns):
             bottom.bar(x + (i - (len(columns) - 1) / 2) * width, sign * monthly[column], width, label=label, color=color)
         bottom.axhline(0, color="#8b989b", linewidth=0.7)
-        bottom.set_xticks(x, [d.strftime("%b %y") for d in monthly.index], fontsize=7)
+        bottom.set_xticks(x, [d.strftime("%b %y") for d in monthly.index], fontsize=7, rotation=90 if quarterly else 0)
         bottom.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v / 1000:,.0f}k"))
-        bottom.set_ylabel("Monthly flow")
+        bottom.set_ylabel("Quarterly flow" if quarterly else "Monthly flow")
         bottom.legend(loc="upper left", ncol=6, frameon=False, fontsize=8, bbox_to_anchor=(0, 1.18))
         for ax in (top, bottom):
             ax.grid(axis="y", alpha=0.2)

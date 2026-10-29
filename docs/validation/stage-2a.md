@@ -65,11 +65,45 @@ years being consumed; the fix and its regression test are in place.
 The suite has 160 tests, all passing on Python 3.14, and the repository
 check passes.
 
+## Projected years and the CGT reform (`tests/test_projection.py`, 7 tests)
+
+- **Projected rule sets** (2.5% CPI, 3.5% wage growth): the 14% rate is
+  marked enacted. Concessional caps are $32,500, $32,500 and $35,000 (2029-30
+  non-concessional $140,000, maximum contribution base $291,660). Transfer
+  balance caps are $2.1m then $2.2m, and the 2028-29 Division 296 threshold
+  is $3.15m. Medicare thresholds stay frozen as assumptions. Each year's hash
+  is unique.
+- **Indexation.** Eight quarters give a factor of 1.051; the same quarter or
+  deflation gives 1. Gains above the indexed cost are taxed, nothing between,
+  and an unindexed loss below cost; there is no indexation under 12 months.
+- **Minimum tax.** The cases give $9,748 (exempt: nil), nil for a
+  high-income taxpayer, $1,600 in the deferred-plus-post-reform mix, and nil
+  when losses absorb the gain.
+- **Working Australians offset.** $250 at $50,000 of labour income; nil at
+  $18,000 of net labour income and in 2026-27.
+- **Three-year ledger run.** The 1 July 2027 valuation equals the 30 June
+  close. Later sales split into deferred and post-reform gains, and the
+  2027-28 minimum-tax base equals the post-reform gains. The 2026-27 tax due
+  on Sunday 31 October 2027 is paid on Monday 1 November. A partial final
+  year is reported as unassessed.
+- **Pension across years.** The second year's minimum is reset from the
+  30 June balance and paid in full. Age Pension age stops the run, and a
+  post-reform start without the reform values is rejected.
+
+Floating-point noise briefly turned a $1,600 minimum tax into $1,599 before
+the statutory round-down. The calculation now removes noise below a cent
+first. The suite has 167 tests, all passing.
+
 ## Example run and visual review
 
-`python scripts/ledger_example.py` runs two invented people on a synthetic
-AUD path (seed 2026; 7% and 6% drift; 15% and 14% volatility). Outputs go to
-`output/stage2a-ledger/<scenario>/`.
+`python scripts/ledger_example.py` runs two invented people for five income
+years (2026-27 to 2030-31). The market input is deterministic 7% and 6%
+annual growth, and the projected rules assume 2.5% CPI and 3.5% wage growth.
+Outputs go to `output/stage2a-ledger/<scenario>/`. An earlier version used
+one random draw; over five years it fell 33% for the global asset, which
+made the demonstration depend on an arbitrary seed. Stochastic paths are
+left to the Stage 1 generators. The first-year results below are from the
+first, one-year version of the example.
 
 - **Early retiree at 54.** They stop work on 31 December 2026 after 13
   paydays and $14,800 of concessional contributions. The bridge is funded

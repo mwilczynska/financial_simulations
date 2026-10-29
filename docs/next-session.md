@@ -65,11 +65,11 @@ These are conditional, nominal-USD results, not forecasts:
 
 ## Open next steps
 
-- Multi-year ledger runs need 2027-28 and later rule sets with declared
-  per-parameter treatment, and the enacted 1 July 2027 CGT reform (needs an
-  Australian CPI input, which the user deferred). After that:
-  wealth-dependent withdrawal policies reconciled to the ledger, then
-  stochastic paths (2D).
+- Multi-year runs work with projected rule sets under an assumed CPI and
+  wage growth (ADR 0015). Next: SAPTO and Age Pension (runs stop before 67),
+  wealth-dependent withdrawal policies reconciled to the ledger, and
+  stochastic paths (2D). The user wants to discuss consolidating inputs and
+  outputs into one user-friendly, customisable surface before more modelling.
 - Refresh the 2026-27 Medicare low-income thresholds when the ATO publishes
   them (currently a labelled assumption).
 - Optional Stage 1 extensions: residual trimming or stress scenarios for

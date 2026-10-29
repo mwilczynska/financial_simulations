@@ -28,9 +28,9 @@ from financial_simulations.dates import as_date
 from financial_simulations.markets.path import MarketPath
 from financial_simulations.rules.au.parameters import RuleSet, UnsupportedRule, financial_year_of
 from financial_simulations.rules.au.superannuation import (
-    TransferBalanceAccount, access_date, add_business_days, age_on, apply_concessional, apply_non_concessional,
+    TransferBalanceAccount, access_date, add_business_days, age_on, apply_concessional, apply_non_concessional, birthday,
     concessional_cap, minimum_pension_payment, require_below_division_296, require_tax_free_benefits, super_guarantee)
-from financial_simulations.rules.au.tax import CapitalGainEvent, IncomeYear, assess
+from financial_simulations.rules.au.tax import CapitalGainEvent, IncomeYear, assess, post_reform_gain
 
 
 TOLERANCE = 1e-6
@@ -63,15 +63,20 @@ class AssetIncome:
 
 @dataclass(frozen=True)
 class Parcel:
+    """A CGT parcel. ``reform_value`` is its market value just before 1 July 2027, if held then."""
+
     asset: str
     units: float
     cost_base: float
     acquired: date
+    reform_value: float | None = None
 
     def __post_init__(self):
         object.__setattr__(self, "acquired", as_date(self.acquired))
         _money(self.units, "Parcel units", positive=True)
         _money(self.cost_base, "Parcel cost base")
+        if self.reform_value is not None:
+            _money(self.reform_value, "Parcel 1 July 2027 market value")
 
 
 @dataclass(frozen=True)
@@ -189,9 +194,12 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
     income = {a: scenario.income.get(a, AssetIncome()) for a in assets}
     if set(scenario.super_units) - set(assets) or any(not 0 <= u < float("inf") for u in scenario.super_units.values()):
         raise ValueError("Super units must be nonnegative and over path assets.")
+    reform = as_date(next(iter(rules_by_year.values()))["cgt_reform_start"])
     for parcel in scenario.outside_parcels:
         if parcel.asset not in assets or parcel.acquired > start:
             raise ValueError("Opening parcels must hold path assets acquired on or before the opening date.")
+        if start > reform and parcel.acquired < reform and parcel.reform_value is None:
+            raise ValueError("Parcels held on 30 June 2027 need their market value just before 1 July 2027.")
     # Without explicit weights, new money follows the opening holdings (opening unit prices are 1).
     opening_outside = {a: sum(p.units for p in scenario.outside_parcels if p.asset == a) for a in assets}
     outside_weights = _default_weights(scenario.outside_weights, opening_outside, assets, "Outside weights")
@@ -226,6 +234,8 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
 
     def start_year(rules):
         nonlocal unused
+        if birthday(person.born, rules["age_pension_age"]) <= rules.end:
+            raise UnsupportedRule(f"The person reaches Age Pension age by {rules.end}; SAPTO and Age Pension are not implemented.")
         cap = concessional_cap(rules, tsb_prior, unused)
         state.fy = {"rules": rules, "cap": cap, "concessional": 0.0, "non_concessional": 0.0, "labour": 0.0,
                     "sacrifice": 0.0, "unfranked": 0.0, "franked": 0.0, "credits": 0.0, "events": [],
@@ -269,12 +279,25 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
             sold = min(value, target)
             fraction = sold / value
             cost = parcel.cost_base * fraction
-            gain = sold - cost
-            state.fy["events"].append(CapitalGainEvent(parcel.acquired, day, gain))
-            log("sale", sold, "outside", asset=parcel.asset, gain=gain, acquired=str(parcel.acquired))
+            if day < reform:
+                gains = [CapitalGainEvent(parcel.acquired, day, sold - cost)]
+            else:
+                cpi = state.fy["rules"]["assumed_cpi_annual"]
+                if parcel.reform_value is None:  # acquired from 1 July 2027
+                    gains = [CapitalGainEvent(parcel.acquired, day, post_reform_gain(cost, sold, parcel.acquired, day,
+                                                                                     parcel.acquired, cpi), "post_reform")]
+                else:  # deemed sale just before, and reacquisition on, 1 July 2027
+                    reacquired = parcel.reform_value * fraction
+                    gains = [CapitalGainEvent(parcel.acquired, day, reacquired - cost, "deferred"),
+                             CapitalGainEvent(parcel.acquired, day, post_reform_gain(reacquired, sold, reform, day,
+                                                                                     parcel.acquired, cpi), "post_reform")]
+            state.fy["events"].extend(gains)
+            log("sale", sold, "outside", asset=parcel.asset, gain=sum(g.amount for g in gains), acquired=str(parcel.acquired),
+                **{f"{g.category}_gain": g.amount for g in gains})
             targets[parcel.asset] = target - sold
             if fraction < 1 - 1e-12:
-                remaining_parcels.append(Parcel(parcel.asset, parcel.units * (1 - fraction), parcel.cost_base - cost, parcel.acquired))
+                remaining_parcels.append(Parcel(parcel.asset, parcel.units * (1 - fraction), parcel.cost_base - cost, parcel.acquired,
+                                                None if parcel.reform_value is None else parcel.reform_value * (1 - fraction)))
         state.parcels = remaining_parcels
         return amount
 
@@ -318,6 +341,11 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
         rules = rules_by_year[financial_year_of(day)]
         if (day.month, day.day) == (7, 1) and day != start:
             start_year(rules)
+        if day == reform:
+            # Market value just before 1 July 2027 is the 30 June close, before today's return.
+            state.parcels = [Parcel(p.asset, p.units, p.cost_base, p.acquired, p.units * state.prices[p.asset])
+                             if p.acquired < reform and p.reform_value is None else p for p in state.parcels]
+            log("cgt_reform_valuation", sum(p.reform_value or 0.0 for p in state.parcels), "outside")
         flows = {k: 0.0 for k in ("market_pnl", "salary", "employer_contributions", "contributions_tax", "spending_paid",
                                   "shortfall", "tax_paid", "fund_tax", "distributions", "pension_payments", "lump_sums")}
         opening = (state.cash + sum(p.units * state.prices[p.asset] for p in state.parcels)
@@ -494,7 +522,17 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
         day += timedelta(days=1)
     daily = pd.DataFrame(rows).set_index("date")
     daily.index = pd.DatetimeIndex(daily.index, name="Date")
+    last = day - timedelta(days=1)
+    unassessed = None
+    if last != state.fy["rules"].end:
+        fy = state.fy
+        unassessed = {"financial_year": fy["rules"].financial_year, "through": str(last), "labour_income": fy["labour"],
+                      "franked_distributions": fy["franked"], "unfranked_distributions": fy["unfranked"],
+                      "franking_credits": fy["credits"], "capital_gain_events": len(fy["events"]),
+                      "net_realised_gains": sum(e.amount for e in fy["events"]),
+                      "concessional_contributions": fy["concessional"], "accumulation_income": fy["acc_income"]}
     outstanding = {"tax_liabilities": [dict(l, due=str(l["due"])) for l in state.liabilities],
+                   "unassessed_year": unassessed,
                    "pending_contributions": [{"due": str(d), "amount": a} for d, a, _ in state.pending],
                    "unscheduled_spending": [{"scheduled": str(d), "amount": a} for d, a in spending_due if a > 0],
                    "capital_losses_carried_forward": losses_bf, "unused_concessional": unused,

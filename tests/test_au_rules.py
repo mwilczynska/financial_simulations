@@ -94,8 +94,10 @@ def test_unsupported_tax_situations_fail_explicitly():
     with pytest.raises(ValueError, match="outside"):
         assess(IncomeYear(capital_events=(CapitalGainEvent("2020-01-01", "2027-07-01", 5),)), RULES)
     reformed = replace(RULES, start=date(2027, 7, 1), end=date(2028, 6, 30), financial_year="2027-28")
-    with pytest.raises(UnsupportedRule, match="indexation"):
+    with pytest.raises(ValueError, match="deferred or post_reform"):
         assess(IncomeYear(capital_events=(CapitalGainEvent("2020-01-01", "2027-07-01", 5),)), reformed)
+    with pytest.raises(UnsupportedRule, match="minimum capital gains"):
+        assess(IncomeYear(capital_events=(CapitalGainEvent("2020-01-01", "2027-07-01", 5, "post_reform"),)), reformed)
 
 
 @pytest.mark.parametrize("born, age", [("1959-12-31", 55), ("1964-06-30", 59), ("1964-07-01", 60), ("1990-01-01", 60)])
@@ -183,5 +185,5 @@ def test_every_rule_parameter_and_assumption_is_documented_in_the_register():
     for parameter in RULES.assumptions():
         row = next(line for line in register.splitlines() if f"`{parameter.name}`" in line)
         assert "Assumption" in row
-    assert all(s["url"].startswith(("https://www.ato.gov.au/", "https://www.legislation.gov.au/"))
+    assert all(s["url"].startswith(("https://www.ato.gov.au/", "https://www.legislation.gov.au/", "https://www.servicesaustralia.gov.au/"))
                for s in RULES.sources.values())
