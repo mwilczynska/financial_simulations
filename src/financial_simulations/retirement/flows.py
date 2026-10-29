@@ -28,11 +28,14 @@ def financial_year_end(day) -> int:
     return day.year + (day.month >= 7)
 
 
-def household_flows(daily: pd.DataFrame) -> pd.DataFrame:
+def household_flows(daily: pd.DataFrame, inflation: bool = False) -> pd.DataFrame:
     """One row per financial year and flow; ``AUD`` is signed (in positive, out negative).
 
     ``Opening`` and ``Closing`` are total wealth before the year's first day and
-    at its last; ``Net change`` equals the sum of the year's flows.
+    at its last; ``Net change`` equals the sum of the year's flows. For a frame
+    in today's dollars (``real_daily``) pass ``inflation=True``: an
+    ``Inflation`` flow then carries the buying power wealth lost in the year, so
+    the flows still sum to the net change.
     """
     years = daily.index.map(lambda d: financial_year_end(d.date()))
     rows = []
@@ -44,6 +47,9 @@ def household_flows(daily: pd.DataFrame) -> pd.DataFrame:
             rows.append({"FY ending": int(year), "Flow": label, "AUD": sign * float(part[column].sum()),
                          "Opening": opening, "Closing": closing, "Net change": closing - opening,
                          "Days": len(part)})
+        if inflation:
+            rows.append({"FY ending": int(year), "Flow": "Inflation", "AUD": closing - opening - _flows(part),
+                         "Opening": opening, "Closing": closing, "Net change": closing - opening, "Days": len(part)})
     return pd.DataFrame(rows)
 
 

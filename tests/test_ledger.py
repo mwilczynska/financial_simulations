@@ -414,3 +414,38 @@ def test_vanguard_limits_a_cut_to_the_floor_and_the_minimum_holds():
     assert "limited by floor" in second["action"]
     _, held = _falling_market_rules("vanguard", minimum=40000)
     assert held.iloc[1]["amount"] == pytest.approx(40000 * 1.025 ** 2) and "minimum" in held.iloc[1]["action"]
+
+
+def test_todays_dollars_keep_cpi_indexed_spending_flat_and_flows_reconcile_with_inflation():
+    from financial_simulations.retirement.flows import household_flows
+    from financial_simulations.retirement.real import real_daily
+    from financial_simulations.rules.au.projection import ProjectionAssumptions, project_rulesets
+
+    years = project_rulesets(RULES, "2028-29", ProjectionAssumptions(0.025, 0.035))
+    scenario = scenario_with(Person("1975-01-01", retirement_date="2026-01-01"), outside_cash=1000,
+                             outside_parcels=(Parcel("GL", 1000000, 1000000, "2020-01-01"),), annual_spending=48000,
+                             spending_growth=0.025)
+    result = run_ledger(market(end="2029-06-30", returns=0.0003), scenario, years)
+    real = real_daily(result.daily, 0.025)
+    assert real["total"].iloc[0] == pytest.approx(result.daily["total"].iloc[0])
+    last = result.daily.index[-1]
+    assert real["total"].iloc[-1] == pytest.approx(result.daily["total"].iloc[-1] / 1.025 ** ((last - result.daily.index[0]).days / 365.25))
+    flows = household_flows(real, inflation=True)
+    spending = flows.loc[flows["Flow"] == "Spending"].set_index("FY ending")["AUD"]
+    assert spending.tolist() == pytest.approx([-48000.0] * 3)
+    by_year = flows.groupby("FY ending")
+    assert (by_year["AUD"].sum() - by_year["Net change"].first()).abs().max() < 1e-6
+    assert (flows.loc[flows["Flow"] == "Inflation", "AUD"] < 0).all()
+
+
+def test_path_summary_reports_starting_spending_and_rate_in_todays_dollars():
+    from financial_simulations.retirement.ledger import SpendingRule
+    from financial_simulations.retirement.paths import _summarise
+
+    path = market(end="2027-06-30", returns=0.0)
+    scenario = scenario_with(Person("1975-01-01", retirement_date="2026-09-15"), outside_cash=50000,
+                             outside_parcels=(Parcel("GL", 950000, 950000, "2020-01-01"),), annual_spending=60000,
+                             retirement_spending=1.0, spending_rule=SpendingRule("fixed", start_rate=0.04))
+    outcome, _, _ = _summarise(0, run_ledger(path, scenario, YEARS), date(2026, 9, 15), 0.025)
+    assert outcome["Starting withdrawal rate"] == pytest.approx(0.04)
+    assert 0.04 * 900000 < outcome["Starting retirement spending"] < 0.04 * 1000000

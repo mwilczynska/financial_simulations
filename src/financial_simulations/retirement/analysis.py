@@ -8,6 +8,7 @@ import pandas as pd
 
 from financial_simulations.markets.resampling import Sampler, sample_indices
 from financial_simulations.retirement.plan import horizon, spending_growth
+from financial_simulations.retirement.real import stock_deflator
 from financial_simulations.rules.au.superannuation import birthday
 
 
@@ -246,14 +247,19 @@ def analyse_portfolios(plan: dict, market, target_dates, progress=None) -> Portf
     else:
         planning_end = None
 
+    # Future values are reported in today's dollars: each snapshot is deflated by the CPI assumption to its date.
+    # Volatility and drawdowns come from nominal daily returns; inflation changes them very little.
     paths, outcomes, annual = [], [], []
     pyears = (target_dates[-1] - target_dates[0]).days / 365.25
+    prices = stock_deflator([target_dates[pos] for pos in future_marks], target_dates[0], plan["assumptions"]["cpi_annual"])
     for title, series in future.items():
-        cagr = np.power(series.terminal / 100, 1 / pyears) - 1
+        real = series.snapshots / prices[None, :]
+        terminal = real[:, -1]
+        cagr = np.power(terminal / 100, 1 / pyears) - 1
         rates = swr.get(title, np.full(count, np.nan))
         lasting = perpetual.get(title, np.full(count, np.nan))
         for i in range(count):
-            outcomes.append({"Portfolio": title, "Path": i, "Terminal growth of 100": float(series.terminal[i]),
+            outcomes.append({"Portfolio": title, "Path": i, "Terminal growth of 100": float(terminal[i]),
                              "Annualised growth": float(cagr[i]), "Annualised volatility": float(series.volatility[i]),
                              "Maximum drawdown": float(series.max_drawdown[i]),
                              "Longest drawdown (years)": float(series.longest_underwater_days[i] / 365.25),
@@ -262,11 +268,11 @@ def analyse_portfolios(plan: dict, market, target_dates, progress=None) -> Portf
         for column, pos in enumerate(future_marks):
             if pos not in month_ends:
                 continue  # the retirement mark is only for withdrawal rates, not a month end
-            q = np.quantile(series.snapshots[:, column], QUANTILES)
+            q = np.quantile(real[:, column], QUANTILES)
             dq = np.quantile(series.drawdowns[:, column], QUANTILES)
             paths.append({"Date": target_dates[pos], "Portfolio": title, "P05": q[0], "P25": q[1], "P50": q[2], "P75": q[3],
                           "P95": q[4], "Drawdown P05": dq[0], "Drawdown P50": dq[2]})
-        for year, returns in _calendar_years(target_dates, future_marks, series.snapshots):
+        for year, returns in _calendar_years(target_dates, future_marks, real):
             annual += [{"Portfolio": title, "Path": i, "Year": int(year), "Return": float(v)} for i, v in enumerate(returns)]
     return PortfolioAnalysis(target_dates, indices, pd.DataFrame(historical), pd.DataFrame(paths), pd.DataFrame(outcomes),
                              pd.DataFrame(annual), pd.DataFrame(summaries), pd.DataFrame(historical_annual), shares, retire,

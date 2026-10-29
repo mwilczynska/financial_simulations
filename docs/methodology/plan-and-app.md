@@ -214,15 +214,20 @@ series and financial-year rows. Every calculated path is classified:
   Division 296 above $3 million. Its reason is shown, and the path is
   excluded from bands and rates, which are therefore conditional.
 
-Per path the planner reports:
+Per path the planner reports, in today's dollars (`retirement/real.py`,
+[ADR 0026](../decisions/0026-results-in-todays-dollars.md)):
 
-- ending wealth, nominal and deflated by `(1 + CPI) ** years` into
-  today's dollars;
+- ending wealth (and `Ending wealth, nominal`, kept for the CSV only);
 - ending outside and super/pension wealth, and wealth at the retirement date;
 - spending paid, shortfall, shortfall years, and the first shortfall date;
 - the date outside-super money (cash plus investments) first runs out;
 - unpaid tax, personal tax assessed and fund tax;
 - pension payments, and the pension balance at commencement;
+- retirement spending: the starting amount (twelve times the first monthly
+  need on or after the retirement date), the starting withdrawal rate (that
+  amount over total wealth the day before), the lowest spending paid in a
+  full retired year, the deepest cut below the start, and the number of
+  retired years more than 1% below it;
 - withdrawal rates.
 
 A **withdrawal rate** for a full financial year that starts on or after
@@ -266,9 +271,27 @@ working on. After a name change, **Rename** writes the new file and removes
 the old one; **Save** keeps both. **Open** loads a saved plan. Import and
 browser download sit in an expander.
 
-**Inflation.** An expander at the top of the Results tab says which numbers
-are nominal and which are adjusted for inflation. Everything is in nominal
-dollars unless it says "today's dollars".
+**Inflation.** Results are in today's dollars, the dollars of the plan's
+start date ([ADR 0026](../decisions/0026-results-in-todays-dollars.md)). An
+expander at the top of the Results tab explains the conversion:
+
+- A balance on date `d` is divided by `(1 + CPI) ** ((d - start) / 365.25)`.
+- A flow during a financial year is divided by `(1 + CPI) ** n`, where `n` is
+  the number of whole financial years since the opening year. That is the
+  step on which spending rises, so CPI-indexed spending is flat, and a
+  withdrawal rate (a year's flows over wealth on its 1 July) is unchanged.
+- An `Inflation` flow in the money in and out charts is the buying power
+  wealth lost in the year, so each year's flows still sum to the change in
+  real wealth.
+- Section 3 deflates each month-end portfolio value, so growth, ending value
+  and calendar-year returns are after inflation. Volatility and drawdowns
+  stay on nominal daily returns.
+- Section 2's history is nominal, because the source data have no
+  inflation series.
+- The ledger runs in nominal dollars; the event log and the CSV downloads in
+  section 5 are its nominal records.
+
+Inputs:
 
 - Spending is entered in today's dollars and rises with CPI, plus an
   optional real change (ADR 0025).
@@ -315,9 +338,9 @@ positions them.
    - calendar-year return bands.
 4. **Retirement outcomes.** An explanation of the ledger and the path
    classes. Then:
-   - headline metrics (paths calculated, share funded, median ending wealth
-     nominal and in today's dollars, wealth at retirement, withdrawal rates,
-     total tax);
+   - headline metrics (paths calculated, share funded, median ending wealth,
+     wealth at retirement, withdrawal rates, total tax), all in today's
+     dollars;
    - wealth bands selectable by account;
    - **risk statistics** above the all-paths chart:
      - *risk of ruin to the horizon*: the share of tax-ledger paths with any
@@ -340,8 +363,8 @@ positions them.
      highlights the nearest path: invisible points carry a Vega-Lite nearest
      selection on `Path`. The tooltip gives date, age, value and the path's
      ending wealth, shortfall and first retired-year withdrawal rate;
-   - every path's ending wealth, sorted. Hovering gives exact nominal and
-     today's-dollar values, the account split and any shortfall; labelled
+   - every path's ending wealth, sorted. Hovering gives the exact value,
+     the account split and any shortfall; labelled
      10th, median and 90th percentile lines; depleted paths in red;
    - in both money in and out charts, a dashed teal line for the amount
      **added to outside investments** from pay each year (`account_flows`
@@ -355,6 +378,15 @@ positions them.
      `retirement_annual` rows carry its `Flow: …` columns and its
      `Net change in wealth`. Medians of components do not add up, so the
      bars need not sum to the median net change; the chart says so;
+   - **spending in retirement**. With a percentage start, it shows the median
+     and 5th–95th percentile dollar amounts the percentage produced. With a
+     dollar start, it shows that amount as a percentage of wealth at
+     retirement (median and 5th–95th percentile). It also shows the share of
+     paths that ever spent more than 1% below the start, the 5th percentile
+     of each path's lowest retired year, the deepest cut, and bands of
+     spending paid in each full retired year. With a rule, the risk-of-ruin
+     estimate to the planning age is flagged as an overstatement, because it
+     assumes fixed spending;
    - withdrawal-rate bands by financial year. These are set against the
      combined portfolio's 5th-percentile and median sustainable rates, with
      an expanded explanation of how to read them;

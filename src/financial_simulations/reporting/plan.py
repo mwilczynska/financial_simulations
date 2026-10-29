@@ -13,12 +13,14 @@ import numpy as np
 import pandas as pd
 
 from financial_simulations.retirement.flows import account_flows, household_flows, milestones
+from financial_simulations.retirement.real import real_daily, real_events
 
 
 COLORS = {"Outside super": "#126a63", "Inside super": "#386a98", "Combined": "#b76a42"}
 FLOW_COLOURS = {"Take-home salary": "#126a63", "Super contributions": "#386a98", "Investment returns": "#9a8a2e",
                 "Interest on cash": "#4f8f3a",
-                "Spending": "#b76a42", "Income tax": "#8c2f2f", "Contributions tax": "#c2577a", "Super fund tax": "#8363a0"}
+                "Spending": "#b76a42", "Income tax": "#8c2f2f", "Contributions tax": "#c2577a", "Super fund tax": "#8363a0",
+                "Inflation": "#9aa3a8"}
 
 
 def _figure(title, subtitle, *, height=5.5):
@@ -76,7 +78,7 @@ def write_plan_plots(output: Path, plan, market, portfolios, retirement_paths, r
         axes = fig.subplots(len(groups), 1, sharex=True)
         fig.subplots_adjust(left=0.10, right=0.97, top=0.85, bottom=0.11, hspace=0.24)
         fig.text(0.10, 0.95, "Future portfolio growth ranges", fontsize=16, fontweight="bold", color="#19353a")
-        fig.text(0.10, 0.90, f"{plan['market']['paths']} shared stationary-bootstrap draws; growth of $100; USD-return convention", fontsize=9, color="#536369")
+        fig.text(0.10, 0.90, f"{plan['market']['paths']} shared stationary-bootstrap draws; growth of $100 in today's dollars; USD-return convention", fontsize=9, color="#536369")
         for ax, (title, part) in zip(axes, groups):
             dates = pd.to_datetime(part["Date"])
             ax.fill_between(dates, part["P05"], part["P95"], color=COLORS[title], alpha=0.13, label="5th–95th percentile")
@@ -98,8 +100,8 @@ def write_plan_plots(output: Path, plan, market, portfolios, retirement_paths, r
         fig.text(0.08, 0.905, f"{plan['market']['paths']} shared daily paths; outside and inside super overlaid; "
                  "dashed lines are medians", fontsize=9, color="#536369")
         outcomes = portfolios.outcomes
-        for ax, (field, label, log) in zip(axes.flat, (("Terminal growth of 100", "Ending value of $100 (log scale)", True),
-                                                       ("Annualised growth", "Annualised growth", False),
+        for ax, (field, label, log) in zip(axes.flat, (("Terminal growth of 100", "Ending value of $100, today's dollars (log)", True),
+                                                       ("Annualised growth", "Annualised growth after inflation", False),
                                                        ("Annualised volatility", "Annualised daily volatility", False),
                                                        ("Maximum drawdown", "Maximum drawdown", False))):
             values = {t: outcomes.loc[outcomes["Portfolio"] == t, field].to_numpy() for t in ("Outside super", "Inside super")}
@@ -124,7 +126,7 @@ def write_plan_plots(output: Path, plan, market, portfolios, retirement_paths, r
         complete = int((retirement_paths["Status"] != "unsupported").sum())
         total = len(retirement_paths)
         wide = wide_wealth_range(retirement_bands)
-        subtitle = f"{complete} of {total} daily tax-ledger paths calculated; nominal AUD proxy; unsupported draws excluded"
+        subtitle = f"{complete} of {total} daily tax-ledger paths calculated; today's dollars (AUD proxy); unsupported draws excluded"
         if wide:
             subtitle += "\nLog-like y-axis above $1,000 keeps central paths visible beside the upper tail"
         fig, ax = _figure("Retirement wealth range", subtitle)
@@ -136,7 +138,7 @@ def write_plan_plots(output: Path, plan, market, portfolios, retirement_paths, r
             ax.set_yscale("symlog", linthresh=1000)
             upper = float(retirement_bands["P95"].max())
             ax.set_yticks([0, *[10 ** power for power in range(3, 10) if 10 ** power <= upper]])
-        ax.set_ylabel("Total wealth (AUD proxy" + ("; log-like scale)" if wide else ")"))
+        ax.set_ylabel("Total wealth, today's dollars" + (" (log-like scale)" if wide else ""))
         ax.yaxis.set_major_formatter(FuncFormatter(_money))
         ax.set_ylim(bottom=0)
         _years(ax, dates)
@@ -148,10 +150,12 @@ def write_plan_plots(output: Path, plan, market, portfolios, retirement_paths, r
         ax.legend(frameon=False, ncol=3, fontsize=9, loc="upper center", bbox_to_anchor=(0.5, -0.09))
         fig.savefig(output / "retirement_range.png")
 
-        daily = representative.daily
-        flows = household_flows(daily)
+        cpi = plan["assumptions"]["cpi_annual"]
+        daily = real_daily(representative.daily, cpi)
+        flows = household_flows(daily, inflation=True)
         fig, ax = _figure("Money in and out each year",
-                          "Path nearest median ending wealth; years end 30 June; in above zero, out below; line = net change in wealth")
+                          "Path nearest median ending wealth; today's dollars; years end 30 June; in above zero, out below; "
+                          "line = net change in wealth")
         years = sorted(flows["FY ending"].unique())
         positive, negative = np.zeros(len(years)), np.zeros(len(years))
         for label, color in FLOW_COLOURS.items():
@@ -164,7 +168,7 @@ def write_plan_plots(output: Path, plan, market, portfolios, retirement_paths, r
             negative += np.where(values < 0, values, 0)
         net = flows.drop_duplicates("FY ending").set_index("FY ending").reindex(years)["Net change"]
         ax.plot(years, net, color="#19353a", marker="o", markersize=3, linewidth=1.6, label="Net change in wealth")
-        moves = account_flows(daily, representative.events)
+        moves = account_flows(daily, real_events(representative.events, daily.index[0], cpi))
         added = moves.loc[moves["Flow"] == "Savings invested"].groupby("FY ending")["AUD"].sum().reindex(years, fill_value=0)
         if added.abs().max() > 1e-6:
             ax.plot(years, added, color="#0b7a8a", linestyle="--", marker="s", markersize=4, linewidth=1.6,
@@ -175,7 +179,7 @@ def write_plan_plots(output: Path, plan, market, portfolios, retirement_paths, r
         for _, mark in milestones(plan, daily.index[0].date(), daily.index[-1].date()).iterrows():
             ax.axvline(mark["Position"], color="#5f6b73", linestyle="--", linewidth=1)
             ax.text(mark["Position"], ax.get_ylim()[1], " " + mark["Event"], fontsize=8, color="#3c474d", va="top")
-        ax.set_ylabel("AUD per year (year ending 30 June)")
+        ax.set_ylabel("Today's dollars per year (year ending 30 June)")
         ax.yaxis.set_major_formatter(FuncFormatter(_money))
         step = 5 if len(years) >= 25 else 2 if len(years) >= 12 else 1
         ax.set_xticks([y for y in years if y % step == 0 or step == 1])
