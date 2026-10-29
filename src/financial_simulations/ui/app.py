@@ -710,6 +710,44 @@ def quantile_bands(frame, by, field):
     return q
 
 
+MAX_LINE_POINTS = 60000
+
+
+def paths_image(paths, first, last, top, wide, opacity):
+    """All paths as translucent lines in a PNG data URL, drawn in the same (linear or symlog) space as the chart."""
+    import base64
+    import io
+
+    from matplotlib.collections import LineCollection
+    from matplotlib.figure import Figure
+
+    fig = Figure(figsize=(16, 8), dpi=100)
+    fig.patch.set_alpha(0)
+    ax = fig.add_axes([0, 0, 1, 1])
+    ax.set_axis_off()
+    ax.patch.set_alpha(0)
+    start = first.value
+    span = (last.value - start) or 1
+
+    def transform(values):
+        # Vega's symlog with constant C maps y to sign(y) * log1p(|y| / C); reproduce it so pixels line up.
+        return np.sign(values) * np.log1p(np.abs(values) / 1000) if wide else values
+
+    for status, colour, alpha in (("funded", "#4a4a4a", opacity), ("depleted", "#b23a3a", min(0.7, opacity * 3))):
+        part = paths.loc[paths["Status"] == status]
+        if part.empty:
+            continue
+        segments = [np.column_stack(((pd.to_datetime(g["Date"]).astype("int64").to_numpy() - start) / span,
+                                     transform(g["Total wealth"].to_numpy())))
+                    for _, g in part.groupby("Path", sort=False)]
+        ax.add_collection(LineCollection(segments, colors=colour, linewidths=1.1, alpha=alpha))
+    ax.set_xlim(0, 1)
+    ax.set_ylim(transform(np.array([0.0]))[0], transform(np.array([top]))[0])
+    buffer = io.BytesIO()
+    fig.savefig(buffer, format="png", transparent=True)
+    return "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode("ascii")
+
+
 def all_paths_chart(paths, marks, outcomes=None):
     """Every path's total wealth as a faint grey line (overlaps darken); the path nearest the pointer is highlighted.
 
@@ -719,24 +757,34 @@ def all_paths_chart(paths, marks, outcomes=None):
     """
     import altair as alt
 
-    lines_frame = paths[["Date", "Path", "Status", "Total wealth"]]
-    medians = lines_frame.groupby("Date")["Total wealth"].median()
+    medians = paths.groupby("Date")["Total wealth"].median()  # from every month of every path
+    # Thin the drawn lines in time (never the paths) so a large plan stays under about MAX_LINE_POINTS vertices.
+    months = sorted(paths["Date"].unique())
+    stride = max(1, -(-len(paths) // MAX_LINE_POINTS))
+    shown = set(months[::stride]) | {months[-1]}
+    lines_frame = paths.loc[paths["Date"].isin(shown), ["Date", "Path", "Status", "Total wealth"]]
     wide = float(lines_frame["Total wealth"].quantile(0.95)) > 20 * max(1000.0, float(medians.max()))
     count = lines_frame["Path"].nunique()
     opacity = min(0.45, max(0.04, 15 / count))
+    top = float(paths["Total wealth"].max()) * 1.02 or 1.0
+    first, last = pd.Timestamp(paths["Date"].min()), pd.Timestamp(paths["Date"].max())
+    y_scale = (alt.Scale(type="symlog", constant=1000, domain=[0, top], nice=False) if wide
+               else alt.Scale(domain=[0, top], nice=False))
     y = alt.Y("Total wealth:Q", title="Total wealth (nominal AUD" + (", log-like)" if wide else ")"),
-              scale=alt.Scale(type="symlog", constant=1000) if wide else alt.Scale(zero=True), axis=alt.Axis(format="$,.0f"))
+              scale=y_scale, axis=alt.Axis(format="$,.0f"))
     hover = alt.selection_point(fields=["Path"], on="pointerover", nearest=True, clear="pointerout", empty=False,
                                 name="path_hover")
-    x = alt.X("Date:T", title=None, axis=year_axis(lines_frame))
-    lines = alt.Chart(lines_frame).mark_line().encode(
-        x=x, y=y, detail="Path:N",
-        color=alt.when(hover).then(alt.value("#0b3d45")).otherwise(
-            alt.Color("Status:N", scale=alt.Scale(domain=["funded", "depleted"], range=["#4a4a4a", "#b23a3a"]),
-                      legend=alt.Legend(orient="bottom", title=None))),
-        opacity=alt.when(hover).then(alt.value(1.0)).when(alt.datum.Status == "depleted")
-        .then(alt.value(min(0.7, opacity * 3))).otherwise(alt.value(opacity)),
-        strokeWidth=alt.when(hover).then(alt.value(3.5)).otherwise(alt.value(1.0)))
+    x = alt.X("Date:T", title=None, axis=year_axis(lines_frame), scale=alt.Scale(domain=[first.isoformat(), last.isoformat()]))
+    # Static background: nothing here depends on the hover, so it is drawn once and never re-styled.
+    # Every path is painted once on the server into a transparent image stretched over the chart's exact axes.
+    # The browser then draws one image instead of hundreds of lines, so hovering only redraws one path.
+    image = pd.DataFrame({"url": [paths_image(paths, first, last, top, wide, opacity)], "x": [first], "x2": [last],
+                          "y": [top], "y2": [0.0]})
+    lines = alt.Chart(image).mark_image(aspect=False, align="left", baseline="top").encode(
+        x=x, x2="x2:T", y=alt.Y("y:Q", scale=y_scale, title=y.title, axis=alt.Axis(format="$,.0f")), y2="y2:Q", url="url:N")
+    # Only the hovered path is drawn on top, so a hover redraws one line instead of restyling every path.
+    highlight = alt.Chart(lines_frame).transform_filter(hover).mark_line(color="#0b3d45", strokeWidth=3.5).encode(
+        x=x, y=y, detail="Path:N")
     # Invisible yearly points (each June month end, plus each path's last month) carry the hover and tooltip.
     dates = pd.to_datetime(paths["Date"])
     yearly = paths.loc[(dates.dt.month == 6) | (dates == dates.max())]
@@ -749,24 +797,25 @@ def all_paths_chart(paths, marks, outcomes=None):
               ("First retired-year withdrawal rate:Q", ".1%", "Path's first retired-year withdrawal rate"))
              if f.split(":")[0] in yearly]
     points = alt.Chart(yearly).mark_point(opacity=0, size=80).encode(
-        x="Date:T", y="Total wealth:Q",
+        x=x, y=y,
         tooltip=[alt.Tooltip("Path:N", title="Path"), "Status:N", alt.Tooltip("Date:T", format="%b %Y"), *age_tooltip(yearly),
                  alt.Tooltip("Total wealth:Q", title="Wealth on this date", format="$,.0f"), *extra]).add_params(hover)
     median_frame = add_age(medians.reset_index())
     median = alt.Chart(median_frame).mark_line(color="#126a63", strokeWidth=3).encode(
-        x="Date:T", y="Total wealth:Q",
+        x=x, y=y,
         tooltip=[alt.Tooltip("Date:T", format="%b %Y"), *age_tooltip(median_frame),
                  alt.Tooltip("Total wealth:Q", title="Median of all paths", format="$,.0f")])
     # One flat layer: nesting a chart that owns a selection inside another layer duplicates its signals.
     ZOOM_COUNT[0] += 1
     zoom = alt.selection_interval(bind="scales", zoom="wheel![event.shiftKey]", name=f"zoom_{ZOOM_COUNT[0]}")
-    layers = [lines.add_params(zoom), median, points]
+    layers = [lines.add_params(zoom), median, highlight, points]
     if marks is not None and not marks.empty:
         layers += [alt.Chart(marks).mark_rule(strokeDash=[4, 3], color="#5f6b73", strokeWidth=1.3).encode(
                        x="Date:T", tooltip=["Event:N", alt.Tooltip("Date:T", format="%d %b %Y")]),
                    alt.Chart(marks).mark_text(align="left", dx=4, fontSize=11, color="#3c474d").encode(
                        x="Date:T", y=alt.Y("Offset:Q", scale=None), text="Event:N")]
-    return alt.layer(*layers).properties(height=620)
+    # Canvas, not SVG: thousands of lines and hover cells as SVG elements made each hover take about two seconds.
+    return alt.layer(*layers).properties(height=620, usermeta={"embedOptions": {"renderer": "canvas"}})
 
 
 def ending_wealth_chart(calculated, marks_text=True):
