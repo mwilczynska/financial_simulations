@@ -1200,6 +1200,40 @@ as reliable as the assumption that the future resembles that history.
 """)
 
 
+# Widgets inside a fragment rerun only that fragment, so choosing an option does not redraw the whole results page
+# (which jumped the browser back to the top while the page above re-rendered).
+@st.fragment
+def portfolio_detail(run, names):
+    """The selected portfolio's fan, drawdowns and calendar-year returns."""
+    import altair as alt
+
+    plan, portfolios = run.plan, run.portfolios
+    marks = milestones(plan, portfolios.dates[0], portfolios.dates[-1])
+    selected = st.radio("Portfolio", names, horizontal=True, key=key("portfolio_result"))
+    fan = portfolios.paths.loc[portfolios.paths["Portfolio"] == selected]
+    st.altair_chart(band_chart(fan, "Growth of $100 in today's dollars · log scale", log=True, color=PALETTE[selected],
+                               marks=marks),
+                    width="stretch")
+    st.caption("Dark band: middle half of paths (25th–75th percentile). Light band: 90% of paths (5th–95th). Line: "
+               "median at each month. Dashed lines mark retirement, super access and the pension start. Hover for values; "
+               "drag to pan, Shift+scroll to zoom, double-click to reset.")
+    dd = fan.rename(columns={"Drawdown P05": "Bad (5th pct)", "Drawdown P50": "Typical (median)"})
+    dd = dd.melt("Date", value_vars=["Bad (5th pct)", "Typical (median)"], var_name="Path", value_name="Drawdown")
+    st.altair_chart(zoomable(alt.Chart(dd).mark_line().encode(
+        x=alt.X("Date:T", title=None, axis=year_axis(dd)), y=alt.Y("Drawdown:Q", title="Below previous peak", axis=alt.Axis(format=".0%")),
+        strokeDash=alt.StrokeDash("Path:N", legend=alt.Legend(orient="bottom", title=None)), color=alt.value(PALETTE[selected]),
+        tooltip=[alt.Tooltip("Date:T", format="%b %Y"), "Path:N", alt.Tooltip("Drawdown:Q", format=".1%")]
+    ).properties(height=360)), width="stretch")
+    st.caption(f"{selected}: how far below its running peak the portfolio sits at each month end, for the median "
+               "path and for the worst 5% of paths at that date.")
+    if not portfolios.annual_returns.empty:
+        annual = portfolios.annual_returns.loc[portfolios.annual_returns["Portfolio"] == selected]
+        st.altair_chart(band_chart(quantile_bands(annual, "Year", "Return"), "Calendar-year return after inflation", percent=True,
+                                   color=PALETTE[selected], x="Year:Q"), width="stretch")
+        st.caption(f"{selected}: spread of each full calendar year's return across paths. Partial first and last years "
+                   "are left out.")
+
+
 def section_future(run):
     import altair as alt
 
@@ -1240,15 +1274,7 @@ precise. These are resamples of history, not a forecast: they cannot produce a c
 block in the source, and they treat every era as equally likely.
 """)
     names = [p for p in ("Outside super", "Inside super", "Combined") if p in set(portfolios.paths["Portfolio"])]
-    selected = st.radio("Portfolio", names, horizontal=True, key=key("portfolio_result"))
-    fan = portfolios.paths.loc[portfolios.paths["Portfolio"] == selected]
-    marks = milestones(plan, portfolios.dates[0], portfolios.dates[-1])
-    st.altair_chart(band_chart(fan, "Growth of $100 in today's dollars · log scale", log=True, color=PALETTE[selected],
-                               marks=marks),
-                    width="stretch")
-    st.caption("Dark band: middle half of paths (25th–75th percentile). Light band: 90% of paths (5th–95th). Line: "
-               "median at each month. Dashed lines mark retirement, super access and the pension start. Hover for values; "
-               "drag to pan, Shift+scroll to zoom, double-click to reset.")
+    portfolio_detail(run, names)
     medians = portfolios.paths[["Date", "Portfolio", "P50"]]
     st.altair_chart(zoomable(alt.Chart(medians).mark_line(strokeWidth=2).encode(
         x=alt.X("Date:T", title=None, axis=year_axis(medians)),
@@ -1258,15 +1284,6 @@ block in the source, and they treat every era as equally likely.
         tooltip=[alt.Tooltip("Date:T", format="%b %Y"), "Portfolio:N", alt.Tooltip("P50:Q", format="$,.0f")]
     ).properties(height=380)), width="stretch")
     st.caption("Median paths side by side, to compare the portfolios' central outcomes on the same draws.")
-    dd = fan.rename(columns={"Drawdown P05": "Bad (5th pct)", "Drawdown P50": "Typical (median)"})
-    dd = dd.melt("Date", value_vars=["Bad (5th pct)", "Typical (median)"], var_name="Path", value_name="Drawdown")
-    st.altair_chart(zoomable(alt.Chart(dd).mark_line().encode(
-        x=alt.X("Date:T", title=None, axis=year_axis(dd)), y=alt.Y("Drawdown:Q", title="Below previous peak", axis=alt.Axis(format=".0%")),
-        strokeDash=alt.StrokeDash("Path:N", legend=alt.Legend(orient="bottom", title=None)), color=alt.value(PALETTE[selected]),
-        tooltip=[alt.Tooltip("Date:T", format="%b %Y"), "Path:N", alt.Tooltip("Drawdown:Q", format=".1%")]
-    ).properties(height=360)), width="stretch")
-    st.caption(f"{selected}: how far below its running peak the portfolio sits at each month end, for the median "
-               "path and for the worst 5% of paths at that date.")
 
     st.subheader("Distributions across paths")
     outcomes = portfolios.outcomes
@@ -1300,12 +1317,6 @@ block in the source, and they treat every era as equally likely.
     st.dataframe(table, width="stretch", hide_index=True, height=fit(table))
     st.caption("Read across a row: 5% of paths fall below the 5th-percentile value, half below the median. For "
                "drawdowns the 5th percentile is the severe end.")
-    if not portfolios.annual_returns.empty:
-        annual = portfolios.annual_returns.loc[portfolios.annual_returns["Portfolio"] == selected]
-        st.altair_chart(band_chart(quantile_bands(annual, "Year", "Return"), "Calendar-year return after inflation", percent=True,
-                                   color=PALETTE[selected], x="Year:Q"), width="stretch")
-        st.caption(f"{selected}: spread of each full calendar year's return across paths. Partial first and last years "
-                   "are left out.")
 
 
 FLOW_COLOURS = {"Take-home salary": "#126a63", "Super contributions": "#386a98", "Investment returns": "#9a8a2e",
@@ -1500,6 +1511,23 @@ def spending_section(plan, annual, calculated, marks):
                "spending that varies. Judge a rule on both: the risk of ruin above, and how low spending goes here.")
 
 
+@st.fragment
+def wealth_bands(run, calculated, marks):
+    """Wealth bands for the chosen account; a fragment so switching accounts redraws only this chart."""
+    names = list(dict.fromkeys(run.account_bands["Series"]))
+    choice = st.radio("Show", names, horizontal=True, key=key("wealth_series"))
+    bands = run.account_bands.loc[run.account_bands["Series"] == choice]
+    wide = wide_wealth_range(bands)
+    st.altair_chart(band_chart(bands, f"{choice}, today's dollars" + (" (log-like)" if wide else ""), symlog=wide, marks=marks),
+                    width="stretch")
+    st.caption(f"Month-end {choice.lower()} across the {calculated} calculated paths, in today's dollars: dark band the "
+               "middle half, light band 90% of paths, line the median. Dashed vertical lines mark retirement, when super "
+               "becomes accessible and when the pension starts. "
+               + ("The axis is linear up to $1,000 and logarithmic above, so a very high upper tail does not flatten "
+                  "the median. " if wide else "")
+               + "Total wealth includes super that may not yet be accessible.")
+
+
 def section_retirement(run):
     import altair as alt
 
@@ -1555,18 +1583,7 @@ does not cover (excluded, with the reason shown). Returns are the USD histories 
                    + "; ".join(f"{count} × {reason}" for reason, count in reasons.items()))
     marks = milestones(plan, run.result.daily.index[0].date(), run.result.daily.index[-1].date())
     st.subheader("Wealth over time")
-    names = list(dict.fromkeys(run.account_bands["Series"]))
-    choice = st.radio("Show", names, horizontal=True, key=key("wealth_series"))
-    bands = run.account_bands.loc[run.account_bands["Series"] == choice]
-    wide = wide_wealth_range(bands)
-    st.altair_chart(band_chart(bands, f"{choice}, today's dollars" + (" (log-like)" if wide else ""), symlog=wide, marks=marks),
-                    width="stretch")
-    st.caption(f"Month-end {choice.lower()} across the {len(calculated)} calculated paths, in today's dollars: dark band the "
-               "middle half, light band 90% of paths, line the median. Dashed vertical lines mark retirement, when super "
-               "becomes accessible and when the pension starts. "
-               + ("The axis is linear up to $1,000 and logarithmic above, so a very high upper tail does not flatten "
-                  "the median. " if wide else "")
-               + "Total wealth includes super that may not yet be accessible.")
+    wealth_bands(run, len(calculated), marks)
     if getattr(run, "wealth_paths", None) is not None:
         st.subheader("Wealth over time across many paths")
         ruin_statistics(run, calculated, marks)
@@ -1702,6 +1719,7 @@ total wealth; spending rises with inflation{"" if not plan['spending']['real_cha
                    "Scroll sideways for every column; hover a header for its full name.")
 
 
+@st.fragment
 def section_ledger(run):
     import altair as alt
 

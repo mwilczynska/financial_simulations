@@ -325,9 +325,12 @@ positions them.
 3. **Future simulations.** A step-by-step description of the calculation
    with the run's actual dates, row counts, block length, seed and path
    count. Then:
-   - a fan for the selected portfolio;
+   - for the selected portfolio, a fan, median and 5th-percentile drawdowns,
+     and calendar-year return bands. These sit in a Streamlit fragment
+     with the selector, as do the account choice in section 4 and the
+     whole of section 5. A choice then reruns only its own charts, so the
+     page does not redraw and jump back to the top;
    - median paths compared;
-   - median and 5th-percentile drawdown;
    - a note that this section shows investment returns only on $100, with
      no additions, withdrawals or tax; those are applied in sections 4 and 5;
    - four distributions (ending value on a log axis, annualised growth,
@@ -335,7 +338,6 @@ positions them.
      super and the combined portfolio with dashed medians;
    - the sustainable-withdrawal-rate distribution;
    - a percentile table;
-   - calendar-year return bands.
 4. **Retirement outcomes.** An explanation of the ledger and the path
    classes. Then:
    - headline metrics (paths calculated, share funded, median ending wealth,
