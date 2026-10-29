@@ -1289,6 +1289,57 @@ def typical_flows_section(annual, marks, paths):
                "investment returns vary most between paths. Section 5 shows one path whose bars add up exactly.")
 
 
+def ruin_statistics(run, calculated, marks):
+    """Risk of ruin and related measures for the tax-ledger paths, plus a to-95 estimate from the portfolio draws."""
+    plan = run.plan
+    end = run.result.daily.index[-1].date()
+    total = len(calculated)
+    depleted = calculated.loc[calculated["Status"] == "depleted"]
+    born = date.fromisoformat(plan["person"]["date_of_birth"])
+    access = marks.loc[marks["Event"].str.contains("Super accessible"), "Date"]
+    first = pd.to_datetime(depleted["First shortfall"].replace("", None)).dropna()
+    early = (first < access.iloc[0]).sum() if len(access) else 0
+    ages = [age_on(born, d.date()) for d in first]
+    outside_gone = (calculated["Outside money runs out"] != "").mean()
+    a, b = st.columns(2)
+    c, d = st.columns(2)
+    a.metric(f"Risk of ruin to {end.year}", share(len(depleted) / total),
+             help=f"Share of the {total} tax-ledger paths where some spending could not be paid, or tax could not be "
+                  f"paid, before the horizon ({end}). The planner's horizon stops before Age Pension age.")
+    b.metric("Ran short before super was accessible", share(early / total),
+             help="Paths whose first shortfall came before super could be withdrawn: outside money alone was not "
+                  "enough to bridge to the access date.")
+    c.metric("Median age money first ran short", f"{int(np.median(ages))}" if ages else "–",
+             help="Among paths that ran short, the median age at the first unpaid spending.")
+    d.metric("Outside money ever ran out", share(outside_gone),
+             help="Share of paths where cash and outside investments reached zero at some point (super may still "
+                  "have been available).")
+    combined = run.portfolios.outcomes.loc[run.portfolios.outcomes["Portfolio"] == "Combined", "Sustainable withdrawal rate"]
+    rate = calculated["First retired-year withdrawal rate"].median()
+    if combined.notna().any() and np.isfinite(rate):
+        age = plan["assumptions"]["planning_age"]
+        estimate = float((combined < rate).mean())
+        st.caption(f"**Estimated chance of running out by age {age}: {estimate:.0%}.** Your median first retired-year "
+                   f"withdrawal is {rate:.1%} of wealth; in {estimate:.0%} of the combined portfolio's market paths from "
+                   f"retirement to {age}, that rate (rising with spending growth) would run the portfolio to zero. This is "
+                   "a pre-tax, portfolio-only estimate that ignores the Age Pension and assumes fixed spending; the figures "
+                   "above come from the full tax ledger but stop before Age Pension age.")
+
+
+def ending_statistics(run, calculated):
+    """Ending-wealth risk measures: how often wealth ended lower than it started, in today's dollars."""
+    start = float(run.result.daily["total"].iloc[0])
+    real = calculated["Ending wealth, today's dollars"]
+    a, b = st.columns(2)
+    c, d = st.columns(2)
+    a.metric("Ended with less than you started (today's $)", share(float((real < start).mean())),
+             help=f"Share of paths whose ending wealth in today's dollars was below the starting {compact(start)}.")
+    b.metric("Ended below half of the start", share(float((real < 0.5 * start).mean())))
+    c.metric("Median ending wealth (today's $)", compact(float(real.median())))
+    d.metric("Bad case: 5th percentile (today's $)", compact(float(real.quantile(0.05))),
+             help="One path in twenty ended lower than this.")
+
+
 def section_retirement(run):
     import altair as alt
 
@@ -1360,6 +1411,7 @@ does not cover (excluded, with the reason shown). Returns are the USD histories 
                + "Total wealth includes super that may not yet be accessible.")
     if getattr(run, "wealth_paths", None) is not None:
         st.subheader("Wealth over time on every path")
+        ruin_statistics(run, calculated, marks)
         st.altair_chart(all_paths_chart(run.wealth_paths, marks, calculated), width="stretch")
         st.caption(f"All {len(calculated)} calculated paths are drawn. "
                    + f"Each faint grey line is one path's total wealth at each month end "
@@ -1368,6 +1420,7 @@ does not cover (excluded, with the reason shown). Returns are the USD histories 
                    "a line to highlight that whole path and see its value, your age, and its ending wealth, shortfall and "
                    "withdrawal rate; the path number can be opened in section 5.")
     st.subheader("Ending wealth on every path")
+    ending_statistics(run, calculated)
     st.altair_chart(ending_wealth_chart(calculated), width="stretch")
     st.caption(f"Each dot is one path's total wealth on {run.result.daily.index[-1].date()}, sorted from lowest (left) to "
                "highest (right); the horizontal position is the share of paths that ended lower. Hover a dot for its "

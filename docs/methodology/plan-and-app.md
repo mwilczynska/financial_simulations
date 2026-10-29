@@ -316,6 +316,20 @@ positions them.
      nominal and in today's dollars, wealth at retirement, withdrawal rates,
      total tax);
    - wealth bands selectable by account;
+   - **risk statistics** above the all-paths chart:
+     - *risk of ruin to the horizon*: the share of tax-ledger paths with any
+       unpaid spending or tax;
+     - the share whose first shortfall came before super was accessible;
+     - the median age at the first shortfall;
+     - the share where outside money ever reached zero;
+     - an *estimated chance of running out by the planning age*: the share of
+       the combined portfolio's long draws whose rate that lasts to the
+       planning age is below the median first retired-year withdrawal rate.
+       It is pre-tax and portfolio-only, and labelled as such.
+
+     Above the ending-wealth chart, in today's dollars: the share of paths
+     ending below their starting wealth, the share ending below half of it,
+     the median and the 5th percentile;
    - **wealth over time on every path**: each calculated path's month-end
      total wealth as a translucent grey line, so overlapping paths darken and
      density shows. Depleted paths are red, and a teal line marks the monthly
