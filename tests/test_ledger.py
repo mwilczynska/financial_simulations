@@ -315,3 +315,36 @@ def test_retirement_spending_replaces_working_spending_from_the_retirement_date(
     before = paid[pd.to_datetime(paid["date"]) < pd.Timestamp("2027-01-01")]["requested"]
     after = paid[pd.to_datetime(paid["date"]) >= pd.Timestamp("2027-01-01")]["requested"]
     assert before.unique().tolist() == pytest.approx([5000.0]) and after.unique().tolist() == pytest.approx([3000.0])
+
+
+def _falling_market_rules(kind, minimum=0.0):
+    from financial_simulations.retirement.ledger import SpendingRule
+    from financial_simulations.rules.au.projection import ProjectionAssumptions, project_rulesets
+
+    years = project_rulesets(RULES, "2028-29", ProjectionAssumptions(0.025, 0.035))
+    path = market(end="2028-07-31", returns=-0.001)  # about -23% a year
+    scenario = scenario_with(Person("1975-01-01", retirement_date="2026-01-01"), outside_cash=1000,
+                             outside_parcels=(Parcel("GL", 1000000, 1000000, "2020-01-01"),), annual_spending=40000,
+                             spending_growth=0.025, spending_rule=SpendingRule(kind, minimum=minimum))
+    result = run_ledger(path, scenario, years)
+    return result, result.events[result.events["event"] == "spending_rule"]
+
+
+def test_guyton_klinger_cuts_after_the_withdrawal_rate_breaches_the_upper_guardrail():
+    result, reviews = _falling_market_rules("guyton_klinger")
+    first, second = reviews.iloc[0], reviews.iloc[1]
+    assert first["action"] == "start" and first["amount"] == pytest.approx(40000 * 1.025)
+    # A losing year with the rate above the start: no growth step, and the rate is still > 120% of the start: cut 10%.
+    assert "no increase after a losing year" in second["action"] and "cut 10%" in second["action"]
+    assert second["amount"] == pytest.approx(first["amount"] * 0.9)
+    july = result.events[(result.events["event"] == "spending") & (pd.to_datetime(result.events["scheduled"]) == pd.Timestamp("2028-07-01"))]
+    assert july["requested"].iloc[0] == pytest.approx(second["amount"] / 12)
+
+
+def test_vanguard_limits_a_cut_to_the_floor_and_the_minimum_holds():
+    _, reviews = _falling_market_rules("vanguard")
+    first, second = reviews.iloc[0], reviews.iloc[1]
+    assert second["amount"] == pytest.approx(first["amount"] * 1.025 * 0.975)
+    assert "limited by floor" in second["action"]
+    _, held = _falling_market_rules("vanguard", minimum=40000)
+    assert held.iloc[1]["amount"] == pytest.approx(40000 * 1.025 ** 2) and "minimum" in held.iloc[1]["action"]

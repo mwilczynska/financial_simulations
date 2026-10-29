@@ -64,7 +64,24 @@ Asset unit prices start at 1. On each day:
 7. **Spending** is scheduled on the opening day and on each 1st of the month,
    at annual spending/12, rising by `spending_growth` at each 1 July. From the
    retirement date the base becomes `retirement_spending` when it is given
-   (same base year, same growth). Needs
+   (same base year, same growth). A `spending_rule` other than `fixed` then
+   reviews spending each 1 July from retirement
+   ([ADR 0023](../decisions/0023-retirement-spending-rules.md)). The
+   withdrawal rate is the year's planned spending divided by total wealth at
+   the previous close. The first review records the starting rate `r0`.
+   - **Guyton–Klinger.** After a year with a negative market return, and
+     with the rate above `r0`, that year's growth step is skipped. Then
+     spending is cut by `step` if the rate is above `r0 * (1 + band)`, or
+     raised by `step` if it is below `r0 * (1 - band)`. Defaults are
+     `band = 20%` and `step = 10%`.
+   - **Vanguard.** The target is `r0` times wealth. The change from last
+     year's amount, after the growth step, is limited to `+ceiling` and
+     `-floor`. Defaults are 5% and 2.5%.
+   - **Minimum.** Neither rule goes below `minimum` (grown like spending).
+
+   Spending scheduled from that 1 July uses the new amount. Each review is
+   logged as a `spending_rule` event with its reason. The year's
+   `annual` record carries `spending_rule_amount` and `spending_rule_rate`. Needs
    are paid on the first observation day on or after their scheduled date,
    using this order:
    1. outside cash;

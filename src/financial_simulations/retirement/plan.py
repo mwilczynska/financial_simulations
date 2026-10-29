@@ -24,7 +24,8 @@ import pandas as pd
 from financial_simulations.dates import as_date
 from financial_simulations.data.plan_markets import load_plan_markets, ticker_name
 from financial_simulations.markets.path import MarketPath
-from financial_simulations.retirement.ledger import (AssetIncome, Employment, LedgerScenario, Parcel, Pension, Person)
+from financial_simulations.retirement.ledger import (AssetIncome, Employment, LedgerScenario, Parcel, Pension, Person,
+                                                     SpendingRule)
 from financial_simulations.rules.au.parameters import financial_year_of, load_ruleset
 from financial_simulations.rules.au.projection import ProjectionAssumptions, project_rulesets
 from financial_simulations.rules.au.superannuation import birthday
@@ -34,6 +35,7 @@ SCHEMA_VERSION = 2
 RULES_START = date(2026, 7, 1)
 REBALANCE = ("annual", "none")
 SAVING = ("surplus", "fixed")
+SPENDING_RULES = ("fixed", "guyton_klinger", "vanguard")
 
 
 class PlanError(ValueError):
@@ -145,7 +147,8 @@ def normalize_plan(raw: dict) -> dict:
                "outside": {"cash", "cash_buffer", "investment_balance", "opening_cost_base", "opening_acquired", "weights",
                            "rebalance", "saving", "contribution_per_year", "contribution_indexed", "cash_interest"},
                "super": {"balance", "weights", "rebalance", "total_super_balance_prior_30_june"},
-               "spending": {"annual", "annual_growth", "retirement_annual"},
+               "spending": {"annual", "annual_growth", "retirement_annual", "rule", "minimum", "guardrail_band",
+                            "guardrail_step", "ceiling", "floor"},
                "pension": {"start_age", "transfer_all", "amount"},
                "assumptions": {"cpi_annual", "wage_growth_annual", "planning_age"},
                "market": {"paths", "retirement_paths", "seed", "block_length"}}
@@ -211,6 +214,14 @@ def normalize_plan(raw: dict) -> dict:
     # Spending once retired, in the same first-year dollars; defaults to the pre-retirement amount.
     plan["spending"]["retirement_annual"] = c.number(spending, "retirement_annual", "spending", plan["spending"]["annual"],
                                                      low=0, high=1e8)
+    # How retirement spending responds to markets (see SpendingRule); "fixed" keeps the dollar schedule.
+    plan["spending"].update({
+        "rule": c.choice(spending, "rule", "spending", "fixed", SPENDING_RULES),
+        "minimum": c.number(spending, "minimum", "spending", 0.0, low=0, high=1e8),
+        "guardrail_band": c.number(spending, "guardrail_band", "spending", 0.20, low=0.01, high=0.9),
+        "guardrail_step": c.number(spending, "guardrail_step", "spending", 0.10, low=0.01, high=0.9),
+        "ceiling": c.number(spending, "ceiling", "spending", 0.05, low=0, high=0.9),
+        "floor": c.number(spending, "floor", "spending", 0.025, low=0, high=0.9)})
     plan["pension"] = {"start_age": c.number(pension, "start_age", "pension", 0, low=0, high=80),
                        "transfer_all": c.flag(pension, "transfer_all", "pension", True),
                        "amount": c.number(pension, "amount", "pension", 0.0, low=0, high=1e9)}
@@ -341,6 +352,9 @@ def build_inputs(plan: dict, *, market=None, returns=None):
         income={ticker: AssetIncome(market.income_yields[ticker], 0.0) for ticker in names},
         employment=employment, annual_spending=plan["spending"]["annual"], spending_growth=plan["spending"]["annual_growth"],
         retirement_spending=plan["spending"]["retirement_annual"],
+        spending_rule=SpendingRule(plan["spending"]["rule"], band=plan["spending"]["guardrail_band"],
+                                   step=plan["spending"]["guardrail_step"], ceiling=plan["spending"]["ceiling"],
+                                   floor=plan["spending"]["floor"], minimum=plan["spending"]["minimum"]),
         pension=pension, tsb_prior_30_june=plan["super"]["total_super_balance_prior_30_june"],
         outside_rebalance=plan["outside"]["rebalance"] == "annual", super_rebalance=plan["super"]["rebalance"] == "annual",
         outside_contribution_per_payday=(plan["outside"]["contribution_per_year"] / 26 if plan["outside"]["saving"] == "fixed"

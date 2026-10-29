@@ -28,6 +28,7 @@ Decision records preserve why Financial Simulations makes a material modelling o
 | [0020](0020-outside-contributions-stop-at-retirement.md) | 2026-10-29 | Accepted; implemented and locally validated | Surplus or fixed (optionally indexed) outside contributions that stop at retirement; sacrifice as a percentage |
 | [0021](0021-cash-interest-and-withdrawal-rates.md) | 2026-10-29 | Accepted; implemented and locally validated | Interest on cash; withdrawal rates to a planning age, and a rate that lasts indefinitely |
 | [0022](0022-payg-withholding.md) | 2026-10-29 | Accepted; implemented and locally validated | Estimated PAYG withholding on salary each payday; assessment settles the balance |
+| [0023](0023-retirement-spending-rules.md) | 2026-10-29 | Accepted; implemented and locally validated | Optional Guyton–Klinger and Vanguard retirement spending rules; fixed dollar spending stays the default |
 
 ## When to write a record
 

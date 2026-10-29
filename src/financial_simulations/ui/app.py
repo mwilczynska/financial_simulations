@@ -348,6 +348,61 @@ def inputs_investments(plan):
                                                   "Inside super the switch is modelled without tax (funds are assumed not to realise gains).")
 
 
+RULE_LABELS = {"fixed": "Fixed dollar amount (default)", "guyton_klinger": "Guyton–Klinger guardrails",
+               "vanguard": "Vanguard ceiling and floor"}
+
+
+def spending_rule_inputs(plan):
+    """Choose how retirement spending responds to markets; the default keeps a fixed dollar schedule."""
+    spending = plan["spending"]
+    st.subheader("How retirement spending responds to markets")
+    spending["rule"] = st.radio("Retirement spending rule", list(RULE_LABELS), index=list(RULE_LABELS).index(spending["rule"]),
+                                format_func=RULE_LABELS.get, key=key("spending_rule"))
+    if spending["rule"] == "fixed":
+        st.info("**Default: a fixed dollar amount.** You spend the retirement amount above every year, growing by your "
+                "spending growth, whatever the markets do. It is *not* a percentage of the portfolio: if markets fall, "
+                "spending stays the same and the withdrawal takes a bigger share of what is left, which is how plans "
+                "run out of money.")
+    elif spending["rule"] == "guyton_klinger":
+        st.info("**Guyton–Klinger guardrails** (Guyton and Klinger, 2006). The first 1 July after you retire sets your "
+                "starting *withdrawal rate*: that year's spending divided by total wealth. Each later 1 July:\n"
+                "1. After a year in which your investments lost money, skip that year's spending increase if the rate is "
+                "above the start.\n"
+                f"2. If the rate is more than {spending['guardrail_band']:.0%} above the start, **cut spending "
+                f"{spending['guardrail_step']:.0%}**.\n"
+                f"3. If it is more than {spending['guardrail_band']:.0%} below the start, **raise spending "
+                f"{spending['guardrail_step']:.0%}**.\n\n"
+                "In this planner's simulations it rarely runs out of money, but about one in five paths has a year more "
+                "than 20% below the starting amount.")
+        a, b = st.columns(2)
+        with a:
+            spending["guardrail_band"] = percent("Guardrail width %", spending["guardrail_band"], "gk_band", low=1, high=90,
+                                                 step=1.0, help="How far the withdrawal rate can move from its start before "
+                                                                "spending changes.")
+        with b:
+            spending["guardrail_step"] = percent("Change when a guardrail is hit %", spending["guardrail_step"], "gk_step", low=1,
+                                                 high=90, step=1.0)
+    else:
+        st.info("**Vanguard ceiling and floor** (Jaconetti and colleagues, Vanguard, 2013). The first 1 July after you "
+                "retire sets your starting *withdrawal rate*: that year's spending divided by total wealth. Each later "
+                "1 July spending aims for that rate times your current wealth. The change from last year (after the usual "
+                f"spending growth) is limited to **+{spending['ceiling']:.1%}** and **−{spending['floor']:.1%}**, so cuts "
+                "are small and gradual. In this planner's simulations cuts were gentler than Guyton–Klinger, but at a 5% "
+                "start it ran out about as often as fixed spending.")
+        a, b = st.columns(2)
+        with a:
+            spending["ceiling"] = percent("Largest yearly rise %", spending["ceiling"], "vg_ceiling", low=0, high=90, step=0.5)
+        with b:
+            spending["floor"] = percent("Largest yearly cut %", spending["floor"], "vg_floor", low=0, high=90, step=0.5)
+    if spending["rule"] != "fixed":
+        spending["minimum"] = money("Minimum spending, never cut below (AUD a year, first-year dollars; 0 = none)",
+                                    spending["minimum"], "spend_minimum",
+                                    help="Essential spending the rule will not cut below. It grows at the spending growth "
+                                         "rate. A higher minimum makes cuts shallower but raises the chance of running out.")
+        st.caption("Rules review spending once a year on 1 July, starting after your retirement date, using total wealth "
+                   "(cash, outside investments and super). Each review and its reason are in the event log in section 5.")
+
+
 def inputs_retirement(plan):
     st.subheader("Spending")
     a, b = st.columns(2)
@@ -366,6 +421,7 @@ def inputs_retirement(plan):
         plan["spending"]["annual_growth"] = percent("Spending growth %/yr", plan["spending"]["annual_growth"], "spendg", low=-20, high=20,
                                                     help="Set equal to CPI to keep spending's buying power constant. "
                                                          "Spending is entered in today's dollars for the first year.")
+    spending_rule_inputs(plan)
     st.subheader("Account-based pension")
     pension = plan["pension"]
     a, b = st.columns(2)
@@ -1272,6 +1328,15 @@ does not cover (excluded, with the reason shown). Returns are the USD histories 
     annual = run.retirement_annual.copy()
     annual["Period"] = annual["FY ending"].map(period_label)
     typical_flows_section(annual, marks, len(calculated))
+    spending_rows = annual.loc[annual["Spending paid"] > 0]
+    if not spending_rows.empty:
+        st.subheader("Spending each year across paths")
+        st.altair_chart(band_chart(quantile_bands(spending_rows, "FY ending", "Spending paid"), "Spending paid per year",
+                                   color="#b76a42", x="FY ending:Q", marks=marks), width="stretch")
+        rule = RULE_LABELS[plan["spending"]["rule"]]
+        st.caption(f"Spending actually paid each year across paths (nominal). Rule: **{rule}**. With a fixed amount the "
+                   "bands are narrow until money runs short; with Guyton–Klinger or Vanguard they widen after retirement as "
+                   "spending follows each path's markets. A partial first or last year shows less.")
     st.subheader("Withdrawal rate in each retired year")
     retired = annual.loc[annual["Full retired year"] & annual["Withdrawal rate"].notna()]
     if retired.empty:

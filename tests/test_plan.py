@@ -287,3 +287,18 @@ def test_run_keeps_every_paths_monthly_wealth(processed_fixture):
     assert paths["Path"].nunique() == 3
     median = paths.groupby("Date")["Total wealth"].median().to_numpy()
     assert median == pytest.approx(run.retirement_bands["P50"].to_numpy())
+
+
+def test_spending_rule_defaults_to_fixed_and_maps_to_the_ledger(processed_fixture):
+    plan = default_plan()
+    assert plan["spending"]["rule"] == "fixed" and plan["spending"]["minimum"] == 0
+    market = load_plan_markets(plan["assets"], processed_fixture)
+    plan["spending"].update(rule="guyton_klinger", minimum=30000.0, guardrail_band=0.25)
+    rule = build_inputs(plan, market=market)[1].spending_rule
+    assert (rule.kind, rule.minimum, rule.band, rule.step) == ("guyton_klinger", 30000.0, 0.25, 0.10)
+    plan["spending"]["rule"] = "vanguard"
+    run = run_plan({**plan, "market": {**plan["market"], "paths": 16, "retirement_paths": 2}}, None, market=market)
+    assert (run.result.events["event"] == "spending_rule").any()
+    plan["spending"]["rule"] = "percent"
+    with pytest.raises(PlanError, match="spending.rule: must be one of fixed, guyton_klinger, vanguard"):
+        normalize_plan(plan)

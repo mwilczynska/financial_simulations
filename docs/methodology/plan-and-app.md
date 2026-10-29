@@ -77,7 +77,7 @@ Schema version 2 uses:
 | `assets` | Selected local ticker codes |
 | `[outside]` | Cash, cash buffer, `cash_interest`, `investment_balance`, `opening_cost_base`, `opening_acquired`, `weights`, `rebalance`, `saving` (`surplus` or `fixed`), `contribution_per_year`, `contribution_indexed` |
 | `[super]` | Balance, prior 30 June total super balance, `weights`, `rebalance` |
-| `[spending]`, `[pension]`, `[assumptions]` | `annual` (before retirement), `retirement_annual` (from the retirement date; defaults to `annual`), `annual_growth`; pension transfer; projected-rule assumptions and `planning_age` |
+| `[spending]`, `[pension]`, `[assumptions]` | `annual` (before retirement), `retirement_annual` (from the retirement date; defaults to `annual`), `annual_growth`, `rule` (`fixed` default, `guyton_klinger`, `vanguard`), `minimum`, `guardrail_band`, `guardrail_step`, `ceiling`, `floor`; pension transfer; projected-rule assumptions and `planning_age` |
 | `[market]` | Portfolio path count, retirement path count, seed, mean block length |
 
 `outside.weights` and `super.weights` each sum to one. They represent the

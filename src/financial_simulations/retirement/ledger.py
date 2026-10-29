@@ -129,6 +129,36 @@ class Pension:
 
 
 @dataclass(frozen=True)
+class SpendingRule:
+    """How retirement spending responds to the portfolio, reviewed each 1 July from retirement.
+
+    ``fixed``: the scheduled dollar amount (first-year dollars grown at the spending growth rate), whatever markets do.
+    ``guyton_klinger``: Guyton and Klinger (2006) guardrails on the withdrawal rate (spending / total wealth on 1 July).
+    The first review sets the starting rate. Later reviews skip that year's growth step after a losing year if the
+    rate is above the start, then cut spending by ``step`` if the rate is more than ``band`` above the start, or raise
+    it by ``step`` if more than ``band`` below.
+    ``vanguard``: Vanguard's dynamic spending rule. Each year aims for the starting rate times current wealth, but a
+    change from last year's amount (after the spending growth step) is limited to ``+ceiling`` and ``-floor``.
+    ``minimum`` (first-year dollars, grown like spending) is a floor no rule cuts below; 0 means none.
+    """
+
+    kind: str = "fixed"
+    band: float = 0.20
+    step: float = 0.10
+    ceiling: float = 0.05
+    floor: float = 0.025
+    minimum: float = 0.0
+
+    def __post_init__(self):
+        if self.kind not in ("fixed", "guyton_klinger", "vanguard"):
+            raise ValueError("Spending rule must be fixed, guyton_klinger or vanguard.")
+        for name in ("band", "step", "ceiling", "floor"):
+            if not 0 <= getattr(self, name) < 1:
+                raise ValueError(f"Spending rule {name} must be a fraction between 0 and 1.")
+        _money(self.minimum, "Minimum spending")
+
+
+@dataclass(frozen=True)
 class LedgerScenario:
     person: Person
     outside_cash: float = 0.0
@@ -155,7 +185,8 @@ class LedgerScenario:
     stop_investing_at_retirement: bool = False
     cash_interest: float = 0.0  # annual effective rate on outside cash, credited daily and taxed as interest
     payg_withholding: bool = False
-    retirement_spending: float | None = None  # annual spending from the retirement date (same base year), if different  # withhold estimated salary tax each payday; the assessment settles the balance
+    retirement_spending: float | None = None  # annual spending from the retirement date (same base year), if different
+    spending_rule: SpendingRule = field(default_factory=SpendingRule)  # withhold estimated salary tax each payday; the assessment settles the balance
 
 
 @dataclass
@@ -411,12 +442,61 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
         log("shortfall", shortfall, "outside", purpose=kind)
         return paid, shortfall
 
+    rule = scenario.spending_rule
+    rule_state = {"factor": 1.0, "rate0": None, "previous": None, "fy_pnl": 0.0, "fy_open": None}
+
+    def review_spending(day, wealth):
+        """Apply the spending rule on 1 July once retired; spending scheduled from today uses the new factor."""
+        last_return = rule_state["fy_pnl"] / rule_state["fy_open"] if rule_state["fy_open"] else 0.0
+        rule_state["fy_pnl"], rule_state["fy_open"] = 0.0, wealth
+        if rule.kind == "fixed" or person.retirement_date is None or day < person.retirement_date or wealth <= TOLERANCE:
+            return
+        base = scenario.retirement_spending if scenario.retirement_spending is not None else scenario.annual_spending
+        scheduled = base * (1 + scenario.spending_growth) ** _years_since(start, day)
+        if scheduled <= 0:
+            return
+        planned = scheduled * rule_state["factor"]
+        rate = planned / wealth
+        action = "start"
+        if rule_state["rate0"] is None:
+            rule_state["rate0"] = rate
+        elif rule.kind == "guyton_klinger":
+            actions = []
+            if last_return < 0 and rate > rule_state["rate0"]:
+                rule_state["factor"] /= 1 + scenario.spending_growth  # skip this year's growth step
+                actions.append("no increase after a losing year")
+            rate = scheduled * rule_state["factor"] / wealth
+            if rate > rule_state["rate0"] * (1 + rule.band):
+                rule_state["factor"] *= 1 - rule.step
+                actions.append(f"cut {rule.step:.0%} (rate above the upper guardrail)")
+            elif rate < rule_state["rate0"] * (1 - rule.band):
+                rule_state["factor"] *= 1 + rule.step
+                actions.append(f"raise {rule.step:.0%} (rate below the lower guardrail)")
+            action = "; ".join(actions) or "hold"
+        else:  # vanguard
+            target = rule_state["rate0"] * wealth
+            last = rule_state["previous"] * (1 + scenario.spending_growth)
+            amount = min(max(target, last * (1 - rule.floor)), last * (1 + rule.ceiling))
+            rule_state["factor"] = amount / scheduled
+            action = ("follow target" if amount == target else "cut limited by floor" if amount > target
+                      else "rise limited by ceiling")
+        minimum = rule.minimum * (1 + scenario.spending_growth) ** _years_since(start, day)
+        if scheduled * rule_state["factor"] < minimum:
+            rule_state["factor"] = minimum / scheduled
+            action += "; held at the minimum"
+        rule_state["previous"] = scheduled * rule_state["factor"]
+        state.fy["rule_amount"] = rule_state["previous"]
+        state.fy["rule_rate"] = rule_state["previous"] / wealth
+        log("spending_rule", rule_state["previous"], "outside", rule=rule.kind, action=action, wealth=wealth,
+            withdrawal_rate=rule_state["previous"] / wealth, starting_rate=rule_state["rate0"])
+
     start_year(rules_by_year[financial_year_of(start)])
     closing = None
     while day <= end:
         rules = rules_by_year[financial_year_of(day)]
         if (day.month, day.day) == (7, 1) and day != start:
             start_year(rules)
+            review_spending(day, closing)
         if day == reform:
             # Market value just before 1 July 2027 is the 30 June close, before today's return.
             state.parcels = [Parcel(p.asset, p.units, p.cost_base, p.acquired, p.units * state.prices[p.asset])
@@ -443,6 +523,7 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
             flows["market_pnl"] = (state.cash + _value(state.outside_units, state.prices)
                                    + _value(state.super_acc, state.prices) + _value(state.super_pen, state.prices)
                                    - opening - flows["interest"])
+            rule_state["fy_pnl"] += flows["market_pnl"]
         if day in quarter_ends:
             for asset in assets:
                 q = income[asset].annual_yield / 4
@@ -531,11 +612,10 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
             state.pension_paid = 0.0
             log("pension_commencement", amount, "pension", transfer_balance=state.tba.balance, minimum=state.pension_minimum)
         if day == start or day.day == 1:
-            base = scenario.annual_spending
-            if (scenario.retirement_spending is not None and person.retirement_date is not None
-                    and day >= person.retirement_date):
-                base = scenario.retirement_spending
-            spending_due.append((day, base * (1 + scenario.spending_growth) ** _years_since(start, day) / 12))
+            retired = person.retirement_date is not None and day >= person.retirement_date
+            base = scenario.retirement_spending if retired and scenario.retirement_spending is not None else scenario.annual_spending
+            factor = rule_state["factor"] if retired else 1.0
+            spending_due.append((day, base * (1 + scenario.spending_growth) ** _years_since(start, day) * factor / 12))
         if observation is not None:
             for when, need in [s for s in spending_due if s[1] > 0]:
                 paid, short = pay_need(need, "spending")
@@ -614,6 +694,7 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
                            "pension_minimum": state.pension_minimum if state.tba else None,
                            "pension_paid": state.pension_paid if state.tba else None,
                            "total_super_balance_30_june": tsb_prior, "spending_paid": fy["spending"],
+                           "spending_rule_amount": fy.get("rule_amount"), "spending_rule_rate": fy.get("rule_rate"),
                            "shortfall": fy["shortfall"], "unused_concessional_after": dict(unused),
                            "transfer_balance": state.tba.balance if state.tba else None})
             log("assessment", assessment.net_tax, "outside", financial_year=rules.financial_year,
@@ -626,6 +707,8 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
         if abs(total - expected) > 1e-6 + 1e-11 * abs(expected):
             raise ArithmeticError(f"Ledger reconciliation failed on {day}: {total} != {expected}.")
         closing = total
+        if rule_state["fy_open"] is None:
+            rule_state["fy_open"] = total  # opening wealth for the first year's return
         rows.append({"date": day, "is_observation": observation is not None, "cash": state.cash,
                      "outside_investments": outside_value, "accumulation": acc_value, "pension": pen_value,
                      "total": total, "super_accessible": day >= access, **flows,
