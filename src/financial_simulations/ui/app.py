@@ -440,11 +440,16 @@ ACCOUNTS = {"cash": ("Cash", "#9a8a2e"), "outside_investments": ("Outside invest
 MONEY = "$%,d"
 
 
+ZOOM_COUNT = [0]
+
+
 def zoomable(chart):
     """Drag to pan and Shift+scroll to zoom; plain scrolling keeps scrolling the page."""
     import altair as alt
 
-    zoom = alt.selection_interval(bind="scales", zoom="wheel![event.shiftKey]")
+    # Explicit unique names: auto-generated ones can collide in layered charts ("Duplicate signal name").
+    ZOOM_COUNT[0] += 1
+    zoom = alt.selection_interval(bind="scales", zoom="wheel![event.shiftKey]", name=f"zoom_{ZOOM_COUNT[0]}")
     if isinstance(chart, alt.LayerChart):
         chart.layer[0] = chart.layer[0].add_params(zoom)
         return chart
@@ -654,7 +659,8 @@ def all_paths_chart(paths, marks, outcomes=None):
     opacity = min(0.45, max(0.12, 15 / count))
     y = alt.Y("Total wealth:Q", title="Total wealth (nominal AUD" + (", log-like)" if wide else ")"),
               scale=alt.Scale(type="symlog", constant=1000) if wide else alt.Scale(zero=True), axis=alt.Axis(format="$,.0f"))
-    hover = alt.selection_point(fields=["Path"], on="pointerover", nearest=True, clear="pointerout", empty=False)
+    hover = alt.selection_point(fields=["Path"], on="pointerover", nearest=True, clear="pointerout", empty=False,
+                                name="path_hover")
     extra = [alt.Tooltip(f, format=fmt, title=t) for f, fmt, t in
              (("Ending wealth:Q", "$,.0f", "Path's ending wealth"), ("Spending shortfall:Q", "$,.0f", "Path's spending shortfall"),
               ("First retired-year withdrawal rate:Q", ".1%", "Path's first retired-year withdrawal rate"))
@@ -679,7 +685,16 @@ def all_paths_chart(paths, marks, outcomes=None):
         x="Date:T", y="Total wealth:Q",
         tooltip=[alt.Tooltip("Date:T", format="%b %Y"), *age_tooltip(median_frame),
                  alt.Tooltip("Total wealth:Q", title="Median of all paths", format="$,.0f")])
-    return with_milestones(zoomable(alt.layer(lines, median, points).properties(height=620)), marks)
+    # One flat layer: nesting a chart that owns a selection inside another layer duplicates its signals.
+    ZOOM_COUNT[0] += 1
+    zoom = alt.selection_interval(bind="scales", zoom="wheel![event.shiftKey]", name=f"zoom_{ZOOM_COUNT[0]}")
+    layers = [lines.add_params(zoom), median, points]
+    if marks is not None and not marks.empty:
+        layers += [alt.Chart(marks).mark_rule(strokeDash=[4, 3], color="#5f6b73", strokeWidth=1.3).encode(
+                       x="Date:T", tooltip=["Event:N", alt.Tooltip("Date:T", format="%d %b %Y")]),
+                   alt.Chart(marks).mark_text(align="left", dx=4, fontSize=11, color="#3c474d").encode(
+                       x="Date:T", y=alt.Y("Offset:Q", scale=None), text="Event:N")]
+    return alt.layer(*layers).properties(height=620)
 
 
 def ending_wealth_chart(calculated, marks_text=True):
