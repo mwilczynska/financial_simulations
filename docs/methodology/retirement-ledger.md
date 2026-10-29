@@ -62,7 +62,9 @@ Asset unit prices start at 1. On each day:
    and leaves the rest in accumulation. An explicit amount that would exceed
    the cap stops the run, because excess transfer balance tax is not modelled.
 7. **Spending** is scheduled on the opening day and on each 1st of the month,
-   at annual spending/12, rising by `spending_growth` at each 1 July. Needs
+   at annual spending/12, rising by `spending_growth` at each 1 July. From the
+   retirement date the base becomes `retirement_spending` when it is given
+   (same base year, same growth). Needs
    are paid on the first observation day on or after their scheduled date,
    using this order:
    1. outside cash;

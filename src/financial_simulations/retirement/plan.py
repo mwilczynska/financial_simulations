@@ -145,7 +145,7 @@ def normalize_plan(raw: dict) -> dict:
                "outside": {"cash", "cash_buffer", "investment_balance", "opening_cost_base", "opening_acquired", "weights",
                            "rebalance", "saving", "contribution_per_year", "contribution_indexed", "cash_interest"},
                "super": {"balance", "weights", "rebalance", "total_super_balance_prior_30_june"},
-               "spending": {"annual", "annual_growth"},
+               "spending": {"annual", "annual_growth", "retirement_annual"},
                "pension": {"start_age", "transfer_all", "amount"},
                "assumptions": {"cpi_annual", "wage_growth_annual", "planning_age"},
                "market": {"paths", "retirement_paths", "seed", "block_length"}}
@@ -208,6 +208,9 @@ def normalize_plan(raw: dict) -> dict:
         c.problems.append("super.weights: required when the super balance is positive")
     plan["spending"] = {"annual": c.number(spending, "annual", "spending", 0.0, low=0, high=1e8),
                         "annual_growth": c.number(spending, "annual_growth", "spending", 0.0, low=-0.2, high=0.2)}
+    # Spending once retired, in the same first-year dollars; defaults to the pre-retirement amount.
+    plan["spending"]["retirement_annual"] = c.number(spending, "retirement_annual", "spending", plan["spending"]["annual"],
+                                                     low=0, high=1e8)
     plan["pension"] = {"start_age": c.number(pension, "start_age", "pension", 0, low=0, high=80),
                        "transfer_all": c.flag(pension, "transfer_all", "pension", True),
                        "amount": c.number(pension, "amount", "pension", 0.0, low=0, high=1e9)}
@@ -337,6 +340,7 @@ def build_inputs(plan: dict, *, market=None, returns=None):
         super_weights=plan["super"]["weights"],
         income={ticker: AssetIncome(market.income_yields[ticker], 0.0) for ticker in names},
         employment=employment, annual_spending=plan["spending"]["annual"], spending_growth=plan["spending"]["annual_growth"],
+        retirement_spending=plan["spending"]["retirement_annual"],
         pension=pension, tsb_prior_30_june=plan["super"]["total_super_balance_prior_30_june"],
         outside_rebalance=plan["outside"]["rebalance"] == "annual", super_rebalance=plan["super"]["rebalance"] == "annual",
         outside_contribution_per_payday=(plan["outside"]["contribution_per_year"] / 26 if plan["outside"]["saving"] == "fixed"

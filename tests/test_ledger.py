@@ -306,3 +306,12 @@ def test_payg_withholding_spreads_salary_tax_and_settles_only_the_balance():
     assert withheld.outstanding["tax_liabilities"][0]["amount"] == pytest.approx(0, abs=1e-6)
     assert plain.outstanding["tax_liabilities"][0]["amount"] == pytest.approx(assessed)
     assert withheld.daily["total"].iloc[-1] == pytest.approx(plain.daily["total"].iloc[-1] - assessed)
+
+
+def test_retirement_spending_replaces_working_spending_from_the_retirement_date():
+    result = run_ledger(market(), scenario_with(Person("1966-03-01", retirement_date="2027-01-01"), outside_cash=200000,
+                                                cash_buffer=200000, annual_spending=60000, retirement_spending=36000), YEARS)
+    paid = result.events[result.events["event"] == "spending"]
+    before = paid[pd.to_datetime(paid["date"]) < pd.Timestamp("2027-01-01")]["requested"]
+    after = paid[pd.to_datetime(paid["date"]) >= pd.Timestamp("2027-01-01")]["requested"]
+    assert before.unique().tolist() == pytest.approx([5000.0]) and after.unique().tolist() == pytest.approx([3000.0])

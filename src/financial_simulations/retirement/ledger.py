@@ -154,7 +154,8 @@ class LedgerScenario:
     outside_contribution_growth: float = 0.0  # applied each 1 July, like spending growth
     stop_investing_at_retirement: bool = False
     cash_interest: float = 0.0  # annual effective rate on outside cash, credited daily and taxed as interest
-    payg_withholding: bool = False  # withhold estimated salary tax each payday; the assessment settles the balance
+    payg_withholding: bool = False
+    retirement_spending: float | None = None  # annual spending from the retirement date (same base year), if different  # withhold estimated salary tax each payday; the assessment settles the balance
 
 
 @dataclass
@@ -530,7 +531,11 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
             state.pension_paid = 0.0
             log("pension_commencement", amount, "pension", transfer_balance=state.tba.balance, minimum=state.pension_minimum)
         if day == start or day.day == 1:
-            spending_due.append((day, scenario.annual_spending * (1 + scenario.spending_growth) ** _years_since(start, day) / 12))
+            base = scenario.annual_spending
+            if (scenario.retirement_spending is not None and person.retirement_date is not None
+                    and day >= person.retirement_date):
+                base = scenario.retirement_spending
+            spending_due.append((day, base * (1 + scenario.spending_growth) ** _years_since(start, day) / 12))
         if observation is not None:
             for when, need in [s for s in spending_due if s[1] > 0]:
                 paid, short = pay_need(need, "spending")

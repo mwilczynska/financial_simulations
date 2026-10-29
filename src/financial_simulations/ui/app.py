@@ -352,7 +352,16 @@ def inputs_retirement(plan):
     st.subheader("Spending")
     a, b = st.columns(2)
     with a:
-        plan["spending"]["annual"] = money("Annual spending (AUD, first year)", plan["spending"]["annual"], "spend")
+        same = plan["spending"]["retirement_annual"] == plan["spending"]["annual"]
+        plan["spending"]["annual"] = money("Annual spending before retirement (AUD, first year)", plan["spending"]["annual"],
+                                           "spend")
+        if st.checkbox("Spend the same once retired", same, key=key("spend_same")):
+            plan["spending"]["retirement_annual"] = plan["spending"]["annual"]
+        else:
+            plan["spending"]["retirement_annual"] = money(
+                "Annual spending once retired (AUD, in the same first-year dollars)", plan["spending"]["retirement_annual"],
+                "spend_retired", help="Both amounts are in today's dollars and grow at the spending growth rate. For example "
+                                      "$70,000 here with 2.5% growth is about $79,000 a year by the fifth year.")
     with b:
         plan["spending"]["annual_growth"] = percent("Spending growth %/yr", plan["spending"]["annual_growth"], "spendg", low=-20, high=20,
                                                     help="Set equal to CPI to keep spending's buying power constant. "
