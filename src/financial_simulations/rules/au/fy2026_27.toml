@@ -386,7 +386,7 @@ note = "Complying fund accumulation-phase income; retirement-phase earnings are 
 value = { large_balance = 3000000, very_large_balance = 10000000, rate = 0.15, additional_rate = 0.10 }
 status = "enacted"
 source = "ato-div296-thresholds"
-note = "From 1 July 2026 (Act No. 8, 2026). 2026-27 liability depends only on TSB at 30 June 2027. Not implemented: scenarios above the large balance threshold are rejected."
+note = "From 1 July 2026 (Act No. 8, 2026). 15% on total super earnings x the percentage of the TSB reference amount over the large threshold, plus 10% x the percentage over the very large threshold (each rounded to 2 decimal places); nil if earnings are not above nil. The reference amount is the greater of the TSB just before the year and at its end, except in 2026-27 (end only). Implemented by superannuation.division_296_tax; see ato-div296-calculation."
 
 [parameters.age_pension_age]
 value = 67

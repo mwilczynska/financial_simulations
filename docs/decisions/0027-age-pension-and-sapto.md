@@ -58,7 +58,8 @@ Option 3, for one single person at normal rates:
   above the $3 million Division 296 threshold, which is still unsupported.
   In a 40-path check of a 50-year private plan, 18 paths were excluded. The
   app already labels results as conditional when paths are excluded.
-  Implementing Division 296 is the next limit to lift.
+  Implementing Division 296 is the next limit to lift. (Implemented the
+  same day: [ADR 0028](0028-division-296-tax.md).)
 - **Daily revaluation.** The means test revalues assets daily rather than on
   Centrelink's schedule.
 - **Split of a part pension.** A part pension's taxable split is

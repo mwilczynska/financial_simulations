@@ -211,9 +211,11 @@ series and financial-year rows. Every calculated path is classified:
   in every band and rate. Before 2026-10-28 an unpaid tax debt stopped the
   ledger, which silently removed the worst paths. See
   [ADR 0019](../decisions/0019-retirement-path-results.md).
-- **unsupported:** an existing `UnsupportedRule` was reached, such as
-  Division 296 above $3 million. Its reason is shown, and the path is
-  excluded from bands and rates, which are therefore conditional.
+- **unsupported:** an existing `UnsupportedRule` was reached, such as an
+  excess transfer balance. Its reason is shown, and the path is excluded
+  from bands and rates, which are therefore conditional. Division 296 is
+  assessed rather than rejected since 2026-10-29
+  ([ADR 0028](../decisions/0028-division-296-tax.md)).
 
 Per path the planner reports, in today's dollars (`retirement/real.py`,
 [ADR 0026](../decisions/0026-results-in-todays-dollars.md)):
@@ -490,11 +492,11 @@ Leveraged synthetic histories can compound to very large values over decades;
 a log axis improves visibility, not credibility. Small numbers of complete
 ledger paths make tail percentiles and shortfall rates unstable. The cash
 proxy, zero franking, aggregate opening tax position and AUD return proxy
-limit tax interpretation. Division 296 is not implemented. Any ledger path whose
-total super balance passes $3 million at a 30 June is unsupported. On long
-horizons this excludes most paths: in a 34-year check, 37 of 40 paths. Long-horizon
-retirement statistics are therefore conditional on the low-growth paths,
-and the app says so.
+limit tax interpretation. Division 296 used to make every path with super
+above $3 million unsupported: 37 of 40 paths in a 34-year check. Since ADR
+0028 it is assessed, and a 40-path check of a 50-year plan had no
+unsupported paths. Because funds realise no gains in the ledger, the
+Division 296 tax charged is a lower bound.
 
 References: processed source data and provenance in the sibling
 `financial_datasets` project, identified by run-manifest hashes;

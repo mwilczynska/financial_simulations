@@ -24,7 +24,7 @@ import pandas as pd
 
 STOCKS = ("cash", "outside_investments", "accumulation", "pension", "total", "pending_contributions", "tax_liabilities")
 FLOWS = ("market_pnl", "salary", "employer_contributions", "contributions_tax", "spending_paid", "shortfall", "tax_paid",
-         "tax_unpaid", "fund_tax", "distributions", "pension_payments", "lump_sums", "interest", "age_pension")
+         "tax_unpaid", "fund_tax", "distributions", "pension_payments", "lump_sums", "interest", "age_pension", "division_296")
 
 
 def _fy_end(day) -> int:

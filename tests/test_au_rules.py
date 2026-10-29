@@ -7,7 +7,7 @@ from financial_simulations.rules.au.parameters import UnsupportedRule, financial
 from financial_simulations.rules.au.superannuation import (
     BringForward, TransferBalanceAccount, access_date, accumulation_earnings_tax, add_business_days, age_on,
     apply_concessional, apply_non_concessional, concessional_cap, minimum_pension_payment, non_concessional_available,
-    preservation_age, require_below_division_296, require_tax_free_benefits, round_to_ten, super_guarantee)
+    preservation_age, require_tax_free_benefits, round_to_ten, super_guarantee)
 from financial_simulations.rules.au.tax import (CapitalGainEvent, IncomeYear, assess, bracket_tax,
                                                 low_income_tax_offset, medicare_levy, net_capital_gain)
 
@@ -182,14 +182,11 @@ def test_minimum_pension_payments_and_rounding():
     assert round_to_ten(12500 * 182 / 366 / 2) == 3110
 
 
-def test_transfer_balance_division_296_and_fund_tax():
+def test_transfer_balance_and_fund_tax():
     account = TransferBalanceAccount(RULES["transfer_balance_cap"]).credit(2_000_000)
     with pytest.raises(UnsupportedRule):
         account.credit(200_000)
     assert account.debit(500_000).credit(600_000).balance == 2_100_000
-    require_below_division_296(3_000_000, RULES)
-    with pytest.raises(UnsupportedRule):
-        require_below_division_296(3_000_001, RULES)
     tax = accumulation_earnings_tax(10000, 9000, 0, 1000, RULES)
     assert tax["taxable_earnings"] == pytest.approx(17000) and tax["tax"] == pytest.approx(1550)
 
@@ -230,3 +227,24 @@ def test_age_pension_assets_and_income_tests_match_published_figures():
     # Work Bonus: $300 credit a fortnight offsets employment income; unused credit accrues to $11,800.
     assert apply_work_bonus(500, 0.0, RULES) == (200, 0.0)
     assert apply_work_bonus(0, 11700, RULES) == (0, 11800)
+
+
+
+def test_division_296_matches_the_ato_worked_examples():
+    from financial_simulations.rules.au.projection import ProjectionAssumptions, project_rulesets
+    from financial_simulations.rules.au.superannuation import division_296_tax
+
+    # Jordan: TSB $4m at 30 June 2027, earnings $100,000: 25% over, $25,000 taxable, $3,750 tax.
+    jordan = division_296_tax(0, 4_000_000, 100_000, RULES)
+    assert (jordan.percent_over_large, jordan.taxable_earnings, jordan.tax) == (25.0, 25_000, 3_750)
+    # Leanne: $3.5m, $28,500: 14.29% (rounded) gives $4,072.65 taxable and $610.90 tax.
+    leanne = division_296_tax(0, 3_500_000, 28_500, RULES)
+    assert leanne.percent_over_large == 14.29 and leanne.tax == pytest.approx(610.90, abs=0.01)
+    # Kelly: $12m, $500,000: 75% and 16.67% give $56,250 + $8,335 = $64,585.
+    assert division_296_tax(0, 12_000_000, 500_000, RULES).tax == pytest.approx(64_585)
+    # 2026-27 counts only the end balance; from 2027-28 the greater of the start and end (Andrew: $7,858.74).
+    assert division_296_tax(3_150_000, 2_950_000, 50_000, RULES).tax == 0
+    later = project_rulesets(RULES, "2027-28", ProjectionAssumptions(0.0, 0.0))["2027-28"]
+    assert division_296_tax(3_900_000, 2_920_000, 227_000, later).tax == pytest.approx(7_858.74, abs=0.01)
+    # Nil or negative earnings: no tax.
+    assert division_296_tax(0, 5_000_000, -10_000, RULES).tax == 0

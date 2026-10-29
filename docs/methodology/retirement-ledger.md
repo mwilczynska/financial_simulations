@@ -136,8 +136,15 @@ Asset unit prices start at 1. On each day:
     - Charge accumulation fund tax: 15% x (income + credits) − credits,
       selling units or crediting them. Credit retirement-phase franking
       credits to the pension.
-    - Update unused concessional cap amounts and the TSB at 30 June. A TSB
-      above the Division 296 threshold stops the run.
+    - Update unused concessional cap amounts and the TSB at 30 June.
+    - Assess Division 296: earnings are the year's super distributions and
+      franking credits, in accumulation and pension (funds realise no gains
+      in this ledger, and contributions are excluded). The reference balance
+      is the prior and current 30 June TSB
+      ([ADR 0028](../decisions/0028-division-296-tax.md)). The tax is
+      released from super, accumulation first, on 30 September 15 months
+      after the year ends; any remainder is paid personally. It appears as
+      the `division_296` flow.
     - Check that the pension minimum was met, unless the pension is
       exhausted.
 
@@ -202,8 +209,14 @@ the rule-set hash and assumptions) and `ledger.png` directly from Python.
 - **Income split.** The income split is an assumption, not a fund's actual tax
   statement. Foreign income and credits, AMIT cost-base adjustments and
   capital-gain distributions are not modelled.
-- **People and policies.** One person only. No Age Pension.
-- **Excess regimes.** Excess contributions, excess transfer balances,
-  Division 296 balances, early access and tax debts stop the run by design.
+- **People and policies.** One person only; the single Age Pension
+  ([age-pension.md](age-pension.md)).
+- **Division 296 earnings.** Funds realise no capital gains here, so
+  Division 296 is charged on distributions and franking credits only. Real
+  funds realise gains through turnover and member drawdowns, so the tax shown
+  is a lower bound.
+- **Excess regimes.** Excess contributions, excess transfer balances and
+  early access stop the run by design; tax that cannot be funded is recorded
+  as unpaid.
 
 Revision history: 2026-10-28, first implementation.

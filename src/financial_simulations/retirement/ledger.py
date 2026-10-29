@@ -29,6 +29,13 @@ Scope and conventions (see docs/methodology/retirement-ledger.md):
   assessable income, and each income year in which the person reaches Age
   Pension age is assessed with SAPTO. Without it, a ledger that reaches Age
   Pension age stops with ``UnsupportedRule``.
+* Division 296 tax is assessed each 30 June on the year's super earnings
+  (distributions and franking credits in accumulation and pension; funds
+  realise no gains here, and contributions are excluded) when the total super
+  balance is above the large balance threshold. It is released from super on
+  30 September 15 months after the income year ends (30 September 2028 for
+  2026-27): an assumed date, as the ATO requests fund reports from the April
+  after the following 30 June and tax is due 84 days after its notice.
 """
 
 from dataclasses import dataclass, field
@@ -43,7 +50,7 @@ from financial_simulations.rules.au.age_pension import apply_work_bonus, fortnig
 from financial_simulations.rules.au.parameters import RuleSet, UnsupportedRule, financial_year_of
 from financial_simulations.rules.au.superannuation import (
     TransferBalanceAccount, access_date, add_business_days, age_on, apply_concessional, apply_non_concessional, birthday,
-    concessional_cap, minimum_pension_payment, require_below_division_296, require_tax_free_benefits, super_guarantee)
+    concessional_cap, division_296_tax, minimum_pension_payment, require_tax_free_benefits, super_guarantee)
 from financial_simulations.rules.au.tax import CapitalGainEvent, IncomeYear, assess, post_reform_gain
 
 
@@ -241,6 +248,7 @@ class _State:
     pension_minimum: float = 0.0
     pension_paid: float = 0.0
     liabilities: list = field(default_factory=list)
+    division_296: list = field(default_factory=list)  # assessed Division 296 tax awaiting release from super
     pending: list = field(default_factory=list)
     fy: dict = field(default_factory=dict)
 
@@ -349,7 +357,8 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
         cap = concessional_cap(rules, tsb_prior, unused)
         state.fy = {"rules": rules, "cap": cap, "concessional": 0.0, "non_concessional": 0.0, "labour": 0.0,
                     "sacrifice": 0.0, "unfranked": 0.0, "franked": 0.0, "credits": 0.0, "events": [],
-                    "acc_income": 0.0, "acc_credits": 0.0, "pen_credits": 0.0, "spending": 0.0, "shortfall": 0.0,
+                    "acc_income": 0.0, "acc_credits": 0.0, "pen_income": 0.0, "pen_credits": 0.0, "spending": 0.0,
+                    "shortfall": 0.0,
                     "interest": 0.0, "withheld": 0.0, "withhold_per_pay": 0.0, "age_pension": 0.0,
                     "age_pension_taxable": 0.0}
         if scenario.payg_withholding and scenario.employment:
@@ -590,7 +599,7 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
             log("cgt_reform_valuation", sum(p.reform_value or 0.0 for p in state.parcels), "outside")
         flows = {k: 0.0 for k in ("market_pnl", "salary", "employer_contributions", "contributions_tax", "spending_paid",
                                   "shortfall", "tax_paid", "tax_unpaid", "fund_tax", "distributions", "pension_payments",
-                                  "lump_sums", "interest", "age_pension")}
+                                  "lump_sums", "interest", "age_pension", "division_296")}
         # Nothing changes overnight, so the opening value is the previous close.
         opening = closing if closing is not None else (state.cash + _value(state.outside_units, state.prices)
                                                        + _value(state.super_acc, state.prices) + _value(state.super_pen, state.prices))
@@ -632,8 +641,7 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
                     if units_map[asset]:
                         cash = per_unit * units_map[asset]
                         key = "acc" if account == "accumulation" else "pen"
-                        if key == "acc":
-                            state.fy["acc_income"] += cash
+                        state.fy[f"{key}_income"] += cash
                         state.fy[f"{key}_credits"] += cash * spec.franked_fraction * credit_ratio
                         log("distribution", cash, account, asset=asset)
                         buy(units_map, super_weights, cash, account)
@@ -745,6 +753,18 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
                     state.cash -= liability["amount"]
                     flows["tax_paid"] += liability["amount"]
                 log("tax_settlement", liability["amount"], "outside", financial_year=liability["financial_year"])
+            for item in [d for d in state.division_296 if d["due"] <= day]:
+                # Released from super (accumulation first, then the pension); any remainder is paid personally.
+                released = sell_units(state.super_acc, item["amount"])
+                released += sell_units(state.super_pen, item["amount"] - released)
+                paid, short = pay_need(item["amount"] - released, "tax") if item["amount"] - released > TOLERANCE else (0.0, 0.0)
+                if short > TOLERANCE:
+                    flows["tax_unpaid"] += short
+                    unpaid_tax.append({"financial_year": item["financial_year"], "due": str(day), "amount": short})
+                flows["division_296"] += released + paid
+                log("division_296_payment", released + paid, "super", financial_year=item["financial_year"],
+                    released_from_super=released)
+            state.division_296 = [d for d in state.division_296 if d["due"] > day]
             if state.tba is not None and day in month_ends:
                 months_left = (rules.end.year - day.year) * 12 + rules.end.month - day.month + 1
                 instalment = max(0.0, state.pension_minimum - state.pension_paid) / months_left
@@ -796,8 +816,18 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
                     and _value(state.super_pen, state.prices) > TOLERANCE):
                 raise ArithmeticError("Pension minimum was not met by 30 June.")
             unused = apply_concessional(fy["concessional"], fy["cap"], unused, rules)
-            tsb_prior = _value(state.super_acc, state.prices) + _value(state.super_pen, state.prices)
-            require_below_division_296(tsb_prior, rules)
+            tsb_end = _value(state.super_acc, state.prices) + _value(state.super_pen, state.prices)
+            # Division 296 fund earnings: fund taxable income less contributions plus exempt pension income. With no
+            # realised fund gains, that is the year's super distributions and franking credits.
+            earnings = fy["acc_income"] + fy["acc_credits"] + fy["pen_income"] + fy["pen_credits"]
+            div296 = division_296_tax(tsb_prior, tsb_end, earnings, rules)
+            if div296.tax > 0:
+                state.division_296.append({"due": date(rules.end.year + 1, 9, 30), "amount": div296.tax,
+                                           "financial_year": rules.financial_year})
+                log("division_296_assessment", div296.tax, "super", financial_year=rules.financial_year,
+                    reference_balance=div296.reference_balance, earnings=earnings,
+                    percent_over_large=div296.percent_over_large, percent_over_very_large=div296.percent_over_very_large)
+            tsb_prior = tsb_end
             annual.append({"financial_year": rules.financial_year, "assessment": assessment, "tax_due": str(due),
                            "concessional_contributions": fy["concessional"], "concessional_cap_available": fy["cap"].available,
                            "non_concessional_contributions": fy["non_concessional"], "accumulation_tax": accumulation_tax,
@@ -807,7 +837,8 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
                            "spending_rule_amount": fy.get("rule_amount"), "spending_rule_rate": fy.get("rule_rate"),
                            "shortfall": fy["shortfall"], "unused_concessional_after": dict(unused),
                            "age_pension": fy["age_pension"], "age_pension_taxable": fy["age_pension_taxable"],
-                           "sapto": assessment.sapto,
+                           "sapto": assessment.sapto, "division_296_tax": div296.tax,
+                           "division_296_earnings": earnings, "division_296_reference_balance": div296.reference_balance,
                            "transfer_balance": state.tba.balance if state.tba else None})
             log("assessment", assessment.net_tax, "outside", financial_year=rules.financial_year,
                 taxable_income=assessment.taxable_income, division_293=assessment.division_293_tax)
@@ -816,7 +847,8 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
         total = state.cash + outside_value + acc_value + pen_value
         expected = (opening + flows["market_pnl"] + flows["salary"] + flows["employer_contributions"] + flows["interest"]
                     + flows["age_pension"]
-                    - flows["contributions_tax"] - flows["spending_paid"] - flows["tax_paid"] - flows["fund_tax"])
+                    - flows["contributions_tax"] - flows["spending_paid"] - flows["tax_paid"] - flows["fund_tax"]
+                    - flows["division_296"])
         if abs(total - expected) > 1e-6 + 1e-11 * abs(expected):
             raise ArithmeticError(f"Ledger reconciliation failed on {day}: {total} != {expected}.")
         closing = total
@@ -841,6 +873,7 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
                       "concessional_contributions": fy["concessional"], "accumulation_income": fy["acc_income"],
                       "interest": fy["interest"], "payg_withheld": fy["withheld"], "age_pension": fy["age_pension"]}
     outstanding = {"tax_liabilities": [dict(l, due=str(l["due"])) for l in state.liabilities],
+                   "division_296": [dict(d, due=str(d["due"])) for d in state.division_296],
                    "unpaid_tax": unpaid_tax,
                    "unassessed_year": unassessed,
                    "pending_contributions": [{"due": str(d), "amount": a} for d, a, _ in state.pending],

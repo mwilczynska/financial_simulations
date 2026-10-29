@@ -183,9 +183,10 @@ A 40-path check of a long-horizon private plan behaved as expected:
 - wealthy paths received none until their assets fell;
 - SAPTO was used in eligible low-tax years.
 
-The same check found 18 of 40 paths above the Division 296 threshold, which
-is not implemented. Those paths are excluded, so long-horizon results are
-conditional on the others.
+The same check found 18 of 40 paths above the Division 296 threshold. At the
+time they were excluded; Division 296 has since been implemented
+([ADR 0028](../decisions/0028-division-296-tax.md)), and the same plan now has
+no unsupported paths.
 
 ## Limitations
 
@@ -194,9 +195,8 @@ conditional on the others.
 - Daily revaluation of assets, as described above.
 - 2026-27 values apply from 1 July, although rates for 1 July to 19
   September 2026 were lower (by under 3%).
-- The Division 296 tax on super balances above $3 million is still not
-  implemented. Long horizons on high-growth portfolios often exceed it, and
-  those paths are excluded.
+- Division 296 is assessed on distribution income only, a lower bound (ADR
+  0028).
 
 ## References
 

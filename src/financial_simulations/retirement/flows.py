@@ -21,7 +21,7 @@ HOUSEHOLD = (("salary", "Take-home salary", 1), ("employer_contributions", "Supe
              ("market_pnl", "Investment returns", 1), ("interest", "Interest on cash", 1), ("age_pension", "Age Pension", 1),
              ("spending_paid", "Spending", -1),
              ("tax_paid", "Income tax", -1), ("contributions_tax", "Contributions tax", -1),
-             ("fund_tax", "Super fund tax", -1))
+             ("fund_tax", "Super fund tax", -1), ("division_296", "Division 296 tax", -1))
 
 
 def financial_year_end(day) -> int:
@@ -73,6 +73,8 @@ def account_flows(daily: pd.DataFrame, events: pd.DataFrame) -> pd.DataFrame:
         add(d, "Super (accumulation)", "Fund tax", -values["fund_tax"])
         add(d, "Super (accumulation)", "Lump sums withdrawn", -values["lump_sums"])
         add(d, "Account-based pension", "Pension payments", -values["pension_payments"])
+        if "division_296" in values:
+            add(d, "Super (accumulation)", "Division 296 tax released", -values["division_296"])
     if not events.empty:
         purpose = events["purpose"] if "purpose" in events else pd.Series("", index=events.index)
         for _, event in events.iterrows():

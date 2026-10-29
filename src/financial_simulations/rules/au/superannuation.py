@@ -1,13 +1,15 @@
 """Taxed accumulation super and account-based pensions for one Australian individual.
 
 Scope: a standard taxed defined-contribution fund, taxed elements only, and
-benefits paid at age 60 or over (tax free). Defined benefits, untaxed
-elements, transition-to-retirement streams, early access, excess-cap regimes
-and Division 296 balances are rejected with ``UnsupportedRule``.
+benefits paid at age 60 or over (tax free). Division 296 tax on large
+balances is assessed by ``division_296_tax``. Defined benefits, untaxed
+elements, transition-to-retirement streams, early access and excess-cap
+regimes are rejected with ``UnsupportedRule``.
 """
 
 from dataclasses import dataclass
 from datetime import date, timedelta
+from decimal import ROUND_HALF_UP, Decimal
 from math import floor
 
 from financial_simulations.dates import as_date
@@ -168,9 +170,45 @@ def apply_non_concessional(contributions, rules: RuleSet, tsb_prior_30_june, und
     return None
 
 
-def require_below_division_296(total_super_balance_30_june, rules: RuleSet):
-    if total_super_balance_30_june > rules["division_296"]["large_balance"]:
-        raise UnsupportedRule("Division 296 tax on balances above the large super balance threshold is not implemented.")
+def _percent_over(reference, threshold) -> float:
+    """(reference - threshold) / reference as a percentage, rounded to 2 decimal places, half up (s296-40(3))."""
+    if reference <= threshold:
+        return 0.0
+    exact = Decimal(repr(float((reference - threshold) / reference * 100)))
+    return float(exact.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+
+
+@dataclass(frozen=True)
+class Division296:
+    """One income year's Division 296 assessment for an individual."""
+
+    tax: float
+    reference_balance: float
+    earnings: float
+    percent_over_large: float
+    percent_over_very_large: float
+    taxable_earnings: float
+    very_large_component: float
+
+
+def division_296_tax(tsb_start, tsb_end, total_earnings, rules: RuleSet) -> Division296:
+    """Division 296 tax (ITAA 1997 Division 296, Act No. 8, 2026).
+
+    The reference balance is the greater of the total super balance just before the start of the year and at
+    its end; for 2026-27 only the end balance counts (transitional rule). With total super earnings above nil,
+    15% applies to earnings x the percentage of the reference balance over the large threshold, and a further
+    10% to earnings x the percentage over the very large threshold. Each percentage is rounded to 2 decimal places.
+    """
+    division = rules["division_296"]
+    reference = tsb_end if rules.financial_year == "2026-27" else max(tsb_start, tsb_end)
+    large = _percent_over(reference, division["large_balance"])
+    very_large = _percent_over(reference, division["very_large_balance"])
+    if total_earnings <= 0 or large == 0:
+        return Division296(0.0, reference, total_earnings, large, very_large, 0.0, 0.0)
+    taxable = total_earnings * large / 100
+    component = total_earnings * very_large / 100
+    tax = division["rate"] * taxable + division["additional_rate"] * component
+    return Division296(tax, reference, total_earnings, large, very_large, taxable, component)
 
 
 def minimum_drawdown_factor(age, rules: RuleSet) -> float:

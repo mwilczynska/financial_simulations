@@ -140,7 +140,22 @@ held as assumptions for 2026-27. See [age-pension.md](age-pension.md).
   separate into income, gains and fees is a ledger input. It must reconcile
   to the total-return series, so distributions are never counted twice
   ([ADR 0001](../decisions/0001-daily-returns-throughout.md) principles apply).
-- **Division 296.** A TSB above $3 million fails explicitly.
+- **Division 296** (`division_296_tax`; Act No. 8, 2026, ITAA 1997 ss296-40 to 296-65; ATO "How Division 296
+  tax is calculated"):
+  - **Reference amount.** The greater of the TSB just before the start of the
+    year and at its end. For 2026-27 only the 30 June 2027 TSB counts.
+  - **Percentages.** Over the large threshold:
+    `round((reference - $3m) / reference x 100, 2)`. Over the very large
+    threshold: the same with $10m. Both round half up.
+  - **Tax.** With total super earnings above nil, the tax is
+    `15% x earnings x large% + 10% x earnings x very large%`.
+  - **Earnings.** A member's earnings are their share of the fund's
+    Division 296 fund earnings: taxable income (including any net capital
+    gain, scaled by 0.2 to 0.8 for large APRA funds from 2026-27 to
+    2029-30), less assessable contributions, plus net exempt current pension
+    income.
+  - **Validation.** The tests reproduce the ATO's Jordan ($3,750), Leanne
+    ($610.90), Kelly ($64,585) and Andrew ($7,858.74) examples.
 
 ## Worked examples (all tested)
 
@@ -165,7 +180,7 @@ forward, franking refunds, Division 293, and preservation-age births on
 either side of each cut-off. It also covers leap-day ages, access paths, SG
 at the maximum base, business days, the carry-forward expiry bug found during
 development, bring-forward thresholds and fixed totals, pension minimums,
-the transfer balance cap, Division 296 rejection and fund tax. A further test
+the transfer balance cap, Division 296 (the ATO worked examples) and fund tax. A further test
 requires every TOML parameter to appear in the register.
 
 These functions do not yet form an account ledger. They do not track tax

@@ -173,8 +173,6 @@ def test_unsupported_horizons_access_and_currency_fail_explicitly():
     usd = MarketPath(market().dates, ("AU", "GL"), market().returns, "USD")
     with pytest.raises(ValueError, match="AUD"):
         run_ledger(usd, scenario_with(Person("1985-01-01")), YEARS)
-    with pytest.raises(UnsupportedRule, match="Division 296"):
-        run_ledger(market(), scenario_with(Person("1985-01-01"), super_units={"GL": 3_100_000}), YEARS)
 
 
 def test_ledger_report_writes_csv_json_and_png_without_pdf(tmp_path):
@@ -478,3 +476,27 @@ def test_without_the_age_pension_switch_the_ledger_still_stops_at_age_pension_ag
     person = Person("1958-06-01", retirement_date="2020-01-01")
     with pytest.raises(UnsupportedRule, match="age_pension=True"):
         run_ledger(market(), scenario_with(person, outside_cash=500000), YEARS)
+
+
+def test_division_296_taxes_super_earnings_above_3m_and_is_released_from_super():
+    from financial_simulations.rules.au.projection import ProjectionAssumptions, project_rulesets
+
+    years = project_rulesets(RULES, "2028-29", ProjectionAssumptions(0.025, 0.035))
+    scenario = scenario_with(Person("1985-01-01"), super_units={"GL": 4_000_000}, income={"GL": AssetIncome(0.04)},
+                             tsb_prior_30_june=4_000_000)
+    result = run_ledger(market(end="2028-12-31"), scenario, years)
+    first = result.annual[0]
+    earnings, reference = first["division_296_earnings"], first["division_296_reference_balance"]
+    # 2026-27: only the 30 June 2027 balance counts. Earnings are the year's super distributions (no realised gains).
+    assert earnings == pytest.approx(4_000_000 * 0.04, rel=0.02)
+    percent = round((reference - 3_000_000) / reference * 100, 2)
+    assert first["division_296_tax"] == pytest.approx(0.15 * earnings * percent / 100)
+    # Released on 30 September 2028: the ATO requests fund reports from April 2028, then 84 days to pay.
+    paid = result.events[(result.events["event"] == "division_296_payment") & (result.events["financial_year"] == "2026-27")]
+    assert len(paid) == 1 and str(paid.iloc[0]["date"]) >= "2028-09-30"
+    assert paid.iloc[0]["released_from_super"] == pytest.approx(first["division_296_tax"])
+    assert result.daily.loc[:"2028-10-31", "division_296"].sum() == pytest.approx(first["division_296_tax"])
+    # Below the threshold nothing is assessed.
+    small = run_ledger(market(), scenario_with(Person("1985-01-01"), super_units={"GL": 2_000_000},
+                                               income={"GL": AssetIncome(0.04)}), YEARS)
+    assert small.annual[0]["division_296_tax"] == 0

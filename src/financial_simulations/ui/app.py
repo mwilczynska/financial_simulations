@@ -1338,7 +1338,7 @@ block in the source, and they treat every era as equally likely.
 
 FLOW_COLOURS = {"Take-home salary": "#126a63", "Super contributions": "#386a98", "Investment returns": "#9a8a2e",
                 "Interest on cash": "#4f8f3a", "Age Pension": "#d08c2f",
-                "Spending": "#b76a42", "Income tax": "#8c2f2f", "Contributions tax": "#c2577a", "Super fund tax": "#8363a0",
+                "Spending": "#b76a42", "Income tax": "#8c2f2f", "Contributions tax": "#c2577a", "Super fund tax": "#8363a0", "Division 296 tax": "#5b3f7a",
                 "Inflation": "#9aa3a8"}
 
 
@@ -1610,7 +1610,9 @@ the same rules:
    growth; outside super they are taxable income.
 5. **Tax.** Each 30 June personal tax is assessed (brackets, Medicare levy and surcharge, LITO, CGT discount,
    Division 293, the 2027 CGT reform) and paid on 31 October. Accumulation earnings are taxed at 15%; pension
-   earnings are exempt.
+   earnings are exempt. Above a 3 million dollar total super balance, Division 296 adds 15% on the share of the
+   year's super earnings above the threshold (10% more above 10 million), released from super. Funds here
+   realise no gains, so it is charged on distribution income only: a lower bound.
 6. **Pension.** At the chosen age the accumulation balance moves into an account-based pension, up to the
    transfer balance cap; the age-based minimum is paid monthly.
 7. **Age Pension.** From a fortnight after age 67, the single Age Pension is worked out each fortnight from the
@@ -1637,8 +1639,15 @@ does not cover (excluded, with the reason shown). Returns are the USD histories 
              help="Spending plus tax paid in the first full retired financial year, over wealth at its 1 July.")
     b.metric("Median highest withdrawal rate", share(calculated["Highest withdrawal rate"].median()),
              help="Each path's highest financial-year withdrawal rate while retired.")
-    c.metric("Median total tax", compact(calculated["Personal tax assessed"].median() + calculated["Fund tax"].median()),
-             help="Personal tax assessed plus super fund tax over the horizon, each year in today's dollars.")
+    c.metric("Median total tax", compact(calculated["Personal tax assessed"].median() + calculated["Fund tax"].median()
+                                         + calculated["Division 296 tax"].median()),
+             help="Personal tax assessed, super fund tax and Division 296 tax over the horizon, each year in today's "
+                  "dollars.")
+    if (calculated["Division 296 tax"] > 0).any():
+        d.metric("Paths paying Division 296", share(float((calculated["Division 296 tax"] > 0).mean())),
+                 help="Share of paths whose total super balance passed the large balance threshold (3 million "
+                      "dollars, CPI-indexed) in a year with super earnings. The tax is a lower bound: funds here "
+                      "realise no capital gains.")
     if unsupported:
         reasons = paths.loc[paths["Status"] == "unsupported", "Reason"].value_counts()
         st.warning("Unsupported paths are excluded, so the shares above are conditional on the others: "
@@ -1757,6 +1766,7 @@ total wealth; spending rises with inflation{"" if not plan['spending']['real_cha
         "Ending outside wealth": ("Ending outside wealth", "money"), "Ending super and pension": ("Ending super and pension", "money"),
         "Wealth at retirement": ("Wealth at retirement", "money"), "Spending shortfall": ("Spending shortfall", "money"),
         "Personal tax assessed": ("Personal tax assessed", "money"), "Fund tax": ("Fund tax", "money"),
+        "Division 296 tax": ("Division 296 tax", "money"), "Age Pension received": ("Age Pension received", "money"),
         "Pension payments": ("Pension payments", "money"), "Pension balance at start": ("Pension balance at start", "money"),
         "First retired-year withdrawal rate": ("First retired-year withdrawal rate", "percent"),
         "Highest withdrawal rate": ("Highest withdrawal rate", "percent"),
@@ -1772,7 +1782,7 @@ total wealth; spending rises with inflation{"" if not plan['spending']['real_cha
                 table[field] *= 100
         money = ("Ending wealth", "Ending outside wealth", "Ending super and pension",
                  "Wealth at retirement", "Spending paid", "Spending shortfall", "Unpaid tax", "Personal tax assessed",
-                 "Fund tax", "Pension payments", "Pension balance at start")
+                 "Fund tax", "Division 296 tax", "Age Pension received", "Pension payments", "Pension balance at start")
         st.dataframe(table, width="stretch", hide_index=True, column_config={
             "Path": st.column_config.NumberColumn("Path", format="%d", pinned=True),
             "Status": st.column_config.TextColumn("Status", pinned=True),
@@ -1897,6 +1907,7 @@ def section_ledger(run):
                      "Spending paid": x["spending_paid"] / flow, "Shortfall": x["shortfall"] / flow,
                      "Pension minimum": (x["pension_minimum"] or 0.0) / flow, "Pension paid": (x["pension_paid"] or 0.0) / flow,
                      "Age Pension": x.get("age_pension", 0.0) / flow, "SAPTO": x["assessment"].sapto / flow,
+                     "Division 296 tax": x.get("division_296_tax", 0.0) / flow,
                      "Transfer balance": (x["transfer_balance"] or 0.0) / balance,
                      "Super at 30 June": x["total_super_balance_30_june"] / balance,
                      "FY ending": end_year})

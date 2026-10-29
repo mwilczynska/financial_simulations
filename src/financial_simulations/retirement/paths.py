@@ -94,6 +94,7 @@ def _summarise(path: int, result: LedgerResult, retire: date, cpi: float):
                "Personal tax assessed": float(sum((a["assessment"].net_tax + a["assessment"].division_293_tax)
                                                   / step(int(a["financial_year"][:4]) + 1) for a in annual)),
                "Fund tax": float(daily["fund_tax"].sum()),
+               "Division 296 tax": float(daily["division_296"].sum()),
                "Pension payments": float(daily["pension_payments"].sum()),
                "Pension balance at start": float(daily["pension"].loc[pension_start[0]]) if len(pension_start) else 0.0,
                "Age Pension received": float(daily["age_pension"].sum()),
