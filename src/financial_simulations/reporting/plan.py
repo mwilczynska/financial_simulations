@@ -12,8 +12,12 @@ from matplotlib.ticker import FuncFormatter
 import numpy as np
 import pandas as pd
 
+from financial_simulations.retirement.flows import household_flows, milestones
+
 
 COLORS = {"Outside super": "#126a63", "Inside super": "#386a98", "Combined": "#b76a42"}
+FLOW_COLOURS = {"Take-home salary": "#126a63", "Super contributions": "#386a98", "Investment returns": "#9a8a2e",
+                "Spending": "#b76a42", "Income tax": "#8c2f2f", "Contributions tax": "#c2577a", "Super fund tax": "#8363a0"}
 
 
 def _figure(title, subtitle, *, height=5.5):
@@ -135,27 +139,41 @@ def write_plan_plots(output: Path, plan, market, portfolios, retirement_paths, r
         ax.yaxis.set_major_formatter(FuncFormatter(_money))
         ax.set_ylim(bottom=0)
         _years(ax, dates)
-        ax.legend(frameon=False, ncol=3, loc="upper left")
+        for _, mark in milestones(plan, dates.min().date(), dates.max().date()).iterrows():
+            ax.axvline(mark["Date"], color="#5f6b73", linestyle="--", linewidth=1)
+            ax.text(mark["Date"], ax.get_ylim()[1], " " + mark["Event"], fontsize=8, color="#3c474d", va="top")
+        ax.xaxis.grid(True, alpha=0.22)
+        fig.subplots_adjust(bottom=0.22)
+        ax.legend(frameon=False, ncol=3, fontsize=9, loc="upper center", bbox_to_anchor=(0.5, -0.09))
         fig.savefig(output / "retirement_range.png")
 
-        annual = representative.daily[["salary", "spending_paid", "tax_paid", "employer_contributions", "pension_payments", "shortfall"]].resample("YE-JUN").sum()
-        fig, ax = _figure("Annual cash flow stages", "Representative path nearest median ending wealth; payments summed by Australian financial year")
-        drawn = 0
-        for key, label, color in (("salary", "Salary", "#126a63"), ("spending_paid", "Spending", "#b76a42"),
-                                  ("tax_paid", "Tax paid", "#8c5144"), ("employer_contributions", "Super contributions", "#386a98"),
-                                  ("pension_payments", "Pension payments", "#8363a0"), ("shortfall", "Shortfall", "#8c2f2f")):
-            if annual[key].abs().max() > 1e-9:
-                ax.plot(annual.index, annual[key], label=label, color=color, linewidth=1.5)
-                drawn += 1
-        if not drawn:
-            ax.text(0.5, 0.5, "No cash flows in this scenario", transform=ax.transAxes,
-                    ha="center", va="center", color="#536369")
-            ax.set_ylim(0, 1)
-            ax.set_yticks([])
-        ax.set_ylabel("AUD per financial year")
-        if drawn:
-            ax.yaxis.set_major_formatter(FuncFormatter(_money))
-        _years(ax, annual.index)
-        if drawn:
-            ax.legend(frameon=False, ncol=3, fontsize=8, loc="upper left")
+        daily = representative.daily
+        flows = household_flows(daily)
+        fig, ax = _figure("Money in and out each year",
+                          "Path nearest median ending wealth; years end 30 June; in above zero, out below; line = net change in wealth")
+        years = sorted(flows["FY ending"].unique())
+        positive, negative = np.zeros(len(years)), np.zeros(len(years))
+        for label, color in FLOW_COLOURS.items():
+            values = flows.loc[flows["Flow"] == label].set_index("FY ending").reindex(years)["AUD"].fillna(0).to_numpy()
+            if np.abs(values).max() <= 1e-6:
+                continue
+            bottom = np.where(values >= 0, positive, negative)
+            ax.bar(years, values, bottom=bottom, width=0.7, color=color, label=label)
+            positive += np.where(values >= 0, values, 0)
+            negative += np.where(values < 0, values, 0)
+        net = flows.drop_duplicates("FY ending").set_index("FY ending").reindex(years)["Net change"]
+        ax.plot(years, net, color="#19353a", marker="o", markersize=3, linewidth=1.6, label="Net change in wealth")
+        ax.axhline(0, color="#5f6b73", linewidth=0.8)
+        top, low = max(positive.max(), net.max(), 1.0), min(negative.min(), net.min(), -1.0)
+        ax.set_ylim(low - 0.08 * (top - low), top + 0.12 * (top - low))
+        for _, mark in milestones(plan, daily.index[0].date(), daily.index[-1].date()).iterrows():
+            ax.axvline(mark["Position"], color="#5f6b73", linestyle="--", linewidth=1)
+            ax.text(mark["Position"], ax.get_ylim()[1], " " + mark["Event"], fontsize=8, color="#3c474d", va="top")
+        ax.set_ylabel("AUD per year (year ending 30 June)")
+        ax.yaxis.set_major_formatter(FuncFormatter(_money))
+        step = 5 if len(years) >= 25 else 2 if len(years) >= 12 else 1
+        ax.set_xticks([y for y in years if y % step == 0 or step == 1])
+        ax.xaxis.grid(True, alpha=0.22)
+        fig.subplots_adjust(bottom=0.26)
+        ax.legend(frameon=False, ncol=4, fontsize=8, loc="upper center", bbox_to_anchor=(0.5, -0.1))
         fig.savefig(output / "retirement_flows.png")

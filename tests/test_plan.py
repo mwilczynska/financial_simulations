@@ -100,6 +100,10 @@ def test_run_plan_writes_portfolio_and_retirement_reports(tmp_path, processed_fi
     assert load_plan_text((run.folder / "plan.toml").read_text(encoding="utf-8")) == plan
     assert len(run.portfolios.outcomes) == 48  # 16 shared paths for each portfolio and their combination
     assert len(run.retirement_paths) == 1
+    flows = [c for c in run.retirement_annual.columns if c.startswith("Flow: ")]
+    assert "Flow: Spending" in flows and "Flow: Investment returns" in flows
+    yearly = run.retirement_annual
+    assert (yearly[flows].sum(axis=1) - yearly["Net change in wealth"]).abs().max() < 1e-4
     assert not list(run.folder.glob("*.pdf"))
 
 
@@ -211,3 +215,49 @@ def test_sustainable_withdrawal_rate_exhausts_wealth_exactly_at_the_horizon():
     doubled = np.r_[100.0, np.full(24, 200.0)][None, :]
     assert sustainable_withdrawal_rates(doubled, 0, 0.0)[0] == pytest.approx(1.0)
     assert np.isnan(sustainable_withdrawal_rates(flat[:, :6], 0, 0.0)[0])
+
+
+def test_salary_sacrifice_percentage_adds_to_the_dollar_amount(processed_fixture):
+    from financial_simulations.retirement.plan import sacrifice_per_year
+
+    plan = default_plan()
+    plan["employment"]["salary_sacrifice_per_year"] = 0.0
+    plan["employment"]["salary_sacrifice_percent"] = 0.05
+    assert sacrifice_per_year(plan) == pytest.approx(8000)
+    market = load_plan_markets(plan["assets"], processed_fixture)
+    _, scenario, _, _ = build_inputs(plan, market=market)
+    assert scenario.employment.salary_sacrifice_per_payday == pytest.approx(8000 / 26)
+    plan["employment"]["salary_sacrifice_percent"] = 1.2
+    with pytest.raises(PlanError, match="salary_sacrifice_percent: must be between 0 and 1"):
+        normalize_plan(plan)
+
+
+def test_run_progress_covers_every_stage_in_order(processed_fixture):
+    plan = quick_plan()
+    plan["market"]["retirement_paths"] = 2
+    seen = []
+    run_plan(plan, None, market=load_plan_markets(plan["assets"], processed_fixture),
+             progress=lambda fraction, message: seen.append((fraction, message)))
+    fractions = [f for f, _ in seen]
+    assert fractions == sorted(fractions) and fractions[0] < 0.05 and fractions[-1] >= 0.95
+    messages = " ".join(m for _, m in seen)
+    for stage in ("Sampling market paths", "history", "future portfolio paths", "Daily tax ledgers", "saving"):
+        assert stage in messages
+
+
+def test_fixed_outside_contribution_maps_to_paydays_and_stops_at_retirement(processed_fixture):
+    plan = default_plan()
+    assert plan["outside"]["saving"] == "surplus"
+    market = load_plan_markets(plan["assets"], processed_fixture)
+    _, scenario, _, _ = build_inputs(plan, market=market)
+    assert scenario.outside_contribution_per_payday is None and scenario.stop_investing_at_retirement
+    plan["outside"]["saving"] = "fixed"
+    plan["outside"]["contribution_per_year"] = 13000.0
+    _, scenario, _, _ = build_inputs(plan, market=market)
+    assert scenario.outside_contribution_per_payday == pytest.approx(500)
+    assert scenario.outside_contribution_growth == pytest.approx(plan["assumptions"]["cpi_annual"])
+    plan["outside"]["contribution_indexed"] = False
+    assert build_inputs(plan, market=market)[1].outside_contribution_growth == 0
+    plan["outside"]["saving"] = "sometimes"
+    with pytest.raises(PlanError, match="outside.saving: must be one of surplus, fixed"):
+        normalize_plan(plan)

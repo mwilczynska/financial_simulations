@@ -189,3 +189,50 @@ produced legible five-year ticks and labelled log axes in the PNGs. 37 of 40
 ledger paths reached the unimplemented Division 296 rule, so long-horizon
 retirement statistics are conditional; implementing Division 296 is the
 next requirement for 30-year retirement results.
+
+## Contributions, flows, milestones and progress (2026-10-29)
+
+Tests:
+
+- `household_flows` sums exactly to each financial year's change in total
+  wealth on a busy random ledger path;
+- `account_flows` nets the pension transfer to zero and matches pension
+  payments;
+- fixed outside contributions, the stop at retirement and the indexed step-up
+  behave as specified (ADR 0020);
+- the salary-sacrifice percentage maps to the ledger;
+- progress callbacks arrive in order through every stage.
+
+The browser review on local data checked:
+
+- labelled donuts with ticker legends;
+- the portfolio stats line;
+- the 2×2 work estimate;
+- the year, month and day birth fields;
+- dashed milestone lines;
+- "Jul 2026 – Jun 2027" year labels with age;
+- the sorted, hoverable ending-wealth chart;
+- the withdrawal-rate chart with sustainable-rate references and its
+  explanation;
+- the money in and out chart and the per-account transfer charts.
+
+The review found and fixed:
+
+- an apostrophe in a field name, which stopped Vega-Lite rendering the
+  ending-wealth chart;
+- truncated metrics and legend overlap in narrow columns;
+- per-account charts that collapsed in three columns.
+
+The first progress stage had appeared stuck. Two causes:
+
+- the market load ran before the bar was drawn;
+- each Windows worker re-ran the whole app as its main module, which took
+  49 s before the first ledger result and once broke the pool.
+
+Fixed by running at the top of the page, hiding `__main__` on submission
+and keeping a warm pool. After the fix the bar reported every stage, and
+the first ledger results arrived 10 s after the ledger stage began. The
+desktop was at about 96% CPU from other programs during the check, so
+absolute times are not representative.
+
+After the user asked whether the money in and out chart should use medians, the retirement section gained a typical-year version. It shows the median of each flow across all calculated paths, with interquartile tooltips and the median net change with whiskers. A test checks that each path's yearly flow columns sum to its net change. The single-path chart in section 5 remains, labelled as one path.

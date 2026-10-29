@@ -147,6 +147,10 @@ class LedgerScenario:
     capital_losses_brought_forward: float = 0.0
     outside_rebalance: bool = False
     super_rebalance: bool = False
+    # None invests all cash above the buffer; an amount invests only that much on each payday.
+    outside_contribution_per_payday: float | None = None
+    outside_contribution_growth: float = 0.0  # applied each 1 July, like spending growth
+    stop_investing_at_retirement: bool = False
 
 
 @dataclass
@@ -240,6 +244,9 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
         tsb_prior = _value(state.super_acc, state.prices)
     unused, losses_bf, period = dict(scenario.unused_concessional), float(scenario.capital_losses_brought_forward), None
     spending_due, unpaid_tax = [], []
+    saving_due = 0.0
+    if scenario.outside_contribution_per_payday is not None:
+        _money(scenario.outside_contribution_per_payday, "Outside contribution")
     access = access_date(person.born, next(iter(rules_by_year.values())), person.retirement_date)
 
     def log(kind, amount, account, **detail):
@@ -447,6 +454,9 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
             state.fy["sacrifice"] += sacrifice
             flows["salary"] += gross - sacrifice
             log("salary", gross - sacrifice, "outside", sacrifice=sacrifice, super_guarantee=sg)
+            if scenario.outside_contribution_per_payday:
+                saving_due += (scenario.outside_contribution_per_payday
+                               * (1 + scenario.outside_contribution_growth) ** _years_since(start, day))
             state.pending.append((add_business_days(day, employment.contribution_lag_business_days), sg + sacrifice, sacrifice))
         arrived = [p for p in state.pending if p[0] == day]
         state.pending = [p for p in state.pending if p[0] != day]
@@ -522,11 +532,16 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
                     state.cash += paid
                     flows["pension_payments"] += paid
                     log("pension_payment", paid, "pension", purpose="minimum")
-            # Cash above the buffer is invested at each observation close, after the day's needs.
-            surplus = state.cash - scenario.cash_buffer
-            if surplus > TOLERANCE:
-                state.cash -= surplus
-                buy_outside(surplus)
+            # New money is invested at each observation close, after the day's needs: either all cash above the
+            # buffer, or the scheduled payday contributions as far as cash above the buffer allows (no catch-up).
+            investing = not (scenario.stop_investing_at_retirement and person.retirement_date is not None
+                             and day >= person.retirement_date)
+            available = state.cash - scenario.cash_buffer
+            amount = available if scenario.outside_contribution_per_payday is None else min(saving_due, available)
+            saving_due = 0.0
+            if investing and amount > TOLERANCE:
+                state.cash -= amount
+                buy_outside(amount)
         if day == rules.end:
             fy = state.fy
             year = IncomeYear(labour_income=fy["labour"], unfranked_dividends=fy["unfranked"], franked_dividends=fy["franked"],

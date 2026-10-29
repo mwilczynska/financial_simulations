@@ -73,9 +73,9 @@ Schema version 2 uses:
 | Section | Relevant fields |
 | --- | --- |
 | `[plan]` | Name, start date from 2026-07-01, requested years |
-| `[person]` and `[employment]` | Birth date, retirement age, cover, salary, sacrifice, payday |
+| `[person]` and `[employment]` | Birth date, retirement age, cover, salary, `salary_sacrifice_per_year`, `salary_sacrifice_percent` (fraction of salary, added to the dollar amount), payday |
 | `assets` | Selected local ticker codes |
-| `[outside]` | Cash, cash buffer, `investment_balance`, `opening_cost_base`, `opening_acquired`, `weights`, `rebalance` |
+| `[outside]` | Cash, cash buffer, `investment_balance`, `opening_cost_base`, `opening_acquired`, `weights`, `rebalance`, `saving` (`surplus` or `fixed`), `contribution_per_year`, `contribution_indexed` |
 | `[super]` | Balance, prior 30 June total super balance, `weights`, `rebalance` |
 | `[spending]`, `[pension]`, `[assumptions]` | Spending, pension transfer and projected-rule assumptions |
 | `[market]` | Portfolio path count, retirement path count, seed, mean block length |
@@ -220,12 +220,37 @@ warns that tail percentiles are noisy.
 
 ## Results and reproducibility
 
-The Results tab has five sections, each chart followed by an explanation:
+**Saving outside super.** In `surplus` mode every dollar of take-home pay
+left after tax, spending and the cash buffer is invested. In `fixed` mode
+`contribution_per_year / 26` is invested each payday, as far as cash above
+the buffer allows. With `contribution_indexed`, that amount rises each
+1 July by the CPI assumption. Leftover pay stays in cash. In both modes new
+investing stops at the retirement date
+([ADR 0020](../decisions/0020-outside-contributions-stop-at-retirement.md)).
 
-1. **Your portfolios.** Each account's allocation on its own 0–100% axis,
-   with balance and rebalancing policy, and the combined split. A
-   whole-portfolio statistics table covers outside, inside and combined.
-   Ticker-level source statistics sit in an expander.
+The You tab shows a first-year estimate of where pay goes, using the
+2026-27 rules and `assess`:
+
+- super guarantee plus sacrifice against the concessional cap, with a
+  warning above the cap;
+- income tax on salary less sacrifice;
+- the amount added to outside investments.
+
+The estimate excludes investment income. Birth dates are entered as year,
+month and day fields.
+
+The Results tab has five sections, each chart followed by an explanation.
+Financial years are written "Jul 2026 – Jun 2027" in tables and tooltips,
+and axes are titled "Year ending 30 June". Dashed vertical lines mark
+retirement, when super becomes accessible and when the pension starts on
+time and financial-year charts; `milestones` in `retirement/flows.py`
+positions them.
+
+1. **Your portfolios.** A donut for each account labels weights on the
+   slices, with a ticker legend. Each also shows its balance, rebalancing
+   policy, and historical CAGR, volatility and maximum drawdown, plus the
+   combined split. A whole-portfolio statistics table covers outside, inside
+   and combined. Ticker-level source statistics sit in an expander.
 2. **Historical behaviour.** Growth of $100 on a log axis, drawdown below the
    running peak, and calendar-year returns for all three series.
 3. **Future simulations.** A step-by-step description of the calculation
@@ -246,16 +271,51 @@ The Results tab has five sections, each chart followed by an explanation:
      nominal and in today's dollars, wealth at retirement, withdrawal rates,
      total tax);
    - wealth bands selectable by account;
-   - ending-wealth distributions by account;
-   - withdrawal-rate bands by financial year;
+   - every path's ending wealth, sorted. Hovering gives exact nominal and
+     today's-dollar values, the account split and any shortfall; labelled
+     10th, median and 90th percentile lines; depleted paths in red;
+   - **money in and out in a typical year**: for each financial year, the
+     median of every flow across calculated paths, with tooltips giving the
+     25th and 75th percentiles, plus the median net change in wealth with
+     whiskers from the 25th to the 75th percentile. Each path's
+     `retirement_annual` rows carry its `Flow: …` columns and its
+     `Net change in wealth`. Medians of components do not add up, so the
+     bars need not sum to the median net change; the chart says so;
+   - withdrawal-rate bands by financial year. These are set against the
+     combined portfolio's 5th-percentile and median sustainable rates, with
+     an expanded explanation of how to read them;
    - the share of paths with a shortfall each year;
    - pension payment bands;
    - an outcome percentile table, and every path in a formatted table.
 5. **One path in full.** The median-ending path by default, or the 10th or
    90th percentile, worst, best or any numbered path, re-run on demand. It
-   shows balances by account, financial-year flows, a year-by-year tax,
-   cap and pension table, tax and cap charts, pension minimum against paid,
-   a filterable event log and CSV downloads.
+   shows:
+   - balances by account, and the largest fall in total wealth;
+   - **money in and out each year**, from `household_flows`: take-home
+     salary, super contributions and investment returns against spending,
+     income tax, contributions tax and fund tax, with a net-change line.
+     The bars sum exactly to each year's change in total wealth;
+   - **transfers into and out of each account**, from `account_flows`:
+     savings invested, sales, contributions, fund tax, the move to the
+     pension and pension payments;
+   - a year-by-year tax, cap and pension table with age at 30 June;
+   - tax and cap charts, pension minimum against paid, a filterable event
+     log and CSV downloads.
+
+A run starts at the top of the page, so its progress bar shows on any
+tab. The bar reports each stage:
+
+- ticker loading;
+- path sampling;
+- historical and future compounding;
+- each finished ledger chunk;
+- saving.
+
+Ledger worker processes start when the app loads and are reused between
+runs. On Windows each new worker re-runs the launching program's main
+module; under Streamlit that is the app script. The pool therefore hides
+`__main__` while it submits work. Without this a worker re-ran the whole
+app, which took about 49 seconds and once broke the pool.
 
 Charts show hover values. Dragging pans, Shift+scroll zooms and a
 double-click resets. Plain scrolling scrolls the page, because an

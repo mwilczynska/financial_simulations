@@ -236,3 +236,48 @@ def test_whole_balance_pension_transfer_stops_at_the_transfer_balance_cap():
     commencement = result.events[result.events["event"] == "pension_commencement"].iloc[0]
     assert commencement["amount"] == pytest.approx(RULES["transfer_balance_cap"])
     assert result.daily["accumulation"].iloc[0] == pytest.approx(2500000 - RULES["transfer_balance_cap"])
+
+
+def test_household_flows_reconcile_each_year_and_account_flows_track_transfers():
+    from financial_simulations.retirement.flows import account_flows, household_flows
+
+    path = market(seed=7)
+    scenario = scenario_with(Person("1966-03-01", retirement_date="2026-09-30"), outside_cash=5000, cash_buffer=2000,
+                             outside_parcels=(Parcel("GL", 40000, 30000, "2019-01-01"),), super_units={"GL": 400000},
+                             employment=Employment(150000, "2026-07-02", 400), annual_spending=70000,
+                             pension=Pension("2026-10-01", 300000))
+    result = run_ledger(path, scenario, YEARS)
+    household = household_flows(result.daily)
+    for _, year in household.groupby("FY ending"):
+        assert year["AUD"].sum() == pytest.approx(year["Net change"].iloc[0], abs=1e-4)
+    assert household["Closing"].iloc[-1] == pytest.approx(result.daily["total"].iloc[-1])
+    moves = account_flows(result.daily, result.events)
+    transfer = moves.loc[moves["Flow"].isin(["Moved to pension", "Moved from super"]), "AUD"]
+    assert transfer.sum() == pytest.approx(0) and transfer.max() == pytest.approx(300000)
+    payments = moves.loc[moves["Flow"] == "Pension payments", "AUD"].sum()
+    assert payments == pytest.approx(-result.daily["pension_payments"].sum())
+
+
+def test_fixed_outside_contributions_and_no_new_investing_after_retirement():
+    person = Person("1985-01-01", retirement_date="2027-01-01")
+    fixed = run_ledger(market(), scenario_with(person, employment=Employment(104000, "2026-07-02"),
+                                               outside_contribution_per_payday=500, stop_investing_at_retirement=True), YEARS)
+    buys = fixed.events[(fixed.events["event"] == "buy") & (fixed.events["account"] == "outside")]
+    paydays = (fixed.events["event"] == "salary").sum()
+    assert paydays == 14 and buys["amount"].sum() == pytest.approx(500 * paydays)
+    assert fixed.daily["outside_investments"].iloc[-1] == pytest.approx(500 * paydays)
+    assert fixed.daily["cash"].iloc[-1] == pytest.approx(4000 * paydays - 500 * paydays)
+    # The surplus sweep invests all spare pay, but nothing after the retirement date either.
+    swept = run_ledger(market(), scenario_with(person, outside_cash=10000, employment=Employment(104000, "2026-07-02"),
+                                               stop_investing_at_retirement=True), YEARS)
+    later = swept.events[(swept.events["event"] == "buy") & (swept.events["account"] == "outside")
+                         & (pd.to_datetime(swept.events["date"]) >= pd.Timestamp("2027-01-01"))]
+    assert later.empty and swept.daily["outside_investments"].iloc[-1] == pytest.approx(10000 + 4000 * paydays)
+    # An indexed contribution steps up on 1 July: 26 paydays of 100 in 2026-27, then 100 x 1.03 from July 2027.
+    years = {"2026-27": RULES, "2027-28": RULES.derive("2027-28", {}, {})}
+    indexed = run_ledger(market(end="2027-07-30"), scenario_with(Person("1985-01-01"), employment=Employment(104000, "2026-07-02"),
+                                                                 outside_contribution_per_payday=100, outside_contribution_growth=0.03),
+                         {"2026-27": RULES, **{k: v for k, v in years.items() if k != "2026-27"}})
+    late = indexed.events[(indexed.events["event"] == "buy") & (indexed.events["account"] == "outside")
+                          & (pd.to_datetime(indexed.events["date"]) >= pd.Timestamp("2027-07-01"))]
+    assert late["amount"].tolist() == pytest.approx([103.0] * len(late)) and len(late) >= 2

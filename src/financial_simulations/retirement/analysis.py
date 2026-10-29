@@ -44,7 +44,7 @@ class _Series:
     longest_underwater_days: np.ndarray
 
 
-def _simulate(source, indices, dates, accounts, shares, snapshots) -> dict[str, _Series]:
+def _simulate(source, indices, dates, accounts, shares, snapshots, progress=None) -> dict[str, _Series]:
     """Compound each account daily on shared donor rows; summarise without storing every day.
 
     ``accounts`` maps a name to ``(weights, rebalance)``. With ``rebalance`` the
@@ -71,7 +71,10 @@ def _simulate(source, indices, dates, accounts, shares, snapshots) -> dict[str, 
         for n in names:
             snap[n][:, where[0]] = 100.0
             snap_dd[n][:, where[0]] = 0.0
+    report = max(1, steps // 50)
     for step in range(steps):
+        if progress and step % report == 0:
+            progress(step / steps)
         returns = source[indices[:, step]]
         new_year = dates[step + 1].year != dates[step].year
         updated = {}
@@ -146,18 +149,24 @@ def retirement_start(plan: dict) -> date:
     return max(start, birthday(plan["person"]["date_of_birth"], plan["person"]["retirement_age"]))
 
 
-def analyse_portfolios(plan: dict, market, target_dates) -> PortfolioAnalysis:
+def analyse_portfolios(plan: dict, market, target_dates, progress=None) -> PortfolioAnalysis:
     """Use identical joint donor rows for each entered portfolio.
 
     The stationary bootstrap's length counts source return observations.
     Business weekdays are a future ledger template, not a holiday forecast.
+    ``progress(fraction, message)`` reports the sampling and simulation stages.
     """
+    tell = progress or (lambda fraction, message: None)
     target_dates = tuple(target_dates)
     count = plan["market"]["paths"]
     steps = len(target_dates) - 1
     sampler = Sampler("stationary", plan["market"]["block_length"])
-    indices = np.stack([sample_indices(len(market.path.returns), steps, sampler,
-                                       seed=plan["market"]["seed"], path_id=i).indices for i in range(count)]).astype(np.int32)
+    rows = []
+    for i in range(count):
+        if i % max(1, count // 20) == 0:
+            tell(0.25 * i / count, f"Sampling market paths: {i:,} of {count:,}")
+        rows.append(sample_indices(len(market.path.returns), steps, sampler, seed=plan["market"]["seed"], path_id=i).indices)
+    indices = np.stack(rows).astype(np.int32)
     accounts = {title: (np.array([plan[section]["weights"].get(t, 0.0) for t in market.path.assets]),
                         plan[section]["rebalance"] == "annual") for title, section in PORTFOLIOS}
     balances = {"Outside super": plan["outside"]["investment_balance"], "Inside super": plan["super"]["balance"]}
@@ -166,14 +175,15 @@ def analyse_portfolios(plan: dict, market, target_dates) -> PortfolioAnalysis:
     history_dates = tuple(market.path.dates)
     history_marks = _month_ends(history_dates)
     history = _simulate(market.path.returns, np.arange(len(market.path.returns))[None, :], history_dates, accounts, shares,
-                        history_marks)
+                        history_marks, lambda f: tell(0.25 + 0.15 * f, "Compounding the portfolios over their history"))
     future_marks = _month_ends(target_dates)
     month_ends = set(future_marks)
     retire = retirement_start(plan)
     retire_pos = int(np.searchsorted(np.array(target_dates), retire, side="right") - 1)
     if retire_pos not in future_marks:
         future_marks = sorted({*future_marks, retire_pos})
-    future = _simulate(market.path.returns, indices, target_dates, accounts, shares, future_marks)
+    future = _simulate(market.path.returns, indices, target_dates, accounts, shares, future_marks,
+                       lambda f: tell(0.4 + 0.6 * f, f"Compounding {count:,} future portfolio paths day by day"))
 
     historical, summaries, historical_annual = [], [], []
     hyears = (history_dates[-1] - history_dates[0]).days / 365.25

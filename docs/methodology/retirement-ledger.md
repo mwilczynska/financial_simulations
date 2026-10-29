@@ -79,8 +79,18 @@ Asset unit prices start at 1. On each day:
    results.
 9. **Pension minimum instalments.** On the last observation of each month,
    (minimum − paid so far) / months remaining in the year goes to cash.
-10. **Surplus cash.** Cash above `cash_buffer` buys new outside parcels at the
-    outside weights.
+10. **New outside investment.** With `outside_contribution_per_payday = None`
+    (surplus mode), all cash above `cash_buffer` buys new outside parcels at the
+    outside weights. With an amount (fixed mode), each payday schedules that
+    amount, grown by `(1 + outside_contribution_growth) ** n` after `n` whole
+    financial years. At the observation close the ledger invests the lesser
+    of the scheduled amount and the cash above the buffer. An amount that
+    cannot be met is not carried forward. Other leftover cash stays in cash.
+    With `stop_investing_at_retirement`, no new money is invested on or after
+    the retirement date in either mode. Unspent pension payments or lump sums
+    then stay in cash, which earns no interest.
+    [ADR 0020](../decisions/0020-outside-contributions-stop-at-retirement.md)
+    covers this convention.
 11. **30 June** (the financial year's last day):
     - Assess the year's income tax with `assess`, using labour income,
       franked and unfranked distributions, franking credits, the year's CGT
@@ -116,7 +126,8 @@ transfers between the person's accounts.
 | Fund realised gains | None | Simplification: overstates net fund returns when funds turn over assets |
 | Rebalancing | Optional per account (`outside_rebalance`, `super_rebalance`; ledger default off, planner default annual). On the first return observation of a calendar year, accounts reset to target weights at pre-return values. Outside sales are CGT events labelled `purpose = rebalance`; super switches are untaxed | [ADR 0018](../decisions/0018-planner-annual-rebalancing.md); untaxed super switching overstates fund returns |
 | Parcel selection | Oldest first within asset | Engineering choice; specific identification is allowed in law |
-| Interest on cash | Nil | Simplification |
+| Interest on cash | Nil | Simplification; with investing stopped at retirement, unspent retirement cash earns nothing |
+| Outside contributions | Surplus sweep (ledger default) or a fixed per-payday amount, optionally indexed each 1 July; the planner stops new investing at retirement | User requirement, [ADR 0020](../decisions/0020-outside-contributions-stop-at-retirement.md) |
 | Default weights | Opening holdings' proportions; error if none | Prevents silently investing in an arbitrary asset |
 | Opening TSB at the prior 30 June | Opening super value unless supplied | Input; supply the true value for cap tests |
 
