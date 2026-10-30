@@ -387,8 +387,11 @@ positions them.
        depleted path's first shortfall. It can sit above $0 when super was
        not yet accessible. A teal line is the median of all paths, drawn or
        not.
-     - **Axis.** The y axis stops at 1.05 times the 97.5th percentile of the
-       drawn paths' peaks. The caption says how many paths are clipped.
+     - **Axis.** A *Log scale* toggle, on by default, picks the y axis. On,
+       it is a symlog scale (constant $1,000: linear below, logarithmic
+       above, so $0 still plots) reaching every drawn path's peak. Off, it is
+       linear and stops at 1.05 times the 97.5th percentile of the drawn
+       paths' peaks; the caption says how many paths are clipped.
      - **Speed.** The lines are one matplotlib PNG reduced to a 256-colour
        palette, cached in the session per result and axis range. Its left
        edge uses the shared `Date` field, so it lines up with the axes. The
@@ -496,10 +499,13 @@ earlier version zoomed the chart under the pointer. Python generates PNG
 counterparts for review: history, the future fan for each series, the four
 overlaid distributions, the retirement range and the flows. Long-horizon date ticks step five years from 25 years onward;
 growth charts use labelled log axes with a data-fitted domain; no-flow
-panels say so explicitly. The retirement wealth fan uses a log-like y-axis
-when its maximum 95th percentile exceeds 20 times the larger of $1,000 and
-the maximum median. It stays linear from $0 to $1,000, so zero wealth remains
-visible. The plot explicitly labels this scale. The change affects display only, not path values or quantiles.
+panels say so explicitly. In the app, the retirement wealth fan has a *Log
+scale* toggle, on by default, that switches between a linear y-axis and a
+log-like (symlog) one. The log-like axis stays linear from $0 to $1,000, so
+zero wealth remains visible, and is labelled as a log scale. The PNG
+counterpart keeps the automatic rule: log-like when the maximum 95th
+percentile exceeds 20 times the larger of $1,000 and the maximum median. The
+choice affects display only, not path values or quantiles.
 
 The browser starts with `financial-simulations ui`; the command line uses
 `financial-simulations plan <plan-file>`. Both write an ignored

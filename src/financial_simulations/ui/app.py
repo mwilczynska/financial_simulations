@@ -14,7 +14,6 @@ import pandas as pd
 import streamlit as st
 
 from financial_simulations.data.plan_markets import CUSTOM_TICKERS, TICKERS, load_plan_markets
-from financial_simulations.reporting.plan import wide_wealth_range
 from financial_simulations.retirement.plan import (PlanError, default_plan, load_plan_text, normalize_plan, plan_to_json,
                                                    plan_to_toml, sacrifice_per_year, slug, spending_growth)
 from financial_simulations.retirement.flows import account_flows, household_flows, milestones
@@ -719,6 +718,17 @@ def balances_chart(daily):
     ).properties(height=530))
 
 
+def symlog_axis(upper):
+    """A dollar axis for a symlog scale: $0 and powers of ten, labelled $1k, $10k, ... $1m."""
+    import altair as alt
+
+    first_power = 4 if upper >= 1e6 else 3
+    ticks = [0, *[10 ** power for power in range(first_power, 13) if 10 ** power <= upper]]
+    labels = ("datum.value === 0 ? '$0' : datum.value >= 1000000 ? "
+              "'$' + datum.value / 1000000 + 'm' : '$' + datum.value / 1000 + 'k'")
+    return alt.Axis(values=ticks, labelExpr=labels, labelOverlap=False)
+
+
 def band_chart(frame, title, *, log=False, symlog=False, color="#126a63", percent=False, x="Date:T", marks=None, height=520):
     """Hoverable percentile bands with zoom, a sparse long-horizon year axis and optional life-event lines."""
     import altair as alt
@@ -737,12 +747,7 @@ def band_chart(frame, title, *, log=False, symlog=False, color="#126a63", percen
     else:
         scale = alt.Scale(zero=True)
     if symlog:
-        upper = float(frame["P95"].max())
-        first_power = 4 if upper >= 1e6 else 3
-        ticks = [0, *[10 ** power for power in range(first_power, 10) if 10 ** power <= upper]]
-        labels = ("datum.value === 0 ? '$0' : datum.value >= 1000000 ? "
-                  "'$' + datum.value / 1000000 + 'm' : '$' + datum.value / 1000 + 'k'")
-        axis = alt.Axis(values=ticks, labelExpr=labels, labelOverlap=False)
+        axis = symlog_axis(float(frame["P95"].max()))
     else:
         axis = alt.Axis(format=".0%" if percent else "$,.0f")
     number = ".1%" if percent else "$,.0f"
@@ -839,7 +844,7 @@ def paths_image(paths, funded, depleted, first, last, top, wide):
     return "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode("ascii")
 
 
-def all_paths_chart(paths, marks, outcomes=None, cache_key=None):
+def all_paths_chart(paths, marks, outcomes=None, cache_key=None, log=True):
     """Many paths' total wealth: translucent grey lines whose overlaps show the distribution, ruin paths in red.
 
     Speed: the drawn lines are one server-rendered image, cached per result, so the browser never draws hundreds
@@ -851,11 +856,12 @@ def all_paths_chart(paths, marks, outcomes=None, cache_key=None):
     medians = paths.groupby("Date")["Total wealth"].median()  # from every path, drawn or not
     funded, depleted = shown_paths(paths)
     drawn = paths.loc[paths["Path"].isin(funded + depleted), ["Date", "Path", "Status", "Total wealth"]]
-    wide = float(drawn["Total wealth"].quantile(0.95)) > 20 * max(1000.0, float(medians.max()))
-    # The axis stops just above the 97.5th percentile of the paths' peaks, so a few runaway paths do not squash
-    # the band where most paths sit; about one path in forty is clipped at the top edge.
+    wide = log  # symlog: logarithmic above $1,000 and linear below, so paths at $0 still plot
+    # On a linear axis the top stops just above the 97.5th percentile of the paths' peaks, so a few runaway paths do
+    # not squash the band where most paths sit; about one path in forty is clipped. The log axis shows every path.
     peaks = drawn.groupby("Path")["Total wealth"].max()
-    top = min(float(peaks.max()) * 1.02, float(peaks.quantile(0.975)) * 1.05) or 1.0
+    top = (float(peaks.max()) * 1.02 if log
+           else min(float(peaks.max()) * 1.02, float(peaks.quantile(0.975)) * 1.05)) or 1.0
     clipped = int((peaks > top).sum())
     first, last = pd.Timestamp(paths["Date"].min()), pd.Timestamp(paths["Date"].max())
     cache = st.session_state.setdefault("paths_image_cache", {})
@@ -865,14 +871,15 @@ def all_paths_chart(paths, marks, outcomes=None, cache_key=None):
         cache[cache_key] = paths_image(drawn, funded, depleted, first, last, top, wide)
     y_scale = (alt.Scale(type="symlog", constant=1000, domain=[0, top], nice=False) if wide
                else alt.Scale(domain=[0, top], nice=False))
-    y_title = "Total wealth, today's dollars" + (" (log-like)" if wide else "")
-    y = alt.Y("Total wealth:Q", title=y_title, scale=y_scale, axis=alt.Axis(format="$,.0f"))
+    y_title = "Total wealth, today's dollars" + (" · log scale" if wide else "")
+    y_axis = symlog_axis(top) if wide else alt.Axis(format="$,.0f")
+    y = alt.Y("Total wealth:Q", title=y_title, scale=y_scale, axis=y_axis)
     x = alt.X("Date:T", title=None, axis=year_axis(drawn), scale=alt.Scale(domain=[first.isoformat(), last.isoformat()]))
     # The image's left edge must use the same field name as the shared x encoding ("Date"), or it is never placed.
     image = pd.DataFrame({"url": [cache[cache_key]], "Date": [first.isoformat()],
                           "x2": [last.isoformat()], "y": [top], "y2": [0.0]})
     lines = alt.Chart(image).mark_image(aspect=False, align="left", baseline="top").encode(
-        x=x, x2="x2:T", y=alt.Y("y:Q", scale=y_scale, title=y_title, axis=alt.Axis(format="$,.0f")), y2="y2:Q", url="url:N")
+        x=x, x2="x2:T", y=alt.Y("y:Q", scale=y_scale, title=y_title, axis=y_axis), y2="y2:Q", url="url:N")
     hover = alt.selection_point(fields=["Path"], on="pointerover", nearest=True, clear="pointerout", empty=False,
                                 name="path_hover")
     # Compact hover data: dates as plain strings, whole dollars, and per-path facts joined in the browser.
@@ -1595,15 +1602,15 @@ def wealth_bands(run, calculated, marks):
     """Wealth bands for the chosen account; a fragment so switching accounts redraws only this chart."""
     names = list(dict.fromkeys(run.account_bands["Series"]))
     choice = st.radio("Show", names, horizontal=True, key=key("wealth_series"))
+    wide = st.toggle("Log scale", value=True, key=key("wealth_bands_log"))
     bands = run.account_bands.loc[run.account_bands["Series"] == choice]
-    wide = wide_wealth_range(bands)
-    st.altair_chart(band_chart(bands, f"{choice}, today's dollars" + (" (log-like)" if wide else ""), symlog=wide, marks=marks),
+    st.altair_chart(band_chart(bands, f"{choice}, today's dollars" + (" · log scale" if wide else ""), symlog=wide, marks=marks),
                     width="stretch")
     st.caption(f"Month-end {choice.lower()} across the {calculated} calculated paths, in today's dollars: dark band the "
                "middle half, light band 90% of paths, line the median. Dashed vertical lines mark retirement, when super "
                "becomes accessible and when the pension starts. "
-               + ("The axis is linear up to $1,000 and logarithmic above, so a very high upper tail does not flatten "
-                  "the median. " if wide else "")
+               + ("The axis is logarithmic above \\$1,000 and linear below, so \\$0 can be shown and a very high "
+                  "upper tail does not flatten the median; turn off Log scale for a linear axis. " if wide else "")
                + "Total wealth includes super that may not yet be accessible.")
 
 
@@ -1715,7 +1722,8 @@ full, down to each payment. The project's methodology documents give every rule 
     if getattr(run, "wealth_paths", None) is not None:
         st.subheader("Wealth over time across many paths")
         ruin_statistics(run, calculated, marks)
-        chart, grey, red, clipped = all_paths_chart(run.wealth_paths, marks, calculated, cache_key=id(run))
+        log = st.toggle("Log scale", value=True, key=key("all_paths_log"))
+        chart, grey, red, clipped = all_paths_chart(run.wealth_paths, marks, calculated, cache_key=id(run), log=log)
         total = run.wealth_paths["Path"].nunique()
         st.markdown(f"<span style='color:{GREY}'>&#9644;</span> {grey} of {total - red} paths that never ran out "
                     f"&nbsp; <span style='color:{RED}'>&#9644; &#10010;</span> all {red} paths that ran out, and where "
