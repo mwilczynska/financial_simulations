@@ -36,6 +36,7 @@ Decision records preserve why Financial Simulations makes a material modelling o
 | [0028](0028-division-296-tax.md) | 2026-10-29 | Accepted; implemented and locally validated | Division 296 tax assessed (enacted formula, ATO examples) on super distribution income and released from super, instead of rejecting balances above $3m |
 | [0029](0029-super-realised-gains.md) | 2026-10-29 | Accepted; implemented and locally validated | Super funds realise an assumed share (default 20%) of accumulated gains each year: taxed in accumulation and counted for Division 296 with the 0.2-1.0 transitional factor |
 | [0030](0030-reinvest-surplus-cash-in-retirement.md) | 2026-10-30 | Accepted; implemented and locally validated | Cash above the buffer is always reinvested in the outside portfolio after retirement (no option) |
+| [0031](0031-sell-lowest-taxable-gain-parcels-first.md) | 2026-10-30 | Accepted; implemented and locally validated | Every outside sale identifies parcels with the lowest taxable gain per dollar first, replacing oldest-first |
 
 ## When to write a record
 

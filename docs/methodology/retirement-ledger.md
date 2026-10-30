@@ -97,8 +97,9 @@ Asset unit prices start at 1. On each day:
    are paid on the first observation day on or after their scheduled date,
    using this order:
    1. outside cash;
-   2. outside sales, proportional to value across assets and oldest parcels
-      first within each asset, realising a dated CGT event per parcel;
+   2. outside sales, proportional to value across assets and, within each
+      asset, the parcel with the lowest taxable gain per dollar first (see
+      *Parcel selection* below), realising a dated CGT event per parcel;
    3. accumulation lump sums, once accessible (tax free at 60 or over);
    4. extra account-based pension payments.
 
@@ -175,9 +176,9 @@ transfers between the person's accounts.
 | Franking credit ratio | 30% company tax | Assumption; base-rate entities pay 25% |
 | Fund realised gains | None | Simplification: overstates net fund returns when funds turn over assets |
 | Rebalancing | Optional per account (`outside_rebalance`, `super_rebalance`; ledger default off, planner default annual). On the first return observation of a calendar year, accounts reset to target weights at pre-return values. Outside sales are CGT events labelled `purpose = rebalance`; super switches are untaxed | [ADR 0018](../decisions/0018-planner-annual-rebalancing.md); untaxed super switching overstates fund returns |
-| Parcel selection | Oldest first within asset | Engineering choice; specific identification is allowed in law |
+| Parcel selection | Within each asset, lowest taxable gain per dollar of proceeds first, for every outside sale (spending, tax and rebalancing) | Specific identification is allowed where records show which units were sold (ATO); the greedy per-sale order is an engineering choice. [ADR 0031](../decisions/0031-sell-lowest-taxable-gain-parcels-first.md) |
 | Interest on cash | `cash_interest` (ledger default 0; planner default 3% a year, an assumption), credited daily, taxable | [ADR 0021](../decisions/0021-cash-interest-and-withdrawal-rates.md); no bank interest calendar, deposit rate curve or term deposits |
-| Outside contributions | Surplus sweep (ledger default) or a fixed per-payday amount, optionally indexed each 1 July; the planner stops new investing at retirement | User requirement, [ADR 0020](../decisions/0020-outside-contributions-stop-at-retirement.md) |
+| Outside contributions | Surplus sweep (ledger default) or a fixed per-payday amount, optionally indexed each 1 July; from the retirement date all cash above the buffer is reinvested | User requirements, [ADR 0020](../decisions/0020-outside-contributions-stop-at-retirement.md) and [ADR 0030](../decisions/0030-reinvest-surplus-cash-in-retirement.md) |
 | Default weights | Opening holdings' proportions; error if none | Prevents silently investing in an arbitrary asset |
 | Opening TSB at the prior 30 June | Opening super value unless supplied | Input; supply the true value for cap tests |
 
@@ -199,6 +200,36 @@ transfers between the person's accounts.
 
 `write_ledger_report` writes `daily.csv`, `events.csv`, `annual.json` (with
 the rule-set hash and assumptions) and `ledger.png` directly from Python.
+
+## Parcel selection
+
+Every outside sale names the parcels it sells, within each asset, in
+ascending order of
+
+    k = taxable gain if the whole parcel were sold today / its value today
+
+with ties broken by acquisition date. The taxable gain follows the ledger's
+CGT events:
+- before 1 July 2027, `value − cost base`;
+- from that date, the deferred gain `reform value − cost base` plus the
+  post-reform gain on the indexed base (`post_reform_gain`).
+
+A gain counts at `1 − cgt_discount_individual` (half) when it is eligible
+for the discount: it is positive, held 12 months and not post-reform.
+Losses give a negative k, so they are realised first.
+
+The rule chooses the cheapest parcels sale by sale. It does not plan sales
+across years. For example, it does not hold a loss back for a later
+high-income year. A sale draws on the cheapest parcels first, which leaves
+lower-cost parcels for later sales.
+
+The ATO lets an investor choose which shares or units were sold when
+records (for example CHESS or issuer statements) identify them.
+[Keeping records of shares and units](https://www.ato.gov.au/individuals-and-families/investments-and-assets/capital-gains-tax/shares-and-similar-investments/keeping-records-of-shares-and-units)
+(last updated 22 June 2026, viewed 30 October 2026) gives an example of an
+investor selling a later, higher-cost parcel to realise a loss. The model
+assumes such records are kept. Managed-fund unit registries can differ in
+what they report.
 
 ## Limitations
 
@@ -228,4 +259,5 @@ the rule-set hash and assumptions) and `ledger.png` directly from Python.
   early access stop the run by design; tax that cannot be funded is recorded
   as unpaid.
 
-Revision history: 2026-10-28, first implementation.
+Revision history: 2026-10-28, first implementation. 2026-10-30, surplus cash reinvested from retirement
+(ADR 0030) and parcels sold lowest taxable gain first (ADR 0031).

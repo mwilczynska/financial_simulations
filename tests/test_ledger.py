@@ -280,6 +280,21 @@ def test_fixed_outside_contributions_then_surplus_cash_reinvested_from_retiremen
     assert late["amount"].tolist() == pytest.approx([103.0] * len(late)) and len(late) >= 2
 
 
+def test_sales_take_the_lowest_taxable_gain_per_dollar_first():
+    # Per dollar of proceeds: the loss parcel (-0.10), then the recent parcel held under 12 months (0.15, no
+    # discount), then the old cheap parcel (0.60 halved by the discount to 0.30). Oldest-first would sell it first.
+    old, recent, loss = date(2015, 3, 2), date(2026, 5, 1), date(2020, 1, 2)
+    parcels = (Parcel("GL", 100000, 40000, old), Parcel("GL", 100000, 85000, recent), Parcel("GL", 100000, 110000, loss))
+    result = run_ledger(market(), scenario_with(Person("1985-01-01"), outside_parcels=parcels, annual_spending=240000), YEARS)
+    sales = result.events[result.events["event"] == "sale"]
+    order = sales["acquired"].drop_duplicates().tolist()
+    assert order == [str(loss), str(recent), str(old)]
+    sold = sales.groupby("acquired")["amount"].sum()
+    assert sold[str(loss)] == pytest.approx(100000) and sold[str(recent)] == pytest.approx(100000)
+    assert sold[str(old)] == pytest.approx(40000)
+    assert sales.loc[sales["acquired"] == str(old), "gain"].sum() == pytest.approx(40000 * 0.6)
+
+
 def test_cash_earns_daily_interest_that_is_taxed_and_reconciles():
     result = run_ledger(market(), scenario_with(Person("1985-01-01"), outside_cash=100000, cash_buffer=100000,
                                                 outside_contribution_per_payday=0.0, cash_interest=0.04), YEARS)

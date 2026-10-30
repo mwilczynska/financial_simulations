@@ -90,7 +90,8 @@ volatile portfolios, smaller tax bills or a larger buffer will differ.
   while the median and upper tail are slightly lower.
 - The churn comes from the parcel order. Selling the newest or
   highest-cost parcels first for spending (specific identification) would
-  reduce the extra gains. It is not implemented.
+  reduce the extra gains. [ADR 0031](0031-sell-lowest-taxable-gain-parcels-first.md)
+  implements this for every outside sale.
 - Reinvested amounts appear in the planner's "added to outside investments"
   line after retirement, and the app captions say so.
 

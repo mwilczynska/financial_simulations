@@ -58,7 +58,8 @@ return then applies.
 
 In the retirement ledger:
 
-- **Outside super.** Overweight assets are sold oldest parcel first. Each
+- **Outside super.** Overweight assets are sold oldest parcel first (lowest
+  taxable gain first since [ADR 0031](0031-sell-lowest-taxable-gain-parcels-first.md)). Each
   sale is an ordinary CGT event, with the same discount, loss and
   1 July 2027 reform treatment as any other sale. The event is labelled
   `purpose = "rebalance"`. The proceeds buy new parcels of the

@@ -1686,8 +1686,8 @@ def withdrawal_strategy(plan):
     st.info(f"**Withdrawal strategy: {names[rule]}.** You retire on {retire:%d %B %Y} (age "
             f"{person['retirement_age']}). Retirement spending starts at {start}. {how}"
             + (f" Limits: {' and '.join(bounds)} a year (today's dollars, rising with inflation)." if bounds else "")
-            + f"\n\n**Where it comes from:** cash first, then your outside investments (selling the oldest holdings, "
-            f"with capital gains tax), then super from {access:%d %B %Y}"
+            + f"\n\n**Where it comes from:** cash first, then your outside investments (selling the holdings with the "
+            f"smallest taxable gain first, with capital gains tax), then super from {access:%d %B %Y}"
             + (f", with your super moved into an account-based pension at {pension} paying at least the legal minimum"
                if pension else "")
             + ". From 67 the means-tested Age Pension adds income when your assets and income are low enough. "

@@ -15,9 +15,15 @@ Scope and conventions (see docs/methodology/retirement-ledger.md):
   pension payments, distributions and interest do not pile up. Holdings drift between optional annual
   rebalances, which reset each account to its weights at pre-return values on
   the first return observation of each calendar year. Outside super a
-  rebalance sells overweight parcels (oldest first) and realises CGT; inside
+  rebalance sells overweight parcels and realises CGT; inside
   super it is an untaxed unit switch, and the fund's own trading is the
   realised-gains assumption below.
+* Every outside sale (spending, tax, rebalancing) identifies the parcels it
+  sells, as the ATO allows when records show which units were sold: within
+  each asset, the parcel with the lowest taxable gain per dollar of proceeds
+  goes first, so losses before gains and high-cost parcels before old cheap
+  ones. A discountable gain counts at half. This is chosen sale by sale; it
+  does not plan sales across years.
 * Salary is paid gross. Income tax is assessed at 30 June and settled on a
   configurable later date. With ``payg_withholding`` each payday withholds a
   26th of the estimated tax on a full year's salary, and the settlement pays
@@ -61,7 +67,8 @@ from financial_simulations.rules.au.superannuation import (
     TransferBalanceAccount, access_date, add_business_days, age_on, apply_concessional, apply_non_concessional, birthday,
     accumulation_earnings_tax, concessional_cap, division_296_tax, minimum_pension_payment, require_tax_free_benefits,
     super_guarantee)
-from financial_simulations.rules.au.tax import CapitalGainEvent, IncomeYear, assess, post_reform_gain
+from financial_simulations.rules.au.tax import (CapitalGainEvent, IncomeYear, assess, held_twelve_months,
+                                             indexation_factor, post_reform_gain)
 
 
 TOLERANCE = 1e-6
@@ -419,7 +426,7 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
         log("buy", sum(amounts.values()), "outside", purpose=purpose)
 
     def sell_outside(amount):
-        """Sell proportionally across assets by value, oldest parcels first within each asset."""
+        """Sell proportionally across assets by value, choosing parcels within each asset as ``sell_parcels`` does."""
         holdings = {a: state.outside_units[a] * state.prices[a] for a in assets}
         total = sum(holdings.values())
         amount = min(amount, total)
@@ -428,12 +435,58 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
         sell_parcels({a: amount * v / total for a, v in holdings.items()}, "withdrawal")
         return amount
 
+    def parcel_gains(parcel, sold, fraction):
+        """CGT events from selling ``fraction`` of ``parcel`` today for ``sold``."""
+        cost = parcel.cost_base * fraction
+        if day < reform:
+            return [CapitalGainEvent(parcel.acquired, day, sold - cost)]
+        cpi = state.fy["rules"]["assumed_cpi_annual"]
+        if parcel.reform_value is None:  # acquired from 1 July 2027
+            return [CapitalGainEvent(parcel.acquired, day, post_reform_gain(cost, sold, parcel.acquired, day,
+                                                                             parcel.acquired, cpi), "post_reform")]
+        # Deemed sale just before, and reacquisition on, 1 July 2027.
+        reacquired = parcel.reform_value * fraction
+        return [CapitalGainEvent(parcel.acquired, day, reacquired - cost, "deferred"),
+                CapitalGainEvent(parcel.acquired, day, post_reform_gain(reacquired, sold, reform, day, parcel.acquired, cpi),
+                                 "post_reform")]
+
+    def taxable_per_dollar(parcel, factors):
+        """Taxable gain per dollar of proceeds if the whole parcel were sold today; losses are negative.
+
+        The arithmetic of ``parcel_gains`` without building CGT events (it ranks every parcel at each sale): a
+        discount-eligible gain counts at ``1 - discount``. ``factors`` caches indexation factors for this day.
+        """
+        value = parcel.units * state.prices[parcel.asset]
+        if value <= 0:
+            return 0.0
+        rules = state.fy["rules"]
+        discount = rules["cgt_discount_individual"]
+        held = held_twelve_months(parcel.acquired, day)
+        if day < reform:
+            gain = value - parcel.cost_base
+            return (gain * (1 - discount) if held and gain > 0 else gain) / value
+        taxable, base, spent = 0.0, parcel.cost_base, parcel.acquired
+        if parcel.reform_value is not None:
+            deferred = parcel.reform_value - parcel.cost_base
+            taxable = deferred * (1 - discount) if held and deferred > 0 else deferred
+            base, spent = parcel.reform_value, reform
+        factor = 1.0
+        if held:
+            if spent not in factors:
+                factors[spent] = indexation_factor(spent, day, rules["assumed_cpi_annual"])
+            factor = factors[spent]
+        return (taxable + (value - base * factor if value > base * factor else min(0.0, value - base))) / value
+
     def sell_parcels(targets, purpose):
-        """Sell ``targets`` (AUD by asset), oldest parcels first; record each CGT event."""
+        """Sell ``targets`` (AUD by asset), lowest taxable gain per dollar first; record each CGT event."""
         remaining_parcels = []
         targets = dict(targets)
         sold_total = 0.0
-        for parcel in sorted(state.parcels, key=lambda p: p.acquired):
+        factors = {}
+        selling = [p for p in state.parcels if targets.get(p.asset, 0.0) > TOLERANCE]
+        kept = [p for p in state.parcels if targets.get(p.asset, 0.0) <= TOLERANCE]
+        remaining_parcels.extend(kept)
+        for parcel in sorted(selling, key=lambda p: (taxable_per_dollar(p, factors), p.acquired)):
             target = targets.get(parcel.asset, 0.0)
             value = parcel.units * state.prices[parcel.asset]
             if target <= TOLERANCE or value <= 0:
@@ -442,18 +495,7 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
             sold = min(value, target)
             fraction = sold / value
             cost = parcel.cost_base * fraction
-            if day < reform:
-                gains = [CapitalGainEvent(parcel.acquired, day, sold - cost)]
-            else:
-                cpi = state.fy["rules"]["assumed_cpi_annual"]
-                if parcel.reform_value is None:  # acquired from 1 July 2027
-                    gains = [CapitalGainEvent(parcel.acquired, day, post_reform_gain(cost, sold, parcel.acquired, day,
-                                                                                     parcel.acquired, cpi), "post_reform")]
-                else:  # deemed sale just before, and reacquisition on, 1 July 2027
-                    reacquired = parcel.reform_value * fraction
-                    gains = [CapitalGainEvent(parcel.acquired, day, reacquired - cost, "deferred"),
-                             CapitalGainEvent(parcel.acquired, day, post_reform_gain(reacquired, sold, reform, day,
-                                                                                     parcel.acquired, cpi), "post_reform")]
+            gains = parcel_gains(parcel, sold, fraction)
             state.fy["events"].extend(gains)
             log("sale", sold, "outside", asset=parcel.asset, gain=sum(g.amount for g in gains), acquired=str(parcel.acquired),
                 purpose=purpose, **{f"{g.category}_gain": g.amount for g in gains})
@@ -462,7 +504,7 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
             if fraction < 1 - 1e-12:
                 remaining_parcels.append(Parcel(parcel.asset, parcel.units * (1 - fraction), parcel.cost_base - cost, parcel.acquired,
                                                 None if parcel.reform_value is None else parcel.reform_value * (1 - fraction)))
-        state.parcels = remaining_parcels
+        state.parcels = sorted(remaining_parcels, key=lambda p: p.acquired)
         state.outside_units = {a: 0.0 for a in assets}
         for parcel in remaining_parcels:
             state.outside_units[parcel.asset] += parcel.units
