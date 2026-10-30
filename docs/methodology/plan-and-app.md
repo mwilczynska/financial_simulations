@@ -414,7 +414,15 @@ positions them.
      whiskers from the 25th to the 75th percentile. Each path's
      `retirement_annual` rows carry its `Flow: …` columns and its
      `Net change in wealth`. Medians of components do not add up, so the
-     bars need not sum to the median net change; the chart says so;
+     bars need not sum to the median net change; the chart says so. The
+     rows also carry `Wealth at start of year` and `Wealth at end of year`
+     (`household_flows` opening and closing totals), and the net-change
+     tooltip gives their medians. Above the chart, the single-path figures
+     from the daily ledger section appear as medians across calculated
+     paths: wealth at start (the same on every path), at retirement, when
+     super becomes accessible and at the end; Age Pension received;
+     spending shortfall; total personal, fund and Division 296 tax; and
+     largest fall in wealth. Each is a separate median;
    - **spending in retirement**. With a percentage start, it shows the median
      and 5th–95th percentile dollar amounts the percentage produced. With a
      dollar start, it shows that amount as a percentage of wealth at

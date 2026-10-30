@@ -63,13 +63,16 @@ def _summarise(path: int, result: LedgerResult, retire: date, cpi: float):
     # Each year's money in and out on this path, so the app can show medians across paths.
     yearly = household_flows(daily, inflation=True)
     household = yearly.pivot_table(index="FY ending", columns="Flow", values="AUD", aggfunc="sum")
-    net = yearly.drop_duplicates("FY ending").set_index("FY ending")["Net change"]
+    totals = yearly.drop_duplicates("FY ending").set_index("FY ending")
+    net = totals["Net change"]
     moves = account_flows(daily, real_events(result.events, first, cpi))
     added = moves.loc[moves["Flow"] == "Savings invested"].groupby("FY ending")["AUD"].sum()
     for row in rows:
         year = row["FY ending"]
         row.update({f"Flow: {flow}": float(household.loc[year, flow]) for flow in household.columns})
         row["Net change in wealth"] = float(net.loc[year])
+        row["Wealth at start of year"] = float(totals.loc[year, "Opening"])
+        row["Wealth at end of year"] = float(totals.loc[year, "Closing"])
         # A transfer from cash, not a change in total wealth, so it is kept apart from the flows above.
         row["Added to outside investments"] = float(added.get(year, 0.0))
     retired_rates = [r["Withdrawal rate"] for r in rows if r["Full retired year"] and np.isfinite(r["Withdrawal rate"])]

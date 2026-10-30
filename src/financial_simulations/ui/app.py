@@ -1381,14 +1381,38 @@ def flow_domain(frame, field, extra=()):
     return [low - pad, top + pad]
 
 
-def typical_flows_section(annual, marks, paths):
+def typical_flows_section(annual, marks, calculated, start_wealth):
     """Median money in and out each year across every calculated path, with the net change's middle half."""
     import altair as alt
 
     columns = [c for c in annual.columns if c.startswith("Flow: ")]
     if not columns:
         return
+    paths = len(calculated)
     st.subheader("Money in and out in a typical year, across all paths")
+
+    def median(column):
+        return float(calculated[column].median()) if column in calculated and calculated[column].notna().any() else np.nan
+
+    # The same figures as section 5's single path, as medians across paths (each median is taken on its own).
+    w = st.columns(4)
+    w[0].metric("Wealth at start", compact(start_wealth), help="The same on every path: your wealth today.")
+    w[1].metric("Median wealth at retirement", compact(median("Wealth at retirement")),
+                help="Total wealth on your retirement date, today's dollars.")
+    w[2].metric("Median wealth when super becomes accessible", compact(median("Wealth when super accessible")),
+                help="Total wealth on the first day super can be withdrawn (preservation age and retirement), when that "
+                     "is after the start.")
+    w[3].metric("Median ending wealth", compact(median("Ending wealth")))
+    a, b, c, d = st.columns(4)
+    a.metric("Median Age Pension received", compact(median("Age Pension received")))
+    b.metric("Median spending shortfall", compact(median("Spending shortfall")))
+    c.metric("Median tax (personal, fund, Division 296)",
+             compact(float((calculated["Personal tax assessed"] + calculated["Fund tax"]
+                            + calculated["Division 296 tax"]).median())),
+             help="Each path's total tax over the horizon, in today's dollars; the median across paths.")
+    d.metric("Median largest fall in wealth", share(median("Largest fall in wealth")),
+             help="Each path's deepest fall of total wealth below its previous high; the median across paths. Unlike a "
+                  "portfolio drawdown it includes spending, so it keeps falling in retirement even in flat markets.")
     long = annual.melt(["Path", "FY ending"], value_vars=columns, var_name="Flow", value_name="AUD")
     long["Flow"] = long["Flow"].str.replace("Flow: ", "", regex=False)
     stats = long.groupby(["FY ending", "Flow"])["AUD"].quantile([0.25, 0.5, 0.75]).unstack().reset_index()
@@ -1398,6 +1422,9 @@ def typical_flows_section(annual, marks, paths):
     net = annual.groupby("FY ending")["Net change in wealth"].quantile([0.25, 0.5, 0.75]).unstack().reset_index()
     net.columns = ["FY ending", "P25", "Median", "P75"]
     net["Period"] = net["FY ending"].map(period_label)
+    wealth = [c for c in ("Wealth at start of year", "Wealth at end of year") if c in annual]
+    if wealth:
+        net = net.merge(annual.groupby("FY ending")[wealth].median().reset_index(), on="FY ending")
     order = [f for f in FLOW_COLOURS if f in set(stats["Flow"])]
     domain = [int(annual["FY ending"].min()) - 0.6, int(annual["FY ending"].max()) + 0.6]
     x = alt.X("FY ending:Q", axis=fy_axis(annual), scale=alt.Scale(domain=domain, nice=False))
@@ -1416,9 +1443,13 @@ def typical_flows_section(annual, marks, paths):
         x=x, y=alt.Y("P25:Q", title=""), y2="P75:Q")
     line = alt.Chart(net).mark_line(color="#19353a", strokeWidth=2, point=alt.OverlayMarkDef(color="#19353a", size=40)).encode(
         x=x, y="Median:Q", tooltip=[alt.Tooltip("Period:N", title="Year"),
+                                    *[alt.Tooltip(f"{c}:Q", title="Median wealth at start", format="$,.0f")
+                                      for c in wealth if c.endswith("start of year")],
                                     alt.Tooltip("Median:Q", title="Median net change in wealth", format="$,.0f"),
                                     alt.Tooltip("P25:Q", title="25th percentile", format="$,.0f"),
-                                    alt.Tooltip("P75:Q", title="75th percentile", format="$,.0f")])
+                                    alt.Tooltip("P75:Q", title="75th percentile", format="$,.0f"),
+                                    *[alt.Tooltip(f"{c}:Q", title="Median wealth at end", format="$,.0f")
+                                      for c in wealth if c.endswith("end of year")]])
     zero = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(color="#5f6b73").encode(y="y:Q")
     added = additions_layer(additions, x)
     layers = [bars, zero, spread, line] + ([added] if added is not None else [])
@@ -1428,8 +1459,10 @@ def typical_flows_section(annual, marks, paths):
                "and super fund tax below. **Inflation** (grey) is the buying power your wealth lost that year: in "
                "today's dollars, wealth that only kept pace with prices shows no gain. The black line is the median net "
                "change in total wealth, with whiskers "
-               "showing the middle half of paths (25th to 75th percentile). Hover a bar for its 25th and 75th "
-               "percentiles. The dashed teal line with squares is the median amount **added to outside investments** from your "
+               "showing the middle half of paths (25th to 75th percentile); hover it for the median wealth at the start "
+               "and end of each year. Hover a bar for its 25th and 75th percentiles. The figures above the chart are "
+               "medians across paths of section 5's single-path figures; each is a separate median, so they need not "
+               "come from the same path. The dashed teal line with squares is the median amount **added to outside investments** from your "
                "pay each year; it moves money from cash into the portfolio, so it is not a bar and does not change total "
                "wealth, and it stops at retirement. Medians do not add up, so the bars do not sum exactly to the median net change; "
                "investment returns vary most between paths. Section 5 shows one path whose bars add up exactly.")
@@ -1756,7 +1789,7 @@ full, down to each payment. The project's methodology documents give every rule 
                "percentile.")
     annual = run.retirement_annual.copy()
     annual["Period"] = annual["FY ending"].map(period_label)
-    typical_flows_section(annual, marks, len(calculated))
+    typical_flows_section(annual, marks, calculated, float(run.result.daily["total"].iloc[0]))
     spending_section(plan, annual, calculated, marks)
     age_pension_section(plan, annual, calculated, marks)
     st.subheader("Withdrawal rate in each retired year")
