@@ -474,7 +474,9 @@ def inputs_retirement(plan):
     a, b = st.columns(2)
     with a:
         pension["start_age"] = int(st.number_input("Start pension at age (0 = never)", 0, 80, int(pension["start_age"]), 1,
-                                                   key=key("pension_age"), help="Needs retirement and age 60 or over, or age 65."))
+                                                   key=key("pension_age"),
+                                                   help="Needs retirement and age 60 or over, or age 65. An earlier age "
+                                                        "starts the pension when super becomes accessible."))
     with b:
         pension["transfer_all"] = st.checkbox("Move the whole super balance into the pension (up to the transfer balance cap)",
                                               pension["transfer_all"], key=key("all"))
@@ -1688,7 +1690,8 @@ def withdrawal_strategy(plan):
             + (f" Limits: {' and '.join(bounds)} a year (today's dollars, rising with inflation)." if bounds else "")
             + f"\n\n**Where it comes from:** cash first, then your outside investments (selling the holdings with the "
             f"smallest taxable gain first, with capital gains tax), then super from {access:%d %B %Y}"
-            + (f", with your super moved into an account-based pension at {pension} paying at least the legal minimum"
+            + (f", with your super moved into an account-based pension on "
+               f"{max(birthday(born.isoformat(), pension), access):%d %B %Y} paying at least the legal minimum"
                if pension else "")
             + ". From 67 the means-tested Age Pension adds income when your assets and income are low enough. "
             "Change any of this on the Retirement tab.")

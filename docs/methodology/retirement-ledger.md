@@ -63,6 +63,9 @@ Asset unit prices start at 1. On each day:
    transfer (`amount = None`) moves at most the unused transfer balance cap
    and leaves the rest in accumulation. An explicit amount that would exceed
    the cap stops the run, because excess transfer balance tax is not modelled.
+   An earlier commencement stops the run (transition to retirement is not
+   modelled); the planner instead moves such a start to the access date
+   ([ADR 0032](../decisions/0032-defer-early-pension-to-super-access.md)).
 7. **Spending** is scheduled on the opening day and on each 1st of the month,
    at annual spending/12, rising by `spending_growth` at each 1 July. From the
    retirement date the base becomes `retirement_spending` when it is given

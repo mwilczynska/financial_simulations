@@ -88,6 +88,20 @@ def test_horizon_runs_past_age_pension_age_with_the_age_pension(processed_fixtur
     assert horizon(plan)[1:] == (date(2072, 2, 29), True)  # the day before age 110 (2072 is a leap year)
 
 
+def test_pension_before_super_access_starts_when_super_becomes_accessible(processed_fixture):
+    plan = default_plan()
+    plan["person"].update(date_of_birth="1966-05-10", retirement_age=65)
+    plan["pension"]["start_age"] = 60
+    market = load_plan_markets(plan["assets"], processed_fixture)
+    _, scenario, _, notes = build_inputs(plan, market=market)
+    assert scenario.pension.commence == date(2031, 5, 10)  # 65th birthday, not the requested 60th
+    assert any("transition-to-retirement" in note for note in notes)
+    plan["person"]["retirement_age"] = 60
+    _, scenario, _, notes = build_inputs(plan, market=market)
+    assert scenario.pension.commence == date(2026, 7, 1)  # the plan start, already past age 60 and retirement
+    assert not any("transition-to-retirement" in note for note in notes)
+
+
 def test_run_plan_writes_portfolio_and_retirement_reports(tmp_path, processed_fixture):
     plan = quick_plan()
     market = load_plan_markets(plan["assets"], processed_fixture)

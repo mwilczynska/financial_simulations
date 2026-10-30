@@ -133,6 +133,12 @@ Pension age with the single Age Pension and SAPTO
 a longer requested horizon is shortened and reported. `person.homeowner`
 (default true) and `person.other_assets` (default 0) feed the assets test.
 
+The pension commences on the later of `pension.start_age` and the date super
+becomes accessible (retirement after preservation age, or 65). An earlier
+requested age is moved to that date with a run note, because a
+transition-to-retirement pension is not modelled
+([ADR 0032](../decisions/0032-defer-early-pension-to-super-access.md)).
+
 Three series are reported: each account's portfolio and a **combined**
 portfolio. The combined series starts in proportion to the opening outside
 investment balance and super balance. It then lets each account compound

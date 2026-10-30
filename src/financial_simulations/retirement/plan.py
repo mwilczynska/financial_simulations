@@ -28,7 +28,7 @@ from financial_simulations.retirement.ledger import (AssetIncome, Employment, Le
                                                      SpendingRule)
 from financial_simulations.rules.au.parameters import financial_year_of, load_ruleset
 from financial_simulations.rules.au.projection import ProjectionAssumptions, project_rulesets
-from financial_simulations.rules.au.superannuation import birthday
+from financial_simulations.rules.au.superannuation import access_date, birthday
 
 
 SCHEMA_VERSION = 2
@@ -366,10 +366,18 @@ def build_inputs(plan: dict, *, market=None, returns=None):
         first = plan["employment"]["first_payday"] or next(d for d in pd.date_range(start, periods=7).date if d.weekday() == 3).isoformat()
         growth = plan["assumptions"]["wage_growth_annual"] if plan["employment"]["salary_indexed"] else 0.0
         employment = Employment(plan["employment"]["annual_salary"], first, sacrifice_per_year(plan) / 26, annual_growth=growth)
+    years = project_rulesets(load_ruleset("2026-27"), financial_year_of(end),
+                             ProjectionAssumptions(plan["assumptions"]["cpi_annual"], plan["assumptions"]["wage_growth_annual"]))
     pension = None
     if plan["pension"]["start_age"] > 0:
-        pension = Pension(max(start, birthday(plan["person"]["date_of_birth"], int(plan["pension"]["start_age"]))),
-                          None if plan["pension"]["transfer_all"] else plan["pension"]["amount"])
+        requested = max(start, birthday(plan["person"]["date_of_birth"], int(plan["pension"]["start_age"])))
+        # A pension before super is accessible would be transition to retirement, which is not modelled (ADR 0032).
+        access = access_date(person.born, next(iter(years.values())), person.retirement_date)
+        if requested < access:
+            notes.append(f"The pension was set to start at age {int(plan['pension']['start_age'])}, before super becomes "
+                         f"accessible on {access:%d %B %Y}. It starts on that day instead; a transition-to-retirement "
+                         "pension while still working is not modelled.")
+        pension = Pension(max(requested, access), None if plan["pension"]["transfer_all"] else plan["pension"]["amount"])
     scenario = LedgerScenario(
         person, outside_cash=plan["outside"]["cash"], cash_buffer=plan["outside"]["cash_buffer"],
         outside_parcels=tuple(Parcel(ticker, plan["outside"]["investment_balance"] * weight,
@@ -395,8 +403,6 @@ def build_inputs(plan: dict, *, market=None, returns=None):
         outside_contribution_growth=plan["assumptions"]["cpi_annual"] if plan["outside"]["contribution_indexed"] else 0.0,
         cash_interest=plan["outside"]["cash_interest"], payg_withholding=True,
         age_pension=True, super_realised_gains=plan["super"]["realised_gains"])
-    years = project_rulesets(load_ruleset("2026-27"), financial_year_of(end),
-                             ProjectionAssumptions(plan["assumptions"]["cpi_annual"], plan["assumptions"]["wage_growth_annual"]))
     return path, scenario, years, notes
 
 
