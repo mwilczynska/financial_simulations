@@ -1,6 +1,9 @@
 # ADR 0020: explicit outside contributions that stop at retirement
 
-Date: 2026-10-29. Status: accepted; implemented and locally validated.
+Date: 2026-10-29. Status: accepted; implemented and locally validated. The stop on all
+new investing at retirement was superseded on 2026-10-30 by
+[ADR 0030](0030-reinvest-surplus-cash-in-retirement.md): cash above the buffer is now
+reinvested after retirement. The contribution modes stand.
 Extends the surplus-investing convention of the
 [retirement ledger](../methodology/retirement-ledger.md).
 

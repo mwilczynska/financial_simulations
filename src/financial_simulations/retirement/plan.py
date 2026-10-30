@@ -393,7 +393,7 @@ def build_inputs(plan: dict, *, market=None, returns=None):
         outside_contribution_per_payday=(plan["outside"]["contribution_per_year"] / 26 if plan["outside"]["saving"] == "fixed"
                                          else None),
         outside_contribution_growth=plan["assumptions"]["cpi_annual"] if plan["outside"]["contribution_indexed"] else 0.0,
-        stop_investing_at_retirement=True, cash_interest=plan["outside"]["cash_interest"], payg_withholding=True,
+        cash_interest=plan["outside"]["cash_interest"], payg_withholding=True,
         age_pension=True, super_realised_gains=plan["super"]["realised_gains"])
     years = project_rulesets(load_ruleset("2026-27"), financial_year_of(end),
                              ProjectionAssumptions(plan["assumptions"]["cpi_annual"], plan["assumptions"]["wage_growth_annual"]))

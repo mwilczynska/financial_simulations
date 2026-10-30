@@ -25,7 +25,7 @@ Decision records preserve why Financial Simulations makes a material modelling o
 | [0017](0017-ticker-portfolios-and-interactive-results.md) | 2026-10-28 | Accepted; buy-and-hold accounts superseded by 0018 | Local tickers, two portfolio mixes, shared daily simulations and interactive results |
 | [0018](0018-planner-annual-rebalancing.md) | 2026-10-28 | Accepted; implemented and locally validated | Annual rebalancing per account in the planner and tax ledger |
 | [0019](0019-retirement-path-results.md) | 2026-10-28 | Accepted; implemented and locally validated | Keep depleted retirement paths, cap whole-balance pension transfers, more paths and results |
-| [0020](0020-outside-contributions-stop-at-retirement.md) | 2026-10-29 | Accepted; implemented and locally validated | Surplus or fixed (optionally indexed) outside contributions that stop at retirement; sacrifice as a percentage |
+| [0020](0020-outside-contributions-stop-at-retirement.md) | 2026-10-29 | Accepted; stop on investing at retirement superseded by 0030 | Surplus or fixed (optionally indexed) outside contributions that stop at retirement; sacrifice as a percentage |
 | [0021](0021-cash-interest-and-withdrawal-rates.md) | 2026-10-29 | Accepted; implemented and locally validated | Interest on cash; withdrawal rates to a planning age, and a rate that lasts indefinitely |
 | [0022](0022-payg-withholding.md) | 2026-10-29 | Accepted; implemented and locally validated | Estimated PAYG withholding on salary each payday; assessment settles the balance |
 | [0023](0023-retirement-spending-rules.md) | 2026-10-29 | Accepted; implemented and locally validated | Optional Guyton–Klinger and Vanguard retirement spending rules; fixed dollar spending stays the default |
@@ -35,6 +35,7 @@ Decision records preserve why Financial Simulations makes a material modelling o
 | [0027](0027-age-pension-and-sapto.md) | 2026-10-29 | Accepted; implemented and locally validated | Single Age Pension (assets and income tests, deeming, Work Bonus, tax), SAPTO and senior Medicare thresholds; runs pass Age Pension age |
 | [0028](0028-division-296-tax.md) | 2026-10-29 | Accepted; implemented and locally validated | Division 296 tax assessed (enacted formula, ATO examples) on super distribution income and released from super, instead of rejecting balances above $3m |
 | [0029](0029-super-realised-gains.md) | 2026-10-29 | Accepted; implemented and locally validated | Super funds realise an assumed share (default 20%) of accumulated gains each year: taxed in accumulation and counted for Division 296 with the 0.2-1.0 transitional factor |
+| [0030](0030-reinvest-surplus-cash-in-retirement.md) | 2026-10-30 | Accepted; implemented and locally validated | Cash above the buffer is always reinvested in the outside portfolio after retirement (no option) |
 
 ## When to write a record
 

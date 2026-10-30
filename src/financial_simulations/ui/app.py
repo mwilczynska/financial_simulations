@@ -266,9 +266,10 @@ def work_summary(plan):
              help="Estimated on salary less sacrifice, before investment income and capital gains.")
     d.metric("Added to outside investments", f"${invested:,.0f}/yr",
              help=("Your fixed contribution, limited to what is left after tax and spending." if fixed else
-                   "Take-home pay less tax and spending, all invested.") + " Set this on the Investments tab; it stops at retirement.")
+                   "Take-home pay less tax and spending, all invested.") + " Set this on the Investments tab; contributions from pay "
+                   "stop at retirement, after which spare cash above the buffer is reinvested.")
     if fixed and surplus > invested + 1:
-        st.caption(f"About ${surplus - invested:,.0f} a year of leftover pay stays in cash (cash earns no interest in this model).")
+        st.caption(f"About ${surplus - invested:,.0f} a year of leftover pay stays in cash, earning the cash interest rate.")
     if fixed and plan["outside"]["contribution_per_year"] > max(surplus, 0) + 1:
         st.warning("The fixed outside contribution is more than is left after tax and spending; only what is available "
                    "above the cash buffer is invested each payday.")
@@ -277,8 +278,8 @@ def work_summary(plan):
                    "concessional cap. Unless you have carried-forward unused cap, the run will stop with an excess-contributions message.")
     st.caption("How saving outside super works: each fortnight your salary after sacrifice goes into cash. Spending (monthly) "
                "and tax (each 31 October) are paid from it. Then either everything above the cash buffer, or your fixed "
-               "contribution, buys the outside portfolio (choose on the Investments tab). New investing stops at "
-               "retirement. The figures are first-year estimates before investment income; "
+               "contribution, buys the outside portfolio (choose on the Investments tab). From retirement, all cash "
+               "above the buffer is reinvested instead. The figures are first-year estimates before investment income; "
                + ("salary rises with wage growth after that." if employment.get("salary_indexed", True)
                   else "salary stays the same dollar amount after that."))
 
@@ -316,8 +317,9 @@ def inputs_investments(plan):
         plan["outside"]["contribution_indexed"] = st.checkbox(
             f"Increase it with inflation each 1 July ({plan['assumptions']['cpi_annual']:.1%} a year, the CPI assumption)",
             plan["outside"]["contribution_indexed"], key=key("contribution_indexed"))
-    st.caption("Contributions come out of your pay each fortnight and stop at your retirement date. After retirement no new "
-               "money is invested: pension payments or super withdrawals not spent stay in cash. See the estimate on the You tab.")
+    st.caption("Contributions come out of your pay each fortnight and stop at your retirement date. After retirement all cash "
+               "above the buffer is reinvested in this portfolio, such as pension payments, distributions and interest you "
+               "do not spend. See the estimate on the You tab.")
     a, b = st.columns(2)
     with a:
         plan["outside"]["cash"] = money("Cash today", plan["outside"]["cash"], "cash")
@@ -1463,8 +1465,8 @@ def typical_flows_section(annual, marks, calculated, start_wealth):
                "and end of each year. Hover a bar for its 25th and 75th percentiles. The figures above the chart are "
                "medians across paths of section 5's single-path figures; each is a separate median, so they need not "
                "come from the same path. The dashed teal line with squares is the median amount **added to outside investments** from your "
-               "pay each year; it moves money from cash into the portfolio, so it is not a bar and does not change total "
-               "wealth, and it stops at retirement. Medians do not add up, so the bars do not sum exactly to the median net change; "
+               "pay each year, and after retirement from unspent pension payments and other spare cash; it moves money "
+               "from cash into the portfolio, so it is not a bar and does not change total wealth. Medians do not add up, so the bars do not sum exactly to the median net change; "
                "investment returns vary most between paths. Section 5 shows one path whose bars add up exactly.")
 
 
@@ -2094,8 +2096,9 @@ def section_ledger(run):
     layers = [bars, zero, line] + ([added] if added is not None else [])
     st.altair_chart(with_milestones(alt.layer(*layers).properties(height=670), marks, "Position:Q"), width="stretch")
     st.caption("Every dollar that changed your total wealth in each year, for this path. The dashed teal line with squares "
-               "is what was **added to outside investments** from your pay that year: it moves money from cash into the "
-               "portfolio, so it is drawn as a line rather than a bar, and it stops at retirement. Above zero: take-home salary, "
+               "is what was **added to outside investments** that year, from your pay or, after retirement, from unspent "
+               "pension payments and other spare cash: it moves money from cash into the portfolio, so it is drawn as a "
+               "line rather than a bar. Above zero: take-home salary, "
                "employer and salary-sacrifice contributions into super, and investment returns in good years. Below zero: "
                "spending, income tax, the 15% contributions tax, super fund tax, investment losses in bad years and "
                "inflation (the buying power wealth lost that year; amounts are in today's dollars). The black "

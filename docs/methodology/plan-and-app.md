@@ -253,9 +253,12 @@ warns that tail percentiles are noisy.
 left after tax, spending and the cash buffer is invested. In `fixed` mode
 `contribution_per_year / 26` is invested each payday, as far as cash above
 the buffer allows. With `contribution_indexed`, that amount rises each
-1 July by the CPI assumption. Leftover pay stays in cash. In both modes new
-investing stops at the retirement date
+1 July by the CPI assumption. Leftover pay stays in cash. Contributions from
+pay end at the retirement date
 ([ADR 0020](../decisions/0020-outside-contributions-stop-at-retirement.md)).
+From then on all cash above the buffer, such as unspent pension payments,
+is reinvested in the outside portfolio. This is not a plan setting
+([ADR 0030](../decisions/0030-reinvest-surplus-cash-in-retirement.md)).
 
 The You tab shows a first-year estimate of where pay goes, using the
 2026-27 rules and `assess`:

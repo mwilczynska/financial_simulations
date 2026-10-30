@@ -257,12 +257,12 @@ def test_run_progress_covers_every_stage_in_order(processed_fixture):
         assert stage in messages
 
 
-def test_fixed_outside_contribution_maps_to_paydays_and_stops_at_retirement(processed_fixture):
+def test_fixed_outside_contribution_maps_to_paydays(processed_fixture):
     plan = default_plan()
     assert plan["outside"]["saving"] == "surplus"
     market = load_plan_markets(plan["assets"], processed_fixture)
     _, scenario, _, _ = build_inputs(plan, market=market)
-    assert scenario.outside_contribution_per_payday is None and scenario.stop_investing_at_retirement
+    assert scenario.outside_contribution_per_payday is None
     plan["outside"]["saving"] = "fixed"
     plan["outside"]["contribution_per_year"] = 13000.0
     _, scenario, _, _ = build_inputs(plan, market=market)

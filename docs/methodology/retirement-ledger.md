@@ -120,12 +120,16 @@ Asset unit prices start at 1. On each day:
     amount, grown by `(1 + outside_contribution_growth) ** n` after `n` whole
     financial years. At the observation close the ledger invests the lesser
     of the scheduled amount and the cash above the buffer. An amount that
-    cannot be met is not carried forward. Other leftover cash stays in cash.
-    With `stop_investing_at_retirement`, no new money is invested on or after
-    the retirement date in either mode. Unspent pension payments or lump sums
-    then stay in cash, which earns no interest.
+    cannot be met is not carried forward. Other leftover pay stays in cash.
+    From the retirement date, in either mode, all cash above `cash_buffer` is
+    reinvested at each observation close: unspent pension payments, lump
+    sums, distributions, interest, Age Pension and tax refunds. There is no
+    option to keep it in cash. The buffer remains the float that pays
+    spending and tax before outside parcels are sold.
     [ADR 0020](../decisions/0020-outside-contributions-stop-at-retirement.md)
-    covers this convention.
+    covers the contribution modes;
+    [ADR 0030](../decisions/0030-reinvest-surplus-cash-in-retirement.md)
+    replaced its stop on investing at retirement.
 11. **30 June** (the financial year's last day):
     - Assess the year's income tax with `assess`, using labour income,
       franked and unfranked distributions, franking credits, the year's CGT

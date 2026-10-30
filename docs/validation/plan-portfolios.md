@@ -198,8 +198,9 @@ Tests:
   wealth on a busy random ledger path;
 - `account_flows` nets the pension transfer to zero and matches pension
   payments;
-- fixed outside contributions, the stop at retirement and the indexed step-up
-  behave as specified (ADR 0020);
+- fixed outside contributions and the indexed step-up behave as specified
+  (ADR 0020), and cash above the buffer is reinvested from the retirement
+  date (ADR 0030);
 - the salary-sacrifice percentage maps to the ledger;
 - progress callbacks arrive in order through every stage.
 

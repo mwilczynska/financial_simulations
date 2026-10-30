@@ -10,7 +10,9 @@ Scope and conventions (see docs/methodology/retirement-ledger.md):
   distribution, paid at the last observation of each calendar quarter and
   removed from the unit price, plus the remaining price return. Total return
   is never counted twice. Yields and franking are labelled assumptions.
-* New money buys the target weights. Holdings drift between optional annual
+* New money buys the target weights. From the retirement date all outside
+  cash above the buffer is reinvested at each observation close, so unspent
+  pension payments, distributions and interest do not pile up. Holdings drift between optional annual
   rebalances, which reset each account to its weights at pre-return values on
   the first return observation of each calendar year. Outside super a
   rebalance sells overweight parcels (oldest first) and realises CGT; inside
@@ -233,10 +235,10 @@ class LedgerScenario:
     capital_losses_brought_forward: float = 0.0
     outside_rebalance: bool = False
     super_rebalance: bool = False
-    # None invests all cash above the buffer; an amount invests only that much on each payday.
+    # None invests all cash above the buffer; an amount invests only that much on each payday until retirement,
+    # after which all cash above the buffer is invested.
     outside_contribution_per_payday: float | None = None
     outside_contribution_growth: float = 0.0  # applied each 1 July, like spending growth
-    stop_investing_at_retirement: bool = False
     cash_interest: float = 0.0  # annual effective rate on outside cash, credited daily and taxed as interest
     payg_withholding: bool = False
     retirement_spending: float | None = None  # annual spending from the retirement date (same base year), if different
@@ -799,12 +801,13 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
                     log("pension_payment", paid, "pension", purpose="minimum")
             # New money is invested at each observation close, after the day's needs: either all cash above the
             # buffer, or the scheduled payday contributions as far as cash above the buffer allows (no catch-up).
-            investing = not (scenario.stop_investing_at_retirement and person.retirement_date is not None
-                             and day >= person.retirement_date)
+            # From the retirement date all cash above the buffer is reinvested, such as unspent pension payments.
+            retired = person.retirement_date is not None and day >= person.retirement_date
             available = state.cash - scenario.cash_buffer
-            amount = available if scenario.outside_contribution_per_payday is None else min(saving_due, available)
+            amount = (available if retired or scenario.outside_contribution_per_payday is None
+                      else min(saving_due, available))
             saving_due = 0.0
-            if investing and amount > TOLERANCE:
+            if amount > TOLERANCE:
                 state.cash -= amount
                 buy_outside(amount)
         if day == rules.end:

@@ -31,7 +31,8 @@ opening_cost_base = 330000.0
 opening_acquired = "2015-03-02"
 weights = {USLCAP3x = 0.4, ITT3x = 0.2, GOLDPM2x = 0.2, COMM = 0.2}
 rebalance = "annual"
-# "surplus" invests all pay left after tax and spending; "fixed" invests contribution_per_year. Both stop at retirement.
+# "surplus" invests all pay left after tax and spending; "fixed" invests contribution_per_year. Both stop at
+# retirement; from then on all cash above cash_buffer (such as unspent pension payments) is reinvested.
 saving = "surplus"
 contribution_per_year = 0.0
 # true raises the fixed contribution each 1 July by assumptions.cpi_annual.

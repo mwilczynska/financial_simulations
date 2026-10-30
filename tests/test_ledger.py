@@ -256,21 +256,20 @@ def test_household_flows_reconcile_each_year_and_account_flows_track_transfers()
     assert payments == pytest.approx(-result.daily["pension_payments"].sum())
 
 
-def test_fixed_outside_contributions_and_no_new_investing_after_retirement():
+def test_fixed_outside_contributions_then_surplus_cash_reinvested_from_retirement():
     person = Person("1985-01-01", retirement_date="2027-01-01")
-    fixed = run_ledger(market(), scenario_with(person, employment=Employment(104000, "2026-07-02"),
-                                               outside_contribution_per_payday=500, stop_investing_at_retirement=True), YEARS)
+    fixed = run_ledger(market(), scenario_with(person, employment=Employment(104000, "2026-07-02"), outside_cash=5000,
+                                               cash_buffer=5000, outside_contribution_per_payday=500), YEARS)
     buys = fixed.events[(fixed.events["event"] == "buy") & (fixed.events["account"] == "outside")]
+    when = pd.to_datetime(buys["date"])
     paydays = (fixed.events["event"] == "salary").sum()
-    assert paydays == 14 and buys["amount"].sum() == pytest.approx(500 * paydays)
-    assert fixed.daily["outside_investments"].iloc[-1] == pytest.approx(500 * paydays)
-    assert fixed.daily["cash"].iloc[-1] == pytest.approx(4000 * paydays - 500 * paydays)
-    # The surplus sweep invests all spare pay, but nothing after the retirement date either.
-    swept = run_ledger(market(), scenario_with(person, outside_cash=10000, employment=Employment(104000, "2026-07-02"),
-                                               stop_investing_at_retirement=True), YEARS)
-    later = swept.events[(swept.events["event"] == "buy") & (swept.events["account"] == "outside")
-                         & (pd.to_datetime(swept.events["date"]) >= pd.Timestamp("2027-01-01"))]
-    assert later.empty and swept.daily["outside_investments"].iloc[-1] == pytest.approx(10000 + 4000 * paydays)
+    assert paydays == 14 and buys.loc[when < pd.Timestamp("2027-01-01"), "amount"].sum() == pytest.approx(500 * paydays)
+    # Pay left in cash before retirement is reinvested on the retirement date, down to the buffer.
+    later = buys.loc[when >= pd.Timestamp("2027-01-01")]
+    assert later["date"].astype(str).tolist() == ["2027-01-01"]
+    assert later["amount"].iloc[0] == pytest.approx(3500 * paydays)
+    assert fixed.daily["outside_investments"].iloc[-1] == pytest.approx(4000 * paydays)
+    assert fixed.daily["cash"].iloc[-1] == pytest.approx(5000)
     # An indexed contribution steps up on 1 July: 26 paydays of 100 in 2026-27, then 100 x 1.03 from July 2027.
     years = {"2026-27": RULES, "2027-28": RULES.derive("2027-28", {}, {})}
     indexed = run_ledger(market(end="2027-07-30"), scenario_with(Person("1985-01-01"), employment=Employment(104000, "2026-07-02"),
