@@ -22,7 +22,7 @@ from financial_simulations.retirement.paths import warm_pool
 from financial_simulations.retirement.real import real_daily, real_events, year_deflator
 from financial_simulations.retirement.run_plan import ledger_for_path, run_plan
 from financial_simulations.rules.au.parameters import UnsupportedRule, load_ruleset
-from financial_simulations.rules.au.superannuation import age_on, birthday
+from financial_simulations.rules.au.superannuation import access_date, age_on, birthday
 from financial_simulations.rules.au.tax import IncomeYear, assess
 
 
@@ -1607,44 +1607,79 @@ def wealth_bands(run, calculated, marks):
                + "Total wealth includes super that may not yet be accessible.")
 
 
+def withdrawal_strategy(plan):
+    """A plain statement of how retirement spending is set and paid, shown at the top of the retirement results."""
+    spending, person = plan["spending"], plan["person"]
+    born = date.fromisoformat(person["date_of_birth"])
+    retire = birthday(born.isoformat(), person["retirement_age"])
+    access = access_date(born.isoformat(), load_ruleset("2026-27"), retire)
+    cpi = plan["assumptions"]["cpi_annual"]
+    real = spending["real_change"]
+    growth = f"rising with inflation at {cpi:.1%}" + (f" and {real:+.1%} a year in real terms" if real else "")
+    start = {"same": f"the same level as now, **\\${spending['annual']:,.0f} a year**",
+             "amount": f"**\\${spending['retirement_annual']:,.0f} a year**",
+             "percent": f"**{spending['retirement_percent']:.1%} of your total wealth** on your retirement date"}[spending["retirement"]]
+    rule = spending["rule"]
+    if rule == "fixed":
+        how = f"Then it keeps the same buying power, {growth} each 1 July, whatever markets do."
+    elif rule == "guyton_klinger":
+        how = (f"Then each 1 July the **Guyton–Klinger guardrails** apply: after a losing year the inflation rise is "
+               f"skipped if your withdrawal rate is above its start; if the rate drifts more than "
+               f"{spending['guardrail_band']:.0%} above its start spending is cut {spending['guardrail_step']:.0%}, and "
+               f"more than {spending['guardrail_band']:.0%} below it spending is raised {spending['guardrail_step']:.0%}.")
+    elif rule == "vanguard":
+        how = (f"Then each 1 July the **Vanguard ceiling and floor** rule aims for the starting rate of your current "
+               f"wealth, with each year's change limited to +{spending['ceiling']:.1%} and −{spending['floor']:.1%} "
+               "after inflation.")
+    else:
+        how = "Then each 1 July spending is reset to the **same percentage of your total wealth**."
+    bounds = []
+    if rule != "fixed" and spending["minimum"]:
+        bounds.append(f"never below \\${spending['minimum']:,.0f}")
+    if rule != "fixed" and spending["maximum"]:
+        bounds.append(f"never above \\${spending['maximum']:,.0f}")
+    pension = int(plan["pension"]["start_age"])
+    names = {"fixed": "fixed spending (the default)", "guyton_klinger": "Guyton–Klinger guardrails",
+             "vanguard": "Vanguard ceiling and floor", "percent": "a percentage of wealth each year"}
+    st.info(f"**Withdrawal strategy: {names[rule]}.** You retire on {retire:%d %B %Y} (age "
+            f"{person['retirement_age']}). Retirement spending starts at {start}. {how}"
+            + (f" Limits: {' and '.join(bounds)} a year (today's dollars, rising with inflation)." if bounds else "")
+            + f"\n\n**Where it comes from:** cash first, then your outside investments (selling the oldest holdings, "
+            f"with capital gains tax), then super from {access:%d %B %Y}"
+            + (f", with your super moved into an account-based pension at {pension} paying at least the legal minimum"
+               if pension else "")
+            + ". From 67 the means-tested Age Pension adds income when your assets and income are low enough. "
+            "Change any of this on the Retirement tab.")
+
+
 def section_retirement(run):
     import altair as alt
 
     plan, paths = run.plan, run.retirement_paths
     st.header("4 · Retirement outcomes")
     calculated = paths.loc[paths["Status"] != "unsupported"]
-    with st.expander("How the retirement results are calculated", expanded=False):
+    withdrawal_strategy(plan)
+    with st.expander("How these results were calculated (the broad strokes)", expanded=False):
         st.markdown(f"""
-The first **{len(paths)}** of the {plan['market']['paths']:,} market paths above (set by *Daily retirement-ledger
-paths* on the Assumptions tab) are each run through a full **daily Australian tax and super ledger**,
-{run.result.daily.index[0].date()} to {run.result.daily.index[-1].date()}. Each path is a separate life story on
-the same rules:
+1. **Markets.** {plan['market']['paths']:,} possible futures are built by stitching together random stretches of
+   real daily market history (section 3). The first **{len(paths)}** of them are used here. Each future applies the
+   same market days to your outside-super and super portfolios.
+2. **Your money, day by day.** For each future, a ledger follows every dollar from
+   {run.result.daily.index[0].date()} to {run.result.daily.index[-1].date()}: pay comes in, spending goes out, what
+   is left is invested, investments grow or fall with the market, and super receives your contributions.
+3. **Retirement.** When your salary stops, spending follows the strategy above. It is paid from cash, then from
+   outside investments, then from super once you can access it, and the account-based pension pays at least its
+   legal minimum.
+4. **Tax.** Australian tax is worked out each year as the law applies it: income tax and capital gains tax on
+   your own investments, tax inside super, and the extra tax on super balances over 3 million dollars. Later years
+   use thresholds projected with your inflation and wage assumptions.
+5. **Government support.** From 67 the means-tested Age Pension is added when your assets and income are low
+   enough, along with the seniors' tax offset.
+6. **Results.** Everything is shown in today's dollars. A future **ran out** if any spending or tax could not be
+   paid. The figures below summarise all the futures: medians, and the bad and good ends of the range.
 
-1. **Work.** Fortnightly salary until your retirement birthday. Super guarantee (12%) and salary sacrifice reach
-   the fund 7 business days later, less 15% contributions tax, and buy the inside-super portfolio.
-2. **Spending** is due monthly, rising each 1 July. It is paid from cash, then by selling outside investments
-   (oldest parcels first, realising capital gains), then from super once it is accessible (preservation age and
-   retirement), then from the pension.
-3. **Investing.** Cash above the buffer buys the outside portfolio. Each January both accounts are rebalanced if
-   chosen; outside super that sells parcels and realises CGT.
-4. **Distributions** split each ticker's total return into a quarterly cash payment (the cash proxy) and price
-   growth; outside super they are taxable income.
-5. **Tax.** Each 30 June personal tax is assessed (brackets, Medicare levy and surcharge, LITO, CGT discount,
-   Division 293, the 2027 CGT reform) and paid on 31 October. Accumulation earnings are taxed at 15%; pension
-   earnings are exempt. Above a 3 million dollar total super balance, Division 296 adds 15% on the share of the
-   year's super earnings above the threshold (10% more above 10 million), released from super. The fund is
-   assumed to realise part of its accumulated gains each year (set on the Investments tab): those gains are taxed
-   at 10% effective in accumulation and count towards Division 296 (scaled by 0.2 rising to 1 from 2030-31).
-6. **Pension.** At the chosen age the accumulation balance moves into an account-based pension, up to the
-   transfer balance cap; the age-based minimum is paid monthly.
-7. **Age Pension.** From a fortnight after age 67, the single Age Pension is worked out each fortnight from the
-   previous day's balances: the maximum rate less the larger of the assets-test and income-test reductions, with
-   deemed income on all your investments and super. It is paid into cash; its taxable part is income, and the
-   seniors and pensioners tax offset applies.
-
-A path is **funded** if every spending need and tax bill was paid, **depleted** if any spending went unmet or
-tax could not be paid (both included in every statistic), and **unsupported** if it reached a rule the model
-does not cover (excluded, with the reason shown). Returns are the USD histories applied as an AUD proxy.
+These are resamples of the past, not forecasts. Section 5 shows a single future (or a group of them averaged) in
+full, down to each payment. The project's methodology documents give every rule and its source.
 """)
     funded = int((paths["Status"] == "funded").sum())
     depleted = int((paths["Status"] == "depleted").sum())

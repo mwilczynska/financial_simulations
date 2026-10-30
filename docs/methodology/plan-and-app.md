@@ -341,8 +341,19 @@ positions them.
      super and the combined portfolio with dashed medians;
    - the sustainable-withdrawal-rate distribution;
    - a percentile table;
-4. **Retirement outcomes.** An explanation of the ledger and the path
-   classes. Then:
+4. **Retirement outcomes.** It opens with a **withdrawal strategy** box,
+   built from the plan by `withdrawal_strategy`:
+   - the rule;
+   - the retirement date;
+   - how starting spending is set;
+   - how the rule adjusts it each 1 July, with its limits;
+   - the order money is drawn from, the super access date, the pension
+     start and the Age Pension.
+
+   Then a collapsed **broad-strokes explanation** in six plain steps:
+   markets, the daily ledger, retirement, tax, government support and how
+   results are summarised. It points to section 5 and the methodology for
+   detail. Then:
    - headline metrics (paths calculated, share funded, median ending wealth,
      wealth at retirement, withdrawal rates, total tax), all in today's
      dollars;
