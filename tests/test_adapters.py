@@ -102,6 +102,7 @@ def test_malformed_weight_tables_are_input_errors(weights):
 def test_aliases_currency_and_path_boundaries():
     assert resolve_asset("GOLDPM2x").identifier == "GOLD2X"
     assert resolve_asset("USLCAP3x").identifier == "USLCAP3X"
+    assert resolve_asset("GLBOND2x").filename == "global_bonds_2x.csv"
     with pytest.raises(ValueError, match="FX"):
         PortfolioSpec({"GLSTOCK": 1}, currency="AUD")
     with pytest.raises(ValueError, match="-100%"):

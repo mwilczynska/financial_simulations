@@ -24,8 +24,16 @@ universe selection, not a third account. The supported local catalogue is:
 
 | Source | Tickers | Return field |
 | --- | --- | --- |
-| Processed custom histories | `USLCAP`, `GOLDPM`, `LTT`, `ITT`, `STT`, `COMM`, `USLCAP3x`, `LTT3x`, `ITT3x`, `GOLDPM2x`, `GLSTOCK`, `GLBOND`, `GLSTBOND` | Registry total-return level and daily return columns |
-| Processed funds | `SHY`, `IEF`, `TLT`, `VT`, `BND`, `BWX`, `ISHG`, `BWZ`, `UPRO`, `TYD`, `TMF`, `GLD`, `UGL`, `DBC` | `Vendor Total Return` in `distributions/fund_prices.csv` |
+| Processed custom histories | `USLCAP`, `GOLDPM`, `LTT`, `ITT`, `STT`, `COMM`, `USLCAP3x`, `LTT3x`, `ITT3x`, `GOLDPM2x`, `GLSTOCK`, `GLBOND`, `GLSTBOND`, `USLCAP2x`, `GLSTOCK2x`, `LTT2x`, `ITT2x`, `STT2x`, `GLBOND2x` | Registry total-return level and daily return columns |
+| Processed funds | `SHY`, `IEF`, `TLT`, `VT`, `BND`, `BWX`, `ISHG`, `BWZ`, `UPRO`, `TYD`, `TMF`, `GLD`, `UGL`, `DBC`, `SSO`, `UST`, `UBT` | `Vendor Total Return` in `distributions/fund_prices.csv` |
+
+The 2x daily-reset custom series follow current funds where one exists
+(`USLCAP2x` SSO, `GLSTOCK2x` WLDU, `ITT2x` UST, `LTT2x` UBT): a calibrated
+model of the base dataset before fund inception, then observed fund returns.
+`STT2x` and `GLBOND2x` have no 2x fund and are modelled on every row; see the
+upstream methodology for each. The WLDU fund history itself is not offered
+because it began in March 2026, short of the 252 returns the loader requires;
+`GLSTOCK2x` carries that exposure over the full sample.
 
 The custom series come from the sibling `financial_datasets/data/processed`
 directory. Each uses the registry-defined total-return level and the matching

@@ -21,11 +21,11 @@ and [market path](../../src/financial_simulations/markets/path.py).
 
 ## Inputs, provenance and semantics
 
-The registry contains 13 investment series. All currently use USD return
+The registry contains 19 investment series. All currently use USD return
 conventions, including unhedged USD global assets. It maps canonical aliases to
 explicit filenames and their upstream methodology. In particular `COMM` maps to
-`CMDTY`, `GOLDPM2x` to `GOLD2X`, and the optimiser's `3x` aliases to canonical
-`3X`. Unknown aliases fail. CPI is an economic factor, not an investment.
+`CMDTY`, `GOLDPM2x` to `GOLD2X`, and the optimiser's `2x`/`3x` aliases to canonical
+`2X`/`3X`. Unknown aliases fail. CPI is an economic factor, not an investment.
 
 CSV and optional Parquet inputs require `Date`, `Adj Close`, `Total Return`,
 `Source`, `Quality Flag` and `Source Notes`. Other supplied columns are preserved

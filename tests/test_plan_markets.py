@@ -13,6 +13,8 @@ def test_custom_ticker_full_sample_and_common_dates(processed_fixture):
     assert market.income_yields["USLCAP3x"] > 0
     assert "distributions/us_large_cap_3x_sp500.csv" in market.manifest["inputs_sha256"]
     assert ticker_name("CMDTY") == "COMM"
+    assert ticker_name("stt2X") == "STT2x"
+    assert ticker_name("sso") == "SSO"
     with pytest.raises(ValueError, match="unavailable"):
         ticker_name("SPY")
 

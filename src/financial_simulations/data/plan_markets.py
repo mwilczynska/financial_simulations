@@ -19,9 +19,10 @@ from financial_simulations.markets.path import MarketPath
 
 
 CUSTOM_TICKERS = ("USLCAP", "GOLDPM", "LTT", "ITT", "STT", "COMM", "USLCAP3x",
-                  "LTT3x", "ITT3x", "GOLDPM2x", "GLSTOCK", "GLBOND", "GLSTBOND")
+                  "LTT3x", "ITT3x", "GOLDPM2x", "GLSTOCK", "GLBOND", "GLSTBOND",
+                  "USLCAP2x", "GLSTOCK2x", "LTT2x", "ITT2x", "STT2x", "GLBOND2x")
 FUND_TICKERS = ("SHY", "IEF", "TLT", "VT", "BND", "BWX", "ISHG", "BWZ",
-                "UPRO", "TYD", "TMF", "GLD", "UGL", "DBC")
+                "UPRO", "TYD", "TMF", "GLD", "UGL", "DBC", "SSO", "UST", "UBT")
 TICKERS = CUSTOM_TICKERS + FUND_TICKERS
 _LOOKUP = {ticker.upper(): ticker for ticker in TICKERS}
 _LOOKUP.update({"CMDTY": "COMM", "GOLD2X": "GOLDPM2x"})
