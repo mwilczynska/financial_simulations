@@ -1933,7 +1933,7 @@ def averaged_paths(run, members, label):
 
     plan, paths = run.plan, run.retirement_paths
     group = paths.loc[paths["Path"].isin(members)]
-    st.subheader(f"{label} of paths ({len(members)} path{'s' if len(members) != 1 else ''})")
+    st.subheader(f"{label} ({len(members)} path{'s' if len(members) != 1 else ''})")
     if len(members) < 5:
         st.caption(f"Only {len(members)} path{'s' if len(members) != 1 else ''} in this group, so its average rests on very "
                    "few market sequences. Raise *Daily retirement-ledger paths* on the Assumptions tab (500 gives 5 paths "
@@ -2022,20 +2022,25 @@ def section_ledger(run):
                 "see each salary payment, sale, tax bill and pension payment that produced its result.")
     ranks = ending_percentiles(calculated)
     choices = {f"Median ending wealth · path {run.representative_path}": run.representative_path}
-    for label, low, high in PATH_GROUPS:
-        members = group_members(calculated, low, high)
-        choices[f"Average of the {label.lower()} · {len(members)} path{'s' if len(members) != 1 else ''}"] = members
+    headings = {}  # averaged choices: their members and view heading
+    everyone = calculated["Path"].astype(int).tolist()
+    for label, heading, members in [("Average of all paths", "Average of all paths", everyone)] + [
+            (f"Average of the {name.lower()}", f"Average of the {name.lower()} of paths", group_members(calculated, low, high))
+            for name, low, high in PATH_GROUPS]:
+        choice = f"{label} · {len(members)} path{'s' if len(members) != 1 else ''}"
+        choices[choice], headings[choice] = members, heading
     for _, row in calculated.iterrows():  # sorted from the worst ending wealth
         choices[f"Path {int(row['Path'])} · {ordinal(ranks[row['Path']])} percentile"] = int(row["Path"])
     picked = st.selectbox("Path to inspect", list(choices), key=key("ledger_path"))
     st.caption(f"The default is path {run.representative_path}: of the calculated paths, its ending wealth is closest "
                "to the median. The number is simply its position in the draw sequence. A median *ending* does not "
                "make every year median; the path may have had a bad start and a strong finish. The **averages** "
-               "combine every path in a group, ranked by ending wealth, month by month and year by year: the worst 5% "
+               "combine paths month by month and year by year: the average of all paths uses every calculated path, "
+               "and the other groups are ranked by ending wealth, so the worst 5% "
                "is what the bad outcomes typically look like, not one unlucky path. Single paths follow, from the "
                "worst to the best, tagged with their ending-wealth percentile.")
     if isinstance(choices[picked], list):
-        averaged_paths(run, choices[picked], picked.split(" · ")[0])
+        averaged_paths(run, choices[picked], headings[picked])
         return
     path = choices[picked]
     with st.spinner(f"Running the daily ledger for path {path}..."):

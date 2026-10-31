@@ -174,6 +174,11 @@ def test_browser_app_runs_with_tickers_and_interactive_results(tmp_path, monkeyp
     assert (tmp_path / "output" / "plans" / "example-early-retirement" / "portfolio_future.png").exists()
     assert len(app.get("vega_lite_chart")) >= 15
     assert app.session_state.plan["outside"]["rebalance"] == "annual"
+    picker = app.selectbox(key="ledger_path__0")
+    everyone = next(option for option in picker.options if option.startswith("Average of all paths"))
+    assert picker.options.index(everyone) == 1  # straight after the median path
+    picker.set_value(everyone).run()
+    assert not app.exception and any(h.value.startswith("Average of all paths (") for h in app.subheader)
 
 
 def test_35_year_path_and_plots_keep_yearly_summary_compact(tmp_path, processed_fixture):

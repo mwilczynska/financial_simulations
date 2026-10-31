@@ -451,9 +451,11 @@ positions them.
      each path's ending-wealth percentile, `(rank + 0.5) / n x 100`.
 5. **One path in full.** The median-ending path by default.
    - **Averaged groups.** The picker also offers groups averaged across their
-     paths: the worst 1%, 5% and 10%, the middle 10% (45th to 55th
-     percentile), the best 10% and the best 1%. Groups are ranked by ending
-     wealth, and each has at least one path. A group's view averages:
+     paths: all calculated paths, then the worst 1%, 5% and 10%, the middle
+     10% (45th to 55th percentile), the best 10% and the best 1%. The ranked
+     groups are ranked by ending wealth, and each has at least one path. The
+     all-paths average is a plain arithmetic mean over every calculated path,
+     not a path any market sequence produced. A group's view averages:
      - month-end balances by account (from `PlanRun.path_series`, each path's
        stored account series);
      - each year's flows, net change and additions (from the
