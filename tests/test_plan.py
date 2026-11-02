@@ -25,7 +25,7 @@ def test_example_plan_round_trips_through_toml_and_json():
     plan = default_plan()
     assert load_plan_text(plan_to_toml(plan), "plan.toml") == plan
     assert load_plan_text(plan_to_json(plan), "plan.json") == plan
-    assert json.loads(plan_to_json(plan))["schema_version"] == 2
+    assert json.loads(plan_to_json(plan))["schema_version"] == 3
     assert plan["assets"] == ["USLCAP3x", "ITT3x", "GOLDPM2x", "COMM", "GLSTOCK"]
     assert plan["outside"]["weights"] == {"USLCAP3x": 0.4, "ITT3x": 0.2, "GOLDPM2x": 0.2, "COMM": 0.2}
     assert plan["super"]["weights"] == {"GLSTOCK": 1.0}
@@ -295,10 +295,10 @@ def test_run_keeps_every_paths_monthly_wealth(processed_fixture):
 
 def test_spending_rule_defaults_to_fixed_and_maps_to_the_ledger(processed_fixture):
     plan = default_plan()
-    assert plan["spending"]["rule"] == "fixed" and plan["spending"]["minimum"] == 0
+    assert plan["spending"]["compare"] == ["fixed"] and plan["spending"]["minimum"] == 0
     market = load_plan_markets(plan["assets"], processed_fixture)
-    plan["spending"].update(rule="guyton_klinger", minimum=30000.0, maximum=90000.0, guardrail_band=0.25)
-    with pytest.raises(PlanError, match="spending.retirement: market-responsive rules start from a percentage"):
+    plan["spending"].update(compare=["guyton_klinger"], minimum=30000.0, maximum=90000.0, guardrail_band=0.25)
+    with pytest.raises(PlanError, match="spending.retirement: market-responsive or compared strategies start from a"):
         normalize_plan(plan)
     plan["spending"].update(retirement="percent", retirement_percent=0.05)
     scenario = build_inputs(plan, market=market)[1]
@@ -306,12 +306,39 @@ def test_spending_rule_defaults_to_fixed_and_maps_to_the_ledger(processed_fixtur
     assert (rule.kind, rule.minimum, rule.maximum, rule.band, rule.step) == ("guyton_klinger", 30000.0, 90000.0, 0.25, 0.10)
     assert rule.start_rate == 0.05 and rule.bound_growth == plan["assumptions"]["cpi_annual"]
     assert scenario.retirement_spending == 1.0
-    plan["spending"]["rule"] = "vanguard"
+    plan["spending"]["compare"] = ["vanguard"]
     run = run_plan({**plan, "market": {**plan["market"], "paths": 16, "retirement_paths": 2}}, None, market=market)
     assert (run.result.events["event"] == "spending_rule").any()
-    plan["spending"]["rule"] = "half"
-    with pytest.raises(PlanError, match="spending.rule: must be one of fixed, guyton_klinger, vanguard, percent"):
+    plan["spending"]["compare"] = ["half"]
+    with pytest.raises(PlanError, match="spending.compare: tick at least one of fixed, guyton_klinger, vanguard, percent"):
         normalize_plan(plan)
+
+
+def test_compared_strategies_share_one_start_and_old_single_rules_still_load(processed_fixture):
+    from financial_simulations.retirement.plan import plan_to_toml, strategy_plan
+
+    plan = default_plan()
+    plan["spending"].update(compare=["percent", "fixed", "guyton_klinger"], retirement="percent")
+    plan = normalize_plan(plan)
+    assert plan["spending"]["compare"] == ["fixed", "guyton_klinger", "percent"]  # in a fixed order
+    assert 'compare = ["fixed", "guyton_klinger", "percent"]' in plan_to_toml(plan)
+    assert "schema_version = 3" in plan_to_toml(plan) and "rule" not in plan["spending"]
+    # Fixed spending compared with a market-responsive rule must start from the same percentage of wealth.
+    with pytest.raises(PlanError, match="spending.retirement"):
+        normalize_plan({**plan, "spending": {**plan["spending"], "compare": ["fixed", "vanguard"], "retirement": "same"}})
+    market = load_plan_markets(plan["assets"], processed_fixture)
+    with pytest.raises(ValueError, match="pick one with strategy_plan"):
+        build_inputs(plan, market=market)
+    assert build_inputs(strategy_plan(plan, "fixed"), market=market)[1].spending_rule.start_rate == plan["spending"]["retirement_percent"]
+    assert build_inputs(strategy_plan(plan, "percent"), market=market)[1].spending_rule.kind == "percent"
+    with pytest.raises(ValueError, match="not one of the plan's compared strategies"):
+        strategy_plan(plan, "vanguard")
+    # A version 2 file with one rule loads as a one-strategy comparison.
+    old = {**plan, "schema_version": 2, "spending": {"annual": 80000.0, "rule": "vanguard", "retirement": "percent"}}
+    assert normalize_plan(old)["spending"]["compare"] == ["vanguard"]
+    # Until strategies are run side by side, a run uses the first and says so.
+    run = run_plan({**plan, "market": {**plan["market"], "paths": 16, "retirement_paths": 2}}, None, market=market)
+    assert run.plan["spending"]["rule"] == "fixed" and any("first ticked strategy" in note for note in run.notes)
 
 
 def test_spending_rises_with_cpi_and_old_nominal_growth_becomes_a_real_change():
@@ -501,3 +528,28 @@ def test_ledger_workers_run_below_normal_priority():
             future = pool.submit(_priority_class)
         assert future.result() == BELOW_NORMAL_PRIORITY_CLASS
     assert _priority_class() != BELOW_NORMAL_PRIORITY_CLASS  # the parent keeps its priority
+
+
+@pytest.mark.skipif("sandbox." in tempfile.gettempdir().lower(),
+                    reason="Streamlit AppTest stalls in this managed Windows sandbox; the local browser is used for UI validation")
+def test_app_compares_ticked_strategies_and_ignores_a_stale_cores_choice(tmp_path, monkeypatch, processed_fixture):
+    pytest.importorskip("streamlit")
+    from streamlit.testing.v1 import AppTest
+
+    monkeypatch.setenv("FINANCIAL_DATASETS_PROCESSED", str(processed_fixture))
+    monkeypatch.chdir(tmp_path)
+    app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "src" / "financial_simulations" / "ui" / "app.py"),
+                            default_timeout=120)
+    # A label left over from an earlier rerun once reached the worker count as text and crashed the page.
+    app.session_state["calculation_cores"] = "Automatic (24 on this computer)"
+    app.run()
+    assert not app.exception
+    app.checkbox(key="compare_guyton_klinger__0").check().run()
+    app.checkbox(key="compare_vanguard__0").check().run()
+    assert not app.exception
+    assert app.session_state.plan["spending"]["compare"] == ["fixed", "guyton_klinger", "vanguard"]
+    assert app.session_state.plan["spending"]["retirement"] == "percent"
+    assert any("first ticked strategy only" in i.value for i in app.info)
+    for rule in ("fixed", "guyton_klinger", "vanguard"):
+        app.checkbox(key=f"compare_{rule}__0").uncheck().run()
+    assert not app.exception and any(e.value == "Tick at least one strategy." for e in app.error)

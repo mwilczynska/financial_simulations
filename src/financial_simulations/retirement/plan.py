@@ -33,7 +33,9 @@ from financial_simulations.rules.au.age_pension import maximum_rate
 from financial_simulations.rules.au.superannuation import access_date, add_business_days, birthday
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
+# Version 2 had one spending.rule; version 3 lists the strategies to compare in spending.compare (ADR 0043). Both read.
+READABLE_VERSIONS = (2, 3)
 RULES_START = date(2026, 7, 1)
 REBALANCE = ("annual", "none")
 SAVING = ("surplus", "fixed")
@@ -141,8 +143,8 @@ def normalize_plan(raw: dict) -> dict:
     known = {"schema_version", "plan", "person", "employment", "assets", "outside", "super", "spending", "pension", "assumptions",
              "market", "year_to_date"}
     c.problems += [f"{k}: unknown section" for k in raw if k not in known]
-    if raw.get("schema_version", SCHEMA_VERSION) != SCHEMA_VERSION:
-        c.problems.append(f"schema_version: this tool reads version {SCHEMA_VERSION}; version 1 holdings need a reviewed conversion to portfolio balances and tax positions")
+    if raw.get("schema_version", SCHEMA_VERSION) not in READABLE_VERSIONS:
+        c.problems.append(f"schema_version: this tool reads versions {READABLE_VERSIONS[0]} and {READABLE_VERSIONS[-1]}; version 1 holdings need a reviewed conversion to portfolio balances and tax positions")
     def section(name):
         value = raw.get(name, {})
         if not isinstance(value, dict):
@@ -161,7 +163,7 @@ def normalize_plan(raw: dict) -> dict:
                            "rebalance", "saving", "contribution_per_year", "contribution_indexed", "cash_interest"},
                "super": {"balance", "weights", "rebalance", "total_super_balance_prior_30_june", "realised_gains"},
                "spending": {"annual", "annual_growth", "real_change", "retirement", "retirement_annual",
-                            "retirement_percent", "rule", "minimum", "maximum", "guardrail_band", "guardrail_step",
+                            "retirement_percent", "rule", "compare", "minimum", "maximum", "guardrail_band", "guardrail_step",
                             "ceiling", "floor"},
                "pension": {"start_age", "transfer_all", "amount"},
                "assumptions": {"cpi_annual", "wage_growth_annual", "planning_age"},
@@ -239,20 +241,24 @@ def normalize_plan(raw: dict) -> dict:
         real_default = round((1 + legacy) / (1 + cpi) - 1, 9) if isinstance(cpi, (int, float)) else 0.0
     plan["spending"] = {"annual": c.number(spending, "annual", "spending", 0.0, low=0, high=1e8),
                         "real_change": c.number(spending, "real_change", "spending", real_default, low=-0.2, high=0.2)}
+    # The spending strategies to compare (ADR 0043): a list of rules, written in SPENDING_RULES order. Version 2 files
+    # gave one ``rule``; a plan for one strategy (``strategy_plan``) carries ``rule`` beside ``compare``.
+    compare = _strategies(c, spending)
     # How retirement spending starts: the same as before retirement, a different amount (both today's dollars),
     # or a percentage of total wealth on the retirement date. Older files had no field: infer it.
-    rule = c.choice(spending, "rule", "spending", "fixed", SPENDING_RULES)
-    legacy_start = ("percent" if rule != "fixed" else
+    legacy_start = ("percent" if compare != ["fixed"] else
                     "amount" if spending.get("retirement_annual", spending.get("annual")) != spending.get("annual") else "same")
     plan["spending"].update({
         "retirement": c.choice(spending, "retirement", "spending", legacy_start, RETIREMENT_START),
         "retirement_annual": c.number(spending, "retirement_annual", "spending", plan["spending"]["annual"], low=0, high=1e8),
         "retirement_percent": c.number(spending, "retirement_percent", "spending", 0.04, low=0.001, high=0.5)})
-    if rule != "fixed" and plan["spending"]["retirement"] != "percent":
-        c.problems.append('spending.retirement: market-responsive rules start from a percentage of wealth; set retirement = "percent"')
+    if compare != ["fixed"] and plan["spending"]["retirement"] != "percent":
+        # Market-responsive rules need a starting rate, and compared strategies must start from the same spending.
+        c.problems.append('spending.retirement: market-responsive or compared strategies start from a percentage of '
+                          'wealth; set retirement = "percent"')
     # How retirement spending responds to markets (see SpendingRule); "fixed" keeps the schedule.
     plan["spending"].update({
-        "rule": rule,
+        "compare": compare,
         "minimum": c.number(spending, "minimum", "spending", 0.0, low=0, high=1e8),
         "maximum": c.number(spending, "maximum", "spending", 0.0, low=0, high=1e8),
         "guardrail_band": c.number(spending, "guardrail_band", "spending", 0.20, low=0.01, high=0.9),
@@ -291,6 +297,27 @@ def normalize_plan(raw: dict) -> dict:
 
 
 # ------------------------------------------------------------------ files
+
+
+def _strategies(c, spending) -> list:
+    """``spending.compare`` checked and put in SPENDING_RULES order, or the legacy single ``rule``."""
+    rule = c.choice(spending, "rule", "spending", "fixed", SPENDING_RULES) if "rule" in spending else None
+    if "compare" not in spending:
+        return [rule or "fixed"]
+    chosen = spending["compare"]
+    if not isinstance(chosen, list) or not chosen or any(r not in SPENDING_RULES for r in chosen):
+        c.problems.append(f"spending.compare: tick at least one of {', '.join(SPENDING_RULES)}")
+        return ["fixed"]
+    if rule is not None and rule not in chosen:
+        c.problems.append(f"spending.rule: {rule} is not one of the compared strategies")
+    return [r for r in SPENDING_RULES if r in chosen]
+
+
+def strategy_plan(plan: dict, rule: str) -> dict:
+    """A copy of a normalized plan that runs one compared strategy: ``spending.rule`` names it."""
+    if rule not in plan["spending"]["compare"]:
+        raise ValueError(f"{rule} is not one of the plan's compared strategies.")
+    return {**plan, "spending": {**plan["spending"], "rule": rule}}
 
 
 def _toml_value(value):
@@ -367,7 +394,15 @@ def future_observations(plan: dict, market, start=None, end=None) -> tuple[date,
 
 
 def build_inputs(plan: dict, *, market=None, returns=None):
-    """Market path, ledger scenario, rule sets and notes for a normalized plan."""
+    """Market path, ledger scenario, rule sets and notes for a normalized plan.
+
+    The spending strategy is ``spending.rule`` (set by ``strategy_plan``), or the only compared strategy.
+    """
+    rule = plan["spending"].get("rule")
+    if rule is None:
+        if len(plan["spending"]["compare"]) != 1:
+            raise ValueError("The plan compares several spending strategies; pick one with strategy_plan.")
+        rule = plan["spending"]["compare"][0]
     plan = normalize_plan(plan)
     start, end, shortened = horizon(plan)
     if end <= start:
@@ -418,7 +453,7 @@ def build_inputs(plan: dict, *, market=None, returns=None):
         income={ticker: AssetIncome(market.income_yields[ticker], 0.0) for ticker in names},
         employment=employment, annual_spending=plan["spending"]["annual"], spending_growth=spending_growth(plan),
         retirement_spending=retirement_schedule(plan),
-        spending_rule=SpendingRule(plan["spending"]["rule"], band=plan["spending"]["guardrail_band"],
+        spending_rule=SpendingRule(rule, band=plan["spending"]["guardrail_band"],
                                    step=plan["spending"]["guardrail_step"], ceiling=plan["spending"]["ceiling"],
                                    floor=plan["spending"]["floor"], minimum=plan["spending"]["minimum"],
                                    maximum=plan["spending"]["maximum"],

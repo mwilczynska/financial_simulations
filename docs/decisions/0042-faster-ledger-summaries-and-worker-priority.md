@@ -65,6 +65,9 @@ The third alternative.
 - The ledger itself is only about 7% faster; it remains the larger part of each path's cost and the target for any
   later restructuring.
 - 28 idle workers hold about 2–3 GB of memory between runs; *Calculation cores* can lower that.
+- **Fix (2026-11-02, same day):** the *Calculation cores* label first included the automatic count, which changes
+  with free memory; Streamlit then returned a stale label as the choice and the page failed. The label is now fixed
+  (see [plan-portfolios.md](../validation/plan-portfolios.md)).
 
 ## Implementation and validation
 

@@ -89,7 +89,8 @@ def start_ledger_workers(count, cores=None):
 
 def calculation_cores():
     """The *Calculation cores* choice: a number of worker processes, or ``None`` for automatic."""
-    return st.session_state.get("calculation_cores")
+    chosen = st.session_state.get("calculation_cores")
+    return chosen if isinstance(chosen, int) and chosen > 0 else None
 
 
 def request_run():
@@ -378,13 +379,23 @@ START_LABELS = {"same": "The same as now", "amount": "A different amount", "perc
 
 
 def spending_rule_inputs(plan):
-    """How retirement spending is set and how it responds to markets. Rules need a percentage start."""
-    spending, cpi = plan["spending"], plan["assumptions"]["cpi_annual"]
+    """Which spending strategies to compare, how retirement spending starts, and each strategy's settings."""
+    spending = plan["spending"]
     st.subheader("Spending in retirement")
-    spending["rule"] = st.radio("How spending responds to markets", list(RULE_LABELS), index=list(RULE_LABELS).index(spending["rule"]),
-                                format_func=RULE_LABELS.get, key=key("spending_rule"))
-    fixed = spending["rule"] == "fixed"
-    if fixed:
+    st.markdown("**Spending strategies to compare**")
+    st.caption("Tick one or more. Every ticked strategy runs on the same simulated market paths, with every other "
+               "input unchanged, so the differences come from the strategy alone.")
+    spending["compare"] = [rule for rule in RULE_LABELS
+                           if st.checkbox(RULE_LABELS[rule], rule in spending["compare"], key=key(f"compare_{rule}"))]
+    compare = spending["compare"]
+    if not compare:
+        st.error("Tick at least one strategy.")
+        return
+    if len(compare) > 1:
+        st.info("Running every ticked strategy and comparing them side by side is still being built. For now a run "
+                f"shows the first ticked strategy only: {RULE_LABELS[compare[0]].split(':')[0].lower()}.")
+    only_fixed = compare == ["fixed"]
+    if only_fixed:
         spending["retirement"] = st.radio("Retirement spending starts at", list(START_LABELS),
                                           index=list(START_LABELS).index(spending["retirement"]), format_func=START_LABELS.get,
                                           horizontal=True, key=key("spend_start"))
@@ -402,14 +413,16 @@ def spending_rule_inputs(plan):
         st.caption("Each path's starting amount is this percentage of its own wealth on your retirement date, so it is "
                    "only known after the simulation runs. Section 4 of the results shows the range it produced. For "
                    "reference, Guyton and Klinger tested starting rates of about 5–5.5% with their guardrails; 4% is a "
-                   "common rule of thumb for fixed spending over 30 years.")
-    if fixed:
+                   "common rule of thumb for fixed spending over 30 years."
+                   + (" Every compared strategy starts from this same rate, so they begin with the same spending on "
+                      "each path." if len(compare) > 1 else ""))
+    if "fixed" in compare:
         how = {"same": "the amount above", "amount": "this amount",
                "percent": "that percentage of your wealth on your retirement date"}[spending["retirement"]]
-        st.info(f"**Default: fixed spending.** You spend {how} in your first retired year, and after that the same "
+        st.info(f"**Fixed spending.** You spend {how} in your first retired year, and after that the same "
                 f"buying power every year, whatever the markets do. If markets fall, spending stays the same and takes a "
                 "bigger share of what is left, which is how plans run out of money.")
-    elif spending["rule"] == "guyton_klinger":
+    if "guyton_klinger" in compare:
         st.info("**Guyton–Klinger guardrails** (Guyton and Klinger, 2006). On your retirement date spending starts at the "
                 "starting rate above. Each 1 July after that, the *withdrawal rate* is that year's spending divided by "
                 "total wealth:\n"
@@ -429,7 +442,7 @@ def spending_rule_inputs(plan):
         with b:
             spending["guardrail_step"] = percent("Change when a guardrail is hit %", spending["guardrail_step"], "gk_step", low=1,
                                                  high=90, step=1.0)
-    elif spending["rule"] == "vanguard":
+    if "vanguard" in compare:
         st.info("**Vanguard ceiling and floor** (Jaconetti and colleagues, Vanguard, 2013). On your retirement date "
                 "spending starts at the starting rate above. Each 1 July after that, spending aims for that rate times "
                 f"your current wealth, but the change from last year (after inflation) is limited to **+{spending['ceiling']:.1%}** "
@@ -440,26 +453,28 @@ def spending_rule_inputs(plan):
             spending["ceiling"] = percent("Largest yearly rise %", spending["ceiling"], "vg_ceiling", low=0, high=90, step=0.5)
         with b:
             spending["floor"] = percent("Largest yearly cut %", spending["floor"], "vg_floor", low=0, high=90, step=0.5)
-    else:
+    if "percent" in compare:
         st.info("**A percentage of wealth each year.** On your retirement date and each 1 July after that, spending is "
                 "the starting rate times your total wealth that day, so spending moves fully with the markets: a 30% fall "
                 "cuts next year's spending by 30%. It can still run short: spending is reset only each 1 July, so a fall "
                 "during the year is not followed until the next review; super may not yet be accessible to pay it; and "
                 "the minimum below can force spending above the rate. It is a useful reference for how much "
                 "variability the other rules remove.")
-    if not fixed:
+    if not only_fixed:
         a, b = st.columns(2)
         with a:
             spending["minimum"] = money("Essential minimum, never cut below (today's dollars a year; 0 = none)",
                                         spending["minimum"], "spend_minimum",
                                         help="Rises with inflation. A higher minimum makes cuts shallower but raises the "
-                                             "chance of running out.")
+                                             "chance of running out. Applies to every market-responsive strategy.")
         with b:
             spending["maximum"] = money("Maximum, never spend more than (today's dollars a year; 0 = none)",
                                         spending["maximum"], "spend_maximum",
-                                        help="Rises with inflation. Stops spending racing up on paths where markets do very well.")
-        st.caption("Rules review spending once a year on 1 July after your retirement date, using total wealth "
-                   "(cash, outside investments and super). Each review and its reason are in the event log in section 5.")
+                                        help="Rises with inflation. Stops spending racing up on paths where markets do very "
+                                             "well. Applies to every market-responsive strategy.")
+        st.caption("Market-responsive strategies review spending once a year on 1 July after your retirement date, using "
+                   "total wealth (cash, outside investments and super). Fixed spending ignores the minimum and maximum. "
+                   "Each review and its reason are in the event log in section 5.")
 
 
 def inputs_retirement(plan):
@@ -579,13 +594,16 @@ def inputs_assumptions(plan):
                                                                int(plan["market"]["block_length"]), 1,
                                                                key=key("block_length"),
                                                                help="How long, on average, each copied run of history is."))
-    automatic = automatic_workers()
-    st.selectbox("Calculation cores", [None, *range(1, (os.cpu_count() or 1) + 1)], key="calculation_cores",
-                 format_func=lambda n: f"Automatic ({automatic} on this computer)" if n is None else str(n),
+    # Labels must not change between reruns: Streamlit matches the stored choice by its label, and the automatic
+    # count moves with free memory, so it is shown in the caption instead.
+    st.selectbox("Calculation cores", [0, *range(1, (os.cpu_count() or 1) + 1)], key="calculation_cores",
+                 format_func=lambda n: "Automatic" if n == 0 else str(n),
                  help="Worker processes for the daily ledgers. They run at below-normal priority, so other programs "
                       f"stay responsive. Automatic leaves {CPU_HEADROOM} hardware threads free and keeps 4 GB of "
                       "memory available; choose fewer for a quieter computer. This is a setting for this computer, "
                       "not part of the plan file.")
+    if not calculation_cores():
+        st.caption(f"Automatic uses {automatic_workers()} worker processes on this computer right now.")
     with st.expander("What is the average block length?"):
         block = plan["market"]["block_length"]
         st.markdown(f"""

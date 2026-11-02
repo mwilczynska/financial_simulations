@@ -348,3 +348,20 @@ paths took 66.6 s with the original code on 12 workers and 47.2 s on 28;
 the changed code took 38.3 s on 12, 31.2 s on 20 and 25.2 s on 28 (the new
 automatic count). Back-to-back runs without a cool-down were up to twice as
 slow: the laptop throttles under sustained all-core load.
+
+## Compared strategies in the plan, and a Calculation cores fix (2026-11-02)
+
+ADR 0043. The in-app browser showed the four strategy tick boxes; ticking
+Guyton–Klinger and Vanguard beside fixed spending switched the start to the
+shared percentage, showed each ticked strategy's settings and the notice
+that a run still uses the first strategy, with no exceptions. The user's ten
+saved version 2 plans loaded as one-strategy plans (read only).
+
+The same review found a fault in ADR 0042's *Calculation cores* box: its
+"Automatic" label included the automatic worker count, which changes with
+free memory. After the label changed, Streamlit returned the old label text
+as the choice and the page failed converting it to a number. The label is
+now fixed ("Automatic", with the current count in a caption), and anything
+but a positive whole number is read as automatic.
+`tests/test_plan.py::test_app_compares_ticked_strategies_and_ignores_a_stale_cores_choice`
+covers both.

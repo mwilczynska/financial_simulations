@@ -1,5 +1,5 @@
 # Invented example plan; replace all personal amounts and dates before relying on it.
-schema_version = 2
+schema_version = 3
 assets = ["USLCAP3x", "ITT3x", "GOLDPM2x", "COMM", "GLSTOCK"]
 
 [plan]
@@ -55,10 +55,11 @@ real_change = 0.0
 # "percent" of total wealth on the retirement date (retirement_percent).
 retirement = "same"
 retirement_percent = 0.04
-# How retirement spending responds to markets: "fixed" (the default) keeps the amount whatever markets do;
-# "guyton_klinger", "vanguard" and "percent" adjust it each 1 July and need retirement = "percent".
-# minimum and maximum (today's dollars, 0 = none) bound the rules.
-rule = "fixed"
+# The spending strategies to compare on the same market paths: "fixed" (the default) keeps the amount whatever
+# markets do; "guyton_klinger", "vanguard" and "percent" adjust it each 1 July. Any strategy but fixed alone needs
+# retirement = "percent", so every compared strategy starts from the same spending.
+# minimum and maximum (today's dollars, 0 = none) bound the market-responsive rules.
+compare = ["fixed"]
 minimum = 0.0
 maximum = 0.0
 

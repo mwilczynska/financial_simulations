@@ -13,7 +13,7 @@ from financial_simulations.reporting.plan import write_plan_plots
 from financial_simulations.retirement.analysis import QUANTILES, analyse_portfolios, target_observations
 from financial_simulations.retirement.ledger import LedgerResult, run_ledger
 from financial_simulations.retirement.paths import SERIES, run_ledgers, worker_count
-from financial_simulations.retirement.plan import build_inputs, normalize_plan, plan_to_toml, slug
+from financial_simulations.retirement.plan import build_inputs, normalize_plan, plan_to_toml, slug, strategy_plan
 from financial_simulations.runner import code_manifest
 from financial_simulations.rules.au.parameters import UnsupportedRule
 
@@ -23,7 +23,7 @@ DEFAULT_ROOT = Path("output") / "plans"
 
 @dataclass(frozen=True)
 class PlanRun:
-    plan: dict
+    plan: dict  # the normalized plan for the strategy that was run: spending.rule names it
     result: LedgerResult
     notes: list
     folder: Path | None
@@ -64,14 +64,21 @@ def run_plan(plan: dict, output_root: str | Path | None = DEFAULT_ROOT, *, marke
     target = target_observations(plan, market)
     portfolios = analyse_portfolios(plan, market, target, lambda f, m: tell(0.35 * f, m))
     cpi = plan["assumptions"]["cpi_annual"]
-    _, _, years, notes = build_inputs(plan, market=market, returns=portfolios.returns_for(market, 0))
+    compared = plan["spending"]["compare"]
+    # Running every compared strategy on the same paths is stage 4 of the strategy comparison plan; until then a run
+    # uses the first compared strategy and says so.
+    run_for = strategy_plan(plan, compared[0])
+    _, _, years, notes = build_inputs(run_for, market=market, returns=portfolios.returns_for(market, 0))
+    if len(compared) > 1:
+        notes.append(f"Comparing spending strategies is not built yet: these results are for the first ticked strategy "
+                     f"({compared[0].replace('_', ' ')}) only.")
     workers, limited = worker_count(plan["market"]["retirement_paths"], workers)
     if limited:
         notes.append(limited)
     tell(0.35, f"Starting the daily tax ledgers on {workers} worker process{'es' if workers != 1 else ''} (the first "
                "run also starts them, which takes a few seconds)")
     ledgers = lambda done, total: tell(0.35 + 0.6 * done / total, f"Daily tax ledgers: {done} of {total} paths")
-    summaries = sorted(run_ledgers(plan, market, portfolios, cpi, ledgers, workers), key=lambda item: item[0]["Path"])
+    summaries = sorted(run_ledgers(run_for, market, portfolios, cpi, ledgers, workers), key=lambda item: item[0]["Path"])
     tell(0.95, "Summarising paths and saving reports")
     outcome_frame = pd.DataFrame([s[0] for s in summaries])
     calculated = [s for s in summaries if s[1] is not None]
@@ -81,7 +88,7 @@ def run_plan(plan: dict, output_root: str | Path | None = DEFAULT_ROOT, *, marke
     complete = outcome_frame.loc[outcome_frame["Status"] != "unsupported"]
     median = float(complete["Ending wealth"].median())
     representative = int(complete.iloc[(complete["Ending wealth"] - median).abs().argmin()]["Path"])
-    result = ledger_for_path(plan, market, portfolios, representative)
+    result = ledger_for_path(run_for, market, portfolios, representative)
     months = result.daily["total"].resample("ME").last().index
     account_bands = pd.concat([_bands(months, [s[1][name] for s in calculated], name) for name, _ in SERIES], ignore_index=True)
     retirement_bands = account_bands.loc[account_bands["Series"] == "Total wealth"].drop(columns="Series").reset_index(drop=True)
@@ -113,7 +120,7 @@ def run_plan(plan: dict, output_root: str | Path | None = DEFAULT_ROOT, *, marke
                                                              "target_calendar": ("weekdays evenly thinned to the history's observations "
                                                                                  "per year; not a holiday forecast"),
                                                              "retirement_currency_convention": "USD returns applied as an explicit AUD proxy"},
-                    "representative_path": representative}
+                    "representative_path": representative, "spending_strategy": run_for["spending"]["rule"]}
         write_ledger_report(result, folder, plan["plan"]["name"], manifest)
         for name, frame in (("asset_summary", market.asset_summary), ("portfolio_summary", portfolios.summary),
                             ("portfolio_history", portfolios.historical), ("portfolio_bands", portfolios.paths),
@@ -122,7 +129,7 @@ def run_plan(plan: dict, output_root: str | Path | None = DEFAULT_ROOT, *, marke
                             ("retirement_annual", retirement_annual)):
             frame.to_csv(folder / f"{name}.csv", index=False, lineterminator="\n")
         (folder / "portfolio_annual.csv").unlink(missing_ok=True)  # written by earlier versions; no longer calculated
-        write_plan_plots(folder, plan, market, portfolios, outcome_frame, retirement_bands, result)
+        write_plan_plots(folder, run_for, market, portfolios, outcome_frame, retirement_bands, result)
         (folder / "manifest.json").write_text(json.dumps(manifest, indent=2, default=str) + "\n", encoding="utf-8", newline="\n")
-    return PlanRun(plan, result, notes, folder, rules, market, portfolios, outcome_frame, retirement_bands, representative,
+    return PlanRun(run_for, result, notes, folder, rules, market, portfolios, outcome_frame, retirement_bands, representative,
                    account_bands, retirement_annual, wealth_paths, path_series)

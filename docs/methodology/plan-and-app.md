@@ -1,6 +1,6 @@
 # Ticker portfolios and the retirement planner
 
-Date: 2026-10-28. Status: schema version 2, local ticker adapter, daily
+Date: 2026-10-28. Status: schema version 3 (reads 2), local ticker adapter, daily
 portfolio simulations and interactive results implemented. Decision:
 [ADR 0017](../decisions/0017-ticker-portfolios-and-interactive-results.md),
 which updates the market and input conventions of
@@ -76,7 +76,7 @@ total-return histories are not charged again. See the
 
 ## Plan schema and accounting
 
-Schema version 2 uses:
+Schema version 3 uses the fields below. Version 2 files, which name one `rule`, still load (ADR 0043).
 
 | Section | Relevant fields |
 | --- | --- |
@@ -85,8 +85,16 @@ Schema version 2 uses:
 | `assets` | Selected local ticker codes |
 | `[outside]` | Cash, cash buffer, `cash_interest`, `investment_balance`, `opening_cost_base`, `opening_acquired`, `weights`, `rebalance`, `saving` (`surplus` or `fixed`), `contribution_per_year`, `contribution_indexed` |
 | `[super]` | Balance, prior 30 June total super balance, `weights`, `rebalance`, `realised_gains` (share of the fund's unrealised gains realised each year; default 0.2, an assumption; ADR 0029) |
-| `[spending]`, `[pension]`, `[assumptions]` | `annual` (today's dollars), `real_change` (a year, on top of CPI; default 0), `retirement` (`same` default, `amount` with `retirement_annual`, or `percent` with `retirement_percent` of total wealth on the retirement date), `rule` (`fixed` default, `guyton_klinger`, `vanguard`, `percent`; non-fixed rules require `retirement = "percent"`), `minimum`, `maximum` (today's dollars, CPI-indexed), `guardrail_band`, `guardrail_step`, `ceiling`, `floor`; pension transfer; projected-rule assumptions. A `planning_age` in older files is accepted and ignored (ADR 0041). A legacy nominal `annual_growth` is read as `real_change = (1 + annual_growth) / (1 + cpi) - 1` (ADR 0025) |
+| `[spending]`, `[pension]`, `[assumptions]` | `annual` (today's dollars), `real_change` (a year, on top of CPI; default 0), `retirement` (`same` default, `amount` with `retirement_annual`, or `percent` with `retirement_percent` of total wealth on the retirement date), `compare` (the spending strategies to compare, a list of `fixed` (default), `guyton_klinger`, `vanguard` and `percent`, kept in that order; anything but `["fixed"]` requires `retirement = "percent"`, so every compared strategy starts from the same spending; a version 2 `rule` loads as a one-item list), `minimum`, `maximum` (today's dollars, CPI-indexed), `guardrail_band`, `guardrail_step`, `ceiling`, `floor`; pension transfer; projected-rule assumptions. A `planning_age` in older files is accepted and ignored (ADR 0041). A legacy nominal `annual_growth` is read as `real_change = (1 + annual_growth) / (1 + cpi) - 1` (ADR 0025) |
 | `[market]` | Portfolio path count, retirement path count, seed, mean block length |
+
+**Spending strategies** ([ADR 0043](../decisions/0043-compared-spending-strategies-in-the-plan.md)). A normalized
+plan lists its compared strategies in `spending.compare` and has no single rule. `strategy_plan(plan, rule)`
+returns a copy with `spending.rule` set, and `build_inputs` uses that rule (a plan comparing one strategy needs
+no copy). Every strategy keeps its own parameters in the plan, so ticking one off and on again restores them.
+The app's Retirement tab has a tick box per strategy and shows the settings of each ticked one. Until every
+compared strategy is run on the same paths (stage 4 of the strategy comparison plan), a run uses the first
+compared strategy and adds a note saying so; `PlanRun.plan` is that strategy's plan.
 
 `outside.weights` and `super.weights` each sum to one. They represent the
 opening allocation and future purchases or contributions in that account.
