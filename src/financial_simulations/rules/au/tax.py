@@ -34,14 +34,17 @@ def _amount(value, name, *, negative=False):
 CATEGORIES = ("standard", "deferred", "post_reform")
 
 
+def twelve_month_anniversary(acquired: date) -> date:
+    """The last day on which an asset acquired on ``acquired`` is not yet held 12 months."""
+    try:
+        return acquired.replace(year=acquired.year + 1)
+    except ValueError:  # acquired 29 February
+        return date(acquired.year + 1, 3, 1)
+
+
 def held_twelve_months(acquired, event) -> bool:
     """At least 12 months, excluding the acquisition and event days (ATO CGT discount)."""
-    acquired, event = as_date(acquired), as_date(event)
-    try:
-        anniversary = acquired.replace(year=acquired.year + 1)
-    except ValueError:  # acquired 29 February
-        anniversary = date(acquired.year + 1, 3, 1)
-    return event > anniversary
+    return as_date(event) > twelve_month_anniversary(as_date(acquired))
 
 
 @dataclass(frozen=True)
@@ -78,7 +81,11 @@ def indexation_factor(expenditure_day, event_day, cpi_annual) -> float:
     s960-275: rounded to 3 decimal places (half up); a factor of 1 or less
     gives no indexation.
     """
-    quarters = quarter_number(event_day) - quarter_number(expenditure_day)
+    return indexation_for_quarters(quarter_number(event_day) - quarter_number(expenditure_day), cpi_annual)
+
+
+def indexation_for_quarters(quarters: int, cpi_annual: float) -> float:
+    """``indexation_factor`` for a whole number of quarters between expenditure and event."""
     factor = (1 + cpi_annual) ** (quarters / 4)
     factor = floor(factor * 1000 + 0.5) / 1000
     return factor if factor > 1 else 1.0

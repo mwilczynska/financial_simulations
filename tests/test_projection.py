@@ -237,3 +237,20 @@ def test_withdrawal_rates_are_the_nominal_ratio_for_a_start_after_1_july():
              - nominal["age_pension"].sum())
     assert year["Withdrawal rate"] == pytest.approx(drawn / result.daily.loc["2027-06-30", "total"])
     assert year["Withdrawal rate"] == pytest.approx(40000 / result.daily.loc["2027-06-30", "total"])
+
+
+def test_cached_cgt_dates_and_factors_match_the_rule_functions():
+    # The ledger ranks parcels with these helpers (ADR 0042); they must agree with the rule functions exactly.
+    from datetime import date, timedelta
+    from financial_simulations.rules.au.tax import (held_twelve_months, indexation_for_quarters, quarter_number,
+                                                    twelve_month_anniversary)
+
+    assert twelve_month_anniversary(date(2028, 2, 29)) == date(2029, 3, 1)
+    for acquired in (date(2027, 6, 30), date(2028, 2, 29), date(2028, 12, 31)):
+        anniversary = twelve_month_anniversary(acquired)
+        for event in (anniversary - timedelta(days=1), anniversary, anniversary + timedelta(days=1)):
+            assert held_twelve_months(acquired, event) == (event > anniversary)
+    for spent, event in ((date(2027, 7, 1), date(2029, 7, 15)), (date(2027, 8, 3), date(2041, 2, 1))):
+        for cpi in (0.025, 0.031, -0.01):
+            assert indexation_factor(spent, event, cpi) == indexation_for_quarters(
+                quarter_number(event) - quarter_number(spent), cpi)

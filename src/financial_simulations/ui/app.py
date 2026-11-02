@@ -7,6 +7,7 @@ output/plans/<plan-name>/.
 """
 
 from datetime import date
+import os
 from pathlib import Path
 
 import numpy as np
@@ -17,7 +18,7 @@ from financial_simulations.data.plan_markets import CUSTOM_TICKERS, TICKERS, loa
 from financial_simulations.retirement.plan import (PlanError, default_plan, load_plan_text, normalize_plan, plan_to_json,
                                                    plan_to_toml, sacrifice_per_year, slug)
 from financial_simulations.retirement.flows import account_flows, household_flows, milestones
-from financial_simulations.retirement.paths import warm_pool
+from financial_simulations.retirement.paths import CPU_HEADROOM, automatic_workers, warm_pool
 from financial_simulations.retirement.real import real_daily, real_events, year_deflator
 from financial_simulations.retirement.run_plan import ledger_for_path, run_plan
 from financial_simulations.rules.au.parameters import UnsupportedRule, load_ruleset
@@ -80,10 +81,15 @@ def rebalance_choice(current, name, help):
 
 
 @st.cache_resource(show_spinner=False)
-def start_ledger_workers(count):
+def start_ledger_workers(count, cores=None):
     """Start the tax-ledger worker processes once per app server, so the first run does not wait for them."""
-    warm_pool(count)
+    warm_pool(count, cores)
     return True
+
+
+def calculation_cores():
+    """The *Calculation cores* choice: a number of worker processes, or ``None`` for automatic."""
+    return st.session_state.get("calculation_cores")
 
 
 def request_run():
@@ -568,11 +574,18 @@ def inputs_assumptions(plan):
         plan["market"]["retirement_paths"] = int(st.number_input("Daily retirement-ledger paths", 1, 2000,
                                                                    int(plan["market"]["retirement_paths"]), 1,
                                                                    key=key("retirement_paths"),
-                                                                   help="The first shared market draws are run through the full daily tax, spending and super ledger. Each takes about half a second per ten years; 100 or more is recommended for shortfall rates."))
+                                                                   help="The first shared market draws are run through the full daily tax, spending and super ledger. Each takes about a quarter of a second per ten years on one core, and the paths are shared across the calculation cores; 100 or more is recommended for shortfall rates."))
         plan["market"]["block_length"] = int(st.number_input("Average block length (trading days)", 1, 1260,
                                                                int(plan["market"]["block_length"]), 1,
                                                                key=key("block_length"),
                                                                help="How long, on average, each copied run of history is."))
+    automatic = automatic_workers()
+    st.selectbox("Calculation cores", [None, *range(1, (os.cpu_count() or 1) + 1)], key="calculation_cores",
+                 format_func=lambda n: f"Automatic ({automatic} on this computer)" if n is None else str(n),
+                 help="Worker processes for the daily ledgers. They run at below-normal priority, so other programs "
+                      f"stay responsive. Automatic leaves {CPU_HEADROOM} hardware threads free and keeps 4 GB of "
+                      "memory available; choose fewer for a quieter computer. This is a setting for this computer, "
+                      "not part of the plan file.")
     with st.expander("What is the average block length?"):
         block = plan["market"]["block_length"]
         st.markdown(f"""
@@ -1079,7 +1092,7 @@ def run_with_progress(valid):
 
     try:
         market = cached_market(tuple(valid["assets"]))
-        return run_plan(valid, market=market, progress=progress)
+        return run_plan(valid, market=market, progress=progress, workers=calculation_cores())
     finally:
         bar.empty()
 
@@ -2197,7 +2210,7 @@ def main():
     if message:
         st.toast(message)
     sidebar()
-    start_ledger_workers(st.session_state.plan["market"]["retirement_paths"])
+    start_ledger_workers(st.session_state.plan["market"]["retirement_paths"], calculation_cores())
     run_requested_plan()
     plan = st.session_state.plan
     # A keyed, tracked tab set keeps the open tab when a widget on it reruns the app.

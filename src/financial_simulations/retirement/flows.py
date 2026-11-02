@@ -29,6 +29,11 @@ def financial_year_end(day) -> int:
     return day.year + (day.month >= 7)
 
 
+def _financial_years(index: pd.DatetimeIndex) -> pd.Index:
+    """``financial_year_end`` of every date in a daily index, computed for the whole index at once."""
+    return index.year + (index.month >= 7)
+
+
 def household_flows(daily: pd.DataFrame, inflation: bool = False) -> pd.DataFrame:
     """One row per financial year and flow; ``AUD`` is signed (in positive, out negative).
 
@@ -38,7 +43,7 @@ def household_flows(daily: pd.DataFrame, inflation: bool = False) -> pd.DataFram
     ``Inflation`` flow then carries the buying power wealth lost in the year, so
     the flows still sum to the net change.
     """
-    years = daily.index.map(lambda d: financial_year_end(d.date()))
+    years = _financial_years(daily.index)
     rows = []
     for year, part in daily.groupby(years):
         position = daily.index.get_loc(part.index[0])
@@ -66,7 +71,7 @@ def account_flows(daily: pd.DataFrame, events: pd.DataFrame) -> pd.DataFrame:
         if abs(amount) > 1e-9:
             rows.append({"FY ending": financial_year_end(day), "Account": account, "Flow": label, "AUD": float(amount)})
 
-    yearly = daily.groupby(daily.index.map(lambda d: financial_year_end(d.date()))).sum(numeric_only=True)
+    yearly = daily.groupby(_financial_years(daily.index)).sum(numeric_only=True)
     for year, values in yearly.iterrows():
         d = date(int(year), 6, 30)
         add(d, "Super (accumulation)", "Contributions after 15% tax", values["employer_contributions"] - values["contributions_tax"])
@@ -77,17 +82,23 @@ def account_flows(daily: pd.DataFrame, events: pd.DataFrame) -> pd.DataFrame:
             add(d, "Super (accumulation)", "Division 296 tax released", -values["division_296"])
     if not events.empty:
         purpose = events["purpose"] if "purpose" in events else pd.Series("", index=events.index)
-        for _, event in events.iterrows():
-            d = event["date"] if isinstance(event["date"], date) else pd.Timestamp(event["date"]).date()
-            if event["event"] == "buy" and event["account"] == "outside" and purpose.loc[_] == "investment":
-                add(d, "Outside investments", "Savings invested", event["amount"])
-            elif event["event"] == "sale" and purpose.loc[_] == "withdrawal":
-                add(d, "Outside investments", "Sold to pay spending or tax", -event["amount"])
-            elif event["event"] == "pension_commencement":
-                add(d, "Super (accumulation)", "Moved to pension", -event["amount"])
-                add(d, "Account-based pension", "Moved from super", event["amount"])
-            elif event["event"] == "non_concessional_contribution":
-                add(d, "Super (accumulation)", "Non-concessional contributions", event["amount"])
+        kind = events["event"]
+        # Only these events are transfers; selecting them first avoids walking every event row by row.
+        wanted = (((kind == "buy") & (events["account"] == "outside") & (purpose == "investment"))
+                  | ((kind == "sale") & (purpose == "withdrawal"))
+                  | kind.isin(("pension_commencement", "non_concessional_contribution")))
+        chosen = events.loc[wanted]
+        for when, event, amount in zip(chosen["date"], chosen["event"], chosen["amount"]):
+            d = when if isinstance(when, date) else pd.Timestamp(when).date()
+            if event == "buy":
+                add(d, "Outside investments", "Savings invested", amount)
+            elif event == "sale":
+                add(d, "Outside investments", "Sold to pay spending or tax", -amount)
+            elif event == "pension_commencement":
+                add(d, "Super (accumulation)", "Moved to pension", -amount)
+                add(d, "Account-based pension", "Moved from super", amount)
+            else:
+                add(d, "Super (accumulation)", "Non-concessional contributions", amount)
     frame = pd.DataFrame(rows, columns=["FY ending", "Account", "Flow", "AUD"])
     return frame.groupby(["FY ending", "Account", "Flow"], as_index=False)["AUD"].sum()
 

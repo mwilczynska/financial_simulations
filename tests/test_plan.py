@@ -458,3 +458,46 @@ def test_mostly_zero_measures_report_share_and_median_among_affected():
     assert affected([0, 0, 10, 30]) == "50.0% · $20"
     assert affected([0.0, 0.0]) == "None"
     assert affected([]) == "–"
+
+
+def test_worker_count_honours_requests_and_limits_the_automatic_count(monkeypatch):
+    from financial_simulations.retirement import paths
+
+    monkeypatch.delenv("FINANCIAL_SIMULATIONS_WORKERS", raising=False)
+    monkeypatch.setattr(paths.os, "cpu_count", lambda: 32)
+    monkeypatch.setattr(paths, "available_memory", lambda: 64 * 1024 ** 3)
+    assert paths.worker_count(1000) == (32 - paths.CPU_HEADROOM, None)
+    assert paths.worker_count(20) == (10, None)  # half the tasks
+    assert paths.worker_count(4) == (1, None)  # starting workers would cost more than it saves
+    assert paths.worker_count(1000, 6) == (6, None) and paths.worker_count(3, 6) == (3, None)
+    monkeypatch.setenv("FINANCIAL_SIMULATIONS_WORKERS", "5")
+    assert paths.worker_count(1000) == (5, None)
+    monkeypatch.delenv("FINANCIAL_SIMULATIONS_WORKERS")
+    # 5 GB available leaves room for (5 GB - 4 GB) / 200 MB = 5 workers, and the run says why.
+    monkeypatch.setattr(paths, "available_memory", lambda: 5 * 1024 ** 3)
+    workers, note = paths.worker_count(1000)
+    assert workers == 5 and "5 worker processes instead of 28" in note
+    monkeypatch.setattr(paths, "available_memory", lambda: None)
+    assert paths.worker_count(1000) == (28, None)
+
+
+def _priority_class():
+    import ctypes
+
+    kernel32 = ctypes.windll.kernel32
+    kernel32.GetCurrentProcess.restype = ctypes.c_void_p
+    kernel32.GetPriorityClass.argtypes = (ctypes.c_void_p,)
+    return kernel32.GetPriorityClass(kernel32.GetCurrentProcess())
+
+
+@pytest.mark.skipif(not __import__("sys").platform.startswith("win"), reason="Windows priority classes")
+def test_ledger_workers_run_below_normal_priority():
+    from concurrent.futures import ProcessPoolExecutor
+    from financial_simulations.retirement.paths import (BELOW_NORMAL_PRIORITY_CLASS, _below_normal_priority,
+                                                        _without_main_module)
+
+    with ProcessPoolExecutor(1, initializer=_below_normal_priority) as pool:
+        with _without_main_module():  # as run_ledgers does: workers must not re-run the launching module
+            future = pool.submit(_priority_class)
+        assert future.result() == BELOW_NORMAL_PRIORITY_CLASS
+    assert _priority_class() != BELOW_NORMAL_PRIORITY_CLASS  # the parent keeps its priority

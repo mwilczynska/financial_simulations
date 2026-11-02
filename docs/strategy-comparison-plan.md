@@ -1,6 +1,7 @@
 # Plan: comparing retirement spending strategies
 
-Status: stages 0 and 1 implemented on 2 November 2026 (ADR 0040 and ADR 0041); stages 2–7 proposed.
+Status: stages 0 and 1 implemented on 2 November 2026 (ADR 0040 and ADR 0041); stage 2 implemented (ADR 0042: a default
+run about 2.6 times faster); stages 3–7 proposed.
 Written 2 November 2026.
 
 ## Requirements (from the user)
@@ -87,7 +88,9 @@ Profiling three 40-year paths found:
 2. Store units and prices as aligned NumPy arrays so `_value` becomes a dot product, or value only on days that need
    it.
 3. Skip `as_date` where the input is already a `date`.
-A 2–3× speed-up looks realistic.
+A 2–3× speed-up looked realistic. **Outcome (ADR 0042):** the ledger itself gained only about 7% without changing
+its arithmetic, but the per-path summary in each worker turned out to cost more than the ledger and became 3.4×
+faster, so each path's whole worker step went from about 1.7 s to 1.0 s on one core, with identical results.
 
 ### More cores, without slowing the rest of the computer
 

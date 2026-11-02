@@ -12,7 +12,7 @@ from financial_simulations.reporting.ledger import write_ledger_report
 from financial_simulations.reporting.plan import write_plan_plots
 from financial_simulations.retirement.analysis import QUANTILES, analyse_portfolios, target_observations
 from financial_simulations.retirement.ledger import LedgerResult, run_ledger
-from financial_simulations.retirement.paths import SERIES, run_ledgers
+from financial_simulations.retirement.paths import SERIES, run_ledgers, worker_count
 from financial_simulations.retirement.plan import build_inputs, normalize_plan, plan_to_toml, slug
 from financial_simulations.runner import code_manifest
 from financial_simulations.rules.au.parameters import UnsupportedRule
@@ -50,11 +50,13 @@ def _bands(dates, frame_rows, name) -> pd.DataFrame:
     return pd.DataFrame({"Date": dates, "Series": name, "P05": q[0], "P25": q[1], "P50": q[2], "P75": q[3], "P95": q[4]})
 
 
-def run_plan(plan: dict, output_root: str | Path | None = DEFAULT_ROOT, *, market=None, progress=None) -> PlanRun:
+def run_plan(plan: dict, output_root: str | Path | None = DEFAULT_ROOT, *, market=None, progress=None,
+             workers: int | None = None) -> PlanRun:
     """Resample entered portfolios, then run a daily tax ledger on shared draws.
 
     ``progress(fraction, message)`` reports each stage: portfolio sampling and
     compounding (0-35%), the daily tax ledgers (35-95%) and saving (95-100%).
+    ``workers`` sets the number of ledger processes; ``None`` chooses automatically (``worker_count``).
     """
     tell = progress or (lambda fraction, message: None)
     plan = normalize_plan(plan)
@@ -63,9 +65,13 @@ def run_plan(plan: dict, output_root: str | Path | None = DEFAULT_ROOT, *, marke
     portfolios = analyse_portfolios(plan, market, target, lambda f, m: tell(0.35 * f, m))
     cpi = plan["assumptions"]["cpi_annual"]
     _, _, years, notes = build_inputs(plan, market=market, returns=portfolios.returns_for(market, 0))
-    tell(0.35, "Starting the daily tax ledgers (the first run also starts worker processes, which takes a few seconds)")
+    workers, limited = worker_count(plan["market"]["retirement_paths"], workers)
+    if limited:
+        notes.append(limited)
+    tell(0.35, f"Starting the daily tax ledgers on {workers} worker process{'es' if workers != 1 else ''} (the first "
+               "run also starts them, which takes a few seconds)")
     ledgers = lambda done, total: tell(0.35 + 0.6 * done / total, f"Daily tax ledgers: {done} of {total} paths")
-    summaries = sorted(run_ledgers(plan, market, portfolios, cpi, ledgers), key=lambda item: item[0]["Path"])
+    summaries = sorted(run_ledgers(plan, market, portfolios, cpi, ledgers, workers), key=lambda item: item[0]["Path"])
     tell(0.95, "Summarising paths and saving reports")
     outcome_frame = pd.DataFrame([s[0] for s in summaries])
     calculated = [s for s in summaries if s[1] is not None]

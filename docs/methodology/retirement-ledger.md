@@ -264,6 +264,19 @@ investor selling a later, higher-cost parcel to realise a loss. The model
 assumes such records are kept. Managed-fund unit registries can differ in
 what they report.
 
+**Computation.** Every sale ranks every parcel of the assets being sold, so
+the ranking is the ledger's most repeated calculation. Since
+[ADR 0042](../decisions/0042-faster-ledger-summaries-and-worker-priority.md)
+the run caches each acquisition date's 12-month anniversary
+(`twelve_month_anniversary`), each date's quarter number and the indexation
+factor for each whole number of quarters and CPI assumption
+(`indexation_for_quarters`, the function `indexation_factor` itself uses).
+The arithmetic and the order of operations are unchanged, and full ledger
+outputs on 48 fixed 40-year paths were bit-for-bit identical before and
+after. Valuations still add holdings left to right: Python's built-in
+`sum()` compensates float rounding from 3.12, so it is avoided where it
+would change results.
+
 ## Limitations
 
 - **Horizon.** Years after 2026-27 depend on an assumed CPI and wage growth.

@@ -536,6 +536,28 @@ Workers now start with `OPENBLAS_NUM_THREADS`, `OMP_NUM_THREADS` and
 10.9 GB before. Only one app instance should run at a time, because each
 keeps its own worker pool.
 
+**Worker count and priority** ([ADR 0042](../decisions/0042-faster-ledger-summaries-and-worker-priority.md)).
+`worker_count` in `retirement/paths.py` chooses the number of ledger
+processes:
+
+- *Calculation cores* on the Assumptions tab (a setting for the computer,
+  not stored in the plan), or `FINANCIAL_SIMULATIONS_WORKERS`, sets it
+  directly, never above the number of paths;
+- otherwise one process for four paths or fewer; else the smaller of half
+  the paths and the hardware threads less `CPU_HEADROOM` (4), so 28 on a
+  32-thread machine;
+- the automatic count is then reduced so the workers, at `WORKER_MEMORY`
+  (200 MB) each, leave `MEMORY_RESERVE` (4 GB) of physical memory available.
+  A worker running 50-year ledgers peaked at a 142 MB working set (123 MB
+  committed) on 2 November 2026. A reduced count is reported as a run note.
+
+Every worker lowers itself to below-normal priority when it starts
+(`SetPriorityClass` on Windows, `os.nice(10)` elsewhere). The operating
+system then gives foreground programs, and normal-priority work such as
+another simulation, the CPU whenever they need it; the ledgers use the
+remaining cycles. The app process keeps normal priority. Priority changes
+when the calculation runs, never its result.
+
 Charts show hover values. Dragging pans, Shift+scroll zooms and a
 double-click resets. Plain scrolling scrolls the page, because an
 earlier version zoomed the chart under the pointer. Python generates PNG

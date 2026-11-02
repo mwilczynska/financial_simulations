@@ -7,6 +7,7 @@ plan and rule code, not the plotting and reporting libraries.
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from concurrent.futures.process import BrokenProcessPool
 from contextlib import contextmanager
+import ctypes
 from datetime import date
 import os
 import sys
@@ -39,12 +40,13 @@ def _summarise(path: int, result: LedgerResult, retire: date, cpi: float):
     nominal, annual = result.daily, result.annual
     daily = real_daily(nominal, cpi)
     first, last = daily.index[0].date(), daily.index[-1].date()
+    dates = daily.index.date  # built once: each call converts the whole index
     step = lambda fy_ending: year_deflator(fy_ending, first, cpi)
     outside = daily["cash"] + daily["outside_investments"]
     totals = {name: daily[list(columns)].sum(axis=1) for name, columns in SERIES}
     monthly = {name: series.resample("ME").last().to_numpy() for name, series in totals.items()}
     shortfall_days = daily.index[daily["shortfall"] > 0]
-    depleted = daily.index[(outside <= 1.0) & (daily.index.date > first)]
+    depleted = daily.index[(outside <= 1.0) & (dates > first)]
     flow_columns = ["spending_paid", "tax_paid", "division_296", "shortfall", "pension_payments", "lump_sums", "age_pension"]
     flows = daily[flow_columns].resample("YE-JUN").sum()
     # Withdrawal rates use nominal flows over nominal wealth: today's-dollar flows are deflated in whole financial-year
@@ -53,7 +55,7 @@ def _summarise(path: int, result: LedgerResult, retire: date, cpi: float):
     rows = []
     for end, values in flows.iterrows():
         begin = _fy_start(end.date())
-        before = daily.index[daily.index.date < begin]
+        before = daily.index[dates < begin]
         opening = float(daily["total"].iloc[0] if before.empty else daily["total"].loc[before[-1]])
         opening_nominal = float(nominal["total"].iloc[0] if before.empty else nominal["total"].loc[before[-1]])
         retired = begin >= retire and end.date() <= last
@@ -84,7 +86,7 @@ def _summarise(path: int, result: LedgerResult, retire: date, cpi: float):
         row["Added to outside investments"] = float(added.get(year, 0.0))
     retired_rates = [r["Withdrawal rate"] for r in rows if r["Full retired year"] and np.isfinite(r["Withdrawal rate"])]
     spending = _retirement_spending(result, nominal, rows, retire, first, cpi)
-    at_retirement = daily.loc[daily.index.date <= retire, "total"]
+    at_retirement = daily.loc[dates <= retire, "total"]
     accessible = daily.index[daily["super_accessible"].astype(bool)]
     unpaid = sum(item["amount"] / step(int(item["financial_year"][:4]) + 1) for item in result.outstanding["unpaid_tax"])
     shortfall = float(daily["shortfall"].sum())
@@ -179,17 +181,65 @@ def _run_chunk(plan, market, indices, paths, retire, cpi):
     return out
 
 
-def _workers(count: int) -> int:
-    configured = os.environ.get("FINANCIAL_SIMULATIONS_WORKERS")
+# Worker processes run below normal priority, so the rest of the computer stays responsive (ADR 0042). The automatic
+# count leaves CPU_HEADROOM hardware threads free and keeps MEMORY_RESERVE of physical memory available.
+CPU_HEADROOM = 4
+MEMORY_RESERVE = 4 * 1024 ** 3
+# Measured 2 November 2026: one worker running 50-year ledgers peaked at a 142 MB working set (123 MB committed).
+WORKER_MEMORY = 200 * 1024 ** 2
+
+
+def available_memory() -> int | None:
+    """Physical memory available now, in bytes, or ``None`` where the system does not report it."""
+    if sys.platform == "win32":
+        class Status(ctypes.Structure):
+            _fields_ = [("length", ctypes.c_ulong), ("load", ctypes.c_ulong), ("total_physical", ctypes.c_ulonglong),
+                        ("available_physical", ctypes.c_ulonglong), ("total_page_file", ctypes.c_ulonglong),
+                        ("available_page_file", ctypes.c_ulonglong), ("total_virtual", ctypes.c_ulonglong),
+                        ("available_virtual", ctypes.c_ulonglong), ("available_extended", ctypes.c_ulonglong)]
+
+        status = Status()
+        status.length = ctypes.sizeof(status)
+        return int(status.available_physical) if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)) else None
+    try:
+        return os.sysconf("SC_AVPHYS_PAGES") * os.sysconf("SC_PAGE_SIZE")
+    except (AttributeError, OSError, ValueError):
+        return None
+
+
+def worker_count(tasks: int, requested: int | None = None) -> tuple[int, str | None]:
+    """Worker processes for ``tasks`` ledger paths, and a note when memory limited the automatic count.
+
+    ``requested`` (the app's *Calculation cores*) or ``FINANCIAL_SIMULATIONS_WORKERS`` sets the count directly;
+    it is never more than the number of tasks. Otherwise: one process for four tasks or fewer (starting workers
+    costs more than it saves), else the smaller of half the tasks and the hardware threads less ``CPU_HEADROOM``,
+    reduced if the workers would leave less than ``MEMORY_RESERVE`` of physical memory available.
+    """
+    configured = requested or os.environ.get("FINANCIAL_SIMULATIONS_WORKERS")
     if configured:
-        return max(1, int(configured))
-    return 1 if count <= 4 else max(1, min(count // 2, (os.cpu_count() or 2) - 1, 12))
+        return max(1, min(int(configured), tasks)), None
+    if tasks <= 4:
+        return 1, None
+    workers = max(1, min(tasks // 2, (os.cpu_count() or 2) - CPU_HEADROOM))
+    available = available_memory()
+    if available is not None:
+        fits = max(1, (available - MEMORY_RESERVE) // WORKER_MEMORY)
+        if fits < workers:
+            return int(fits), (f"Ran the daily ledgers on {fits} worker processes instead of {workers}: only "
+                               f"{available / 1024 ** 3:.1f} GB of memory was available.")
+    return workers, None
 
 
-def run_ledgers(plan, market, portfolios, cpi, progress=None):
-    """Run the first ``retirement_paths`` draws, in worker processes when there are several."""
+def automatic_workers(tasks: int = 1000) -> int:
+    """The automatic worker count for a large run on this computer, for display."""
+    return worker_count(tasks)[0]
+
+
+def run_ledgers(plan, market, portfolios, cpi, progress=None, workers=None):
+    """Run the first ``retirement_paths`` draws, in ``workers`` processes (``worker_count`` when ``None``)."""
     count = plan["market"]["retirement_paths"]
-    workers = _workers(count)
+    if workers is None:
+        workers = worker_count(count)[0]
     chunks = [c for c in np.array_split(np.arange(count), min(count, max(1, workers * 3))) if len(c)]
     out = []
     if workers == 1:
@@ -221,13 +271,30 @@ def _pool(workers: int) -> ProcessPoolExecutor:
     if _POOL.get("workers") != workers:
         if "pool" in _POOL:
             _POOL["pool"].shutdown(wait=False, cancel_futures=True)
-        _POOL.update(workers=workers, pool=ProcessPoolExecutor(max_workers=workers))
+        _POOL.update(workers=workers, pool=ProcessPoolExecutor(max_workers=workers, initializer=_below_normal_priority))
     return _POOL["pool"]
 
 
-def warm_pool(count: int = 100) -> None:
+BELOW_NORMAL_PRIORITY_CLASS = 0x4000
+
+
+def _below_normal_priority() -> None:
+    """Worker start-up: yield the CPU to foreground programs whenever they need it."""
+    try:
+        if sys.platform == "win32":
+            kernel32 = ctypes.windll.kernel32
+            kernel32.GetCurrentProcess.restype = ctypes.c_void_p
+            kernel32.SetPriorityClass.argtypes = (ctypes.c_void_p, ctypes.c_ulong)
+            kernel32.SetPriorityClass(kernel32.GetCurrentProcess(), BELOW_NORMAL_PRIORITY_CLASS)
+        else:
+            os.nice(10)
+    except (AttributeError, OSError):
+        pass  # priority is a courtesy; the calculation is the same at any priority
+
+
+def warm_pool(count: int = 100, requested: int | None = None) -> None:
     """Start the worker processes ahead of the first run (the browser app calls this when it loads)."""
-    workers = _workers(count)
+    workers = worker_count(count, requested)[0]
     if workers > 1:
         pool = _pool(workers)
         with _without_main_module():

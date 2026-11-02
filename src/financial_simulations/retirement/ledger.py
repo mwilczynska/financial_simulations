@@ -67,8 +67,8 @@ from financial_simulations.rules.au.superannuation import (
     TransferBalanceAccount, access_date, add_business_days, age_on, apply_concessional, apply_non_concessional, birthday,
     accumulation_earnings_tax, concessional_cap, division_296_tax, minimum_pension_payment, require_tax_free_benefits,
     super_guarantee, voluntary_contribution_deadline)
-from financial_simulations.rules.au.tax import (CapitalGainEvent, IncomeYear, assess, held_twelve_months,
-                                             indexation_factor, post_reform_gain)
+from financial_simulations.rules.au.tax import (CapitalGainEvent, IncomeYear, assess, indexation_for_quarters,
+                                             post_reform_gain, twelve_month_anniversary)
 
 
 TOLERANCE = 1e-6
@@ -340,6 +340,7 @@ def _period_closes(dates, months, through):
 
 
 def _value(units, prices):
+    # A plain left-to-right sum: built-in sum() compensates float rounding (Python 3.12+), which changes results.
     total = 0.0
     for asset, held in units.items():
         if held:
@@ -525,43 +526,65 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
                 CapitalGainEvent(parcel.acquired, day, post_reform_gain(reacquired, sold, reform, day, parcel.acquired, cpi),
                                  "post_reform")]
 
-    def taxable_per_dollar(parcel, factors):
-        """Taxable gain per dollar of proceeds if the whole parcel were sold today; losses are negative.
+    # A sale ranks every parcel, so the dates and factors it needs are cached for the whole run: the 12-month
+    # anniversary of each acquisition date, the quarter number of each date and the indexation factor for each
+    # whole number of quarters (indexation_factor depends only on that difference and the CPI assumption).
+    anniversaries, quarter_numbers, quarter_factors = {}, {}, {}
 
-        The arithmetic of ``parcel_gains`` without building CGT events (it ranks every parcel at each sale): a
-        discount-eligible gain counts at ``1 - discount``. ``factors`` caches indexation factors for this day.
+    def quarter_of(when):
+        number = quarter_numbers.get(when)
+        if number is None:
+            number = quarter_numbers[when] = when.year * 4 + (when.month - 1) // 3
+        return number
+
+    def sale_order():
+        """Sort key for today's sale: taxable gain per dollar of proceeds if the whole parcel were sold, then age.
+
+        The arithmetic of ``parcel_gains`` without building CGT events: a discount-eligible gain counts at
+        ``1 - discount``, and losses are negative.
         """
-        value = parcel.units * state.prices[parcel.asset]
-        if value <= 0:
-            return 0.0
         rules = state.fy["rules"]
-        discount = rules["cgt_discount_individual"]
-        held = held_twelve_months(parcel.acquired, day)
-        if day < reform:
-            gain = value - parcel.cost_base
-            return (gain * (1 - discount) if held and gain > 0 else gain) / value
-        taxable, base, spent = 0.0, parcel.cost_base, parcel.acquired
-        if parcel.reform_value is not None:
-            deferred = parcel.reform_value - parcel.cost_base
-            taxable = deferred * (1 - discount) if held and deferred > 0 else deferred
-            base, spent = parcel.reform_value, reform
-        factor = 1.0
-        if held:
-            if spent not in factors:
-                factors[spent] = indexation_factor(spent, day, rules["assumed_cpi_annual"])
-            factor = factors[spent]
-        return (taxable + (value - base * factor if value > base * factor else min(0.0, value - base))) / value
+        keep = 1 - rules["cgt_discount_individual"]
+        cpi = rules["assumed_cpi_annual"] if day >= reform else None  # rule sets before the reform have none
+        prices = state.prices
+        today = quarter_of(day)
+
+        def key(parcel):
+            value = parcel.units * prices[parcel.asset]
+            if value <= 0:
+                return 0.0, parcel.acquired
+            anniversary = anniversaries.get(parcel.acquired)
+            if anniversary is None:
+                anniversary = anniversaries[parcel.acquired] = twelve_month_anniversary(parcel.acquired)
+            held = day > anniversary
+            if day < reform:
+                gain = value - parcel.cost_base
+                return (gain * keep if held and gain > 0 else gain) / value, parcel.acquired
+            taxable, base, spent = 0.0, parcel.cost_base, parcel.acquired
+            if parcel.reform_value is not None:
+                deferred = parcel.reform_value - parcel.cost_base
+                taxable = deferred * keep if held and deferred > 0 else deferred
+                base, spent = parcel.reform_value, reform
+            factor = 1.0
+            if held:
+                quarters = today - quarter_of(spent)
+                factor = quarter_factors.get((quarters, cpi))
+                if factor is None:
+                    factor = quarter_factors[quarters, cpi] = indexation_for_quarters(quarters, cpi)
+            return (taxable + (value - base * factor if value > base * factor else min(0.0, value - base))) / value, \
+                parcel.acquired
+
+        return key
 
     def sell_parcels(targets, purpose):
         """Sell ``targets`` (AUD by asset), lowest taxable gain per dollar first; record each CGT event."""
         remaining_parcels = []
         targets = dict(targets)
         sold_total = 0.0
-        factors = {}
         selling = [p for p in state.parcels if targets.get(p.asset, 0.0) > TOLERANCE]
         kept = [p for p in state.parcels if targets.get(p.asset, 0.0) <= TOLERANCE]
         remaining_parcels.extend(kept)
-        for parcel in sorted(selling, key=lambda p: (taxable_per_dollar(p, factors), p.acquired)):
+        for parcel in sorted(selling, key=sale_order()):
             target = targets.get(parcel.asset, 0.0)
             value = parcel.units * state.prices[parcel.asset]
             if target <= TOLERANCE or value <= 0:
@@ -757,9 +780,10 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
         state.pending += [(when, amount, sacrifice) for when, amount, sacrifice in opening_year.pending_contributions]
         state.liabilities += [{"due": when, "amount": amount, "financial_year": fy}
                               for when, amount, fy in opening_year.tax_due]
-    closing = None
+    closing, rules = None, None
     while day <= end:
-        rules = rules_by_year[financial_year_of(day)]
+        if rules is None or (day.month, day.day) == (7, 1):  # the rule set changes only on 1 July
+            rules = rules_by_year[financial_year_of(day)]
         if (day.month, day.day) == (7, 1) and day != start:
             start_year(rules)
             review_spending(day, closing)
@@ -884,8 +908,9 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
             log("age_pension", rate.amount, "outside", taxable=rate.taxable, assessed_assets=rate.assessed_assets,
                 assessed_income=rate.assessed_income, assets_reduction=rate.assets_reduction,
                 income_reduction=rate.income_reduction, binding_test=rate.binding_test)
-        arrived = [p for p in state.pending if p[0] == day]
-        state.pending = [p for p in state.pending if p[0] != day]
+        arrived = [p for p in state.pending if p[0] == day] if state.pending else []
+        if arrived:
+            state.pending = [p for p in state.pending if p[0] != day]
         for _, amount, sacrifice in arrived:
             state.fy["concessional"] += amount
             if state.fy["concessional"] > state.fy["cap"].available + TOLERANCE:
@@ -1077,7 +1102,8 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
                      "pending_contributions": sum(p[1] for p in state.pending),
                      "tax_liabilities": sum(l["amount"] for l in state.liabilities)})
         day += timedelta(days=1)
-    daily = pd.DataFrame(rows).set_index("date")
+    # Column lists build the frame several times faster than a list of row dictionaries, with the same dtypes.
+    daily = pd.DataFrame({column: [row[column] for row in rows] for column in rows[0]}).set_index("date")
     daily.index = pd.DatetimeIndex(daily.index, name="Date")
     last = day - timedelta(days=1)
     unassessed = None

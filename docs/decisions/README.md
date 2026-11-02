@@ -47,6 +47,7 @@ Decision records preserve why Financial Simulations makes a material modelling o
 | [0039](0039-withdrawal-rate-basis-and-claims.md) | 2026-11-02 | Accepted; portfolio withdrawal-rate parts superseded by 0041 | Nominal withdrawal rates including Division 296; the finite-window rate renamed capital-preserving; bootstrap and percentage-rule claims corrected |
 | [0040](0040-medians-and-mostly-zero-measures.md) | 2026-11-02 | Accepted; implemented and tested | Medians for path-group summaries (averages only for stacked flows), share plus conditional median for mostly-zero measures, median of total tax |
 | [0041](0041-remove-portfolio-withdrawal-rates-and-plots.md) | 2026-11-02 | Accepted; implemented and tested; supersedes withdrawal-rate parts of 0021 and 0039 | Portfolio-only withdrawal rates, `planning_age`, drawdown and calendar-year return charts removed; short-horizon warning |
+| [0042](0042-faster-ledger-summaries-and-worker-priority.md) | 2026-11-02 | Accepted; implemented and tested | Identical-result speed-ups to path summaries and parcel ranking; up to hardware threads less 4 ledger workers at below-normal priority, with a memory check and a Calculation cores setting |
 
 ## When to write a record
 

@@ -323,3 +323,28 @@ The in-app browser review ran the example plan with 200 portfolio paths and
 
 The new tile labels truncated at the review pane's narrow width, as the
 existing tiles do, so they were shortened.
+
+## Faster summaries and below-normal ledger workers (2026-11-02)
+
+ADR 0042. A regression script saved the full ledger outputs and per-path
+summaries for 12 paths of a 40-year plan under each of the fixed,
+Guyton–Klinger, Vanguard and percentage rules with the original code, then
+compared the changed code against them: all 48 ledgers and summaries were
+exactly equal (`check_exact` frames; NaN-aware equality for summaries).
+
+Per path on one core: ledger 0.78 s → 0.73 s, summary 0.93 s → 0.27 s.
+
+A worker running 50-year ledgers peaked at a 142 MB working set (123 MB
+committed). A worker started by the pool reported the below-normal priority
+class, and the parent process kept its own.
+
+The worker-count benchmark ran while another simulation was using 12
+normal-priority workers, so it measures sharing rather than speed: 280
+paths of a 50-year plan took 122 s on 12 workers (123 s with the original
+code at normal priority), 108 s on 16, 99 s on 22 and 94 s on 28.
+
+On the idle machine, each run after a two-minute cool-down, the same 280
+paths took 66.6 s with the original code on 12 workers and 47.2 s on 28;
+the changed code took 38.3 s on 12, 31.2 s on 20 and 25.2 s on 28 (the new
+automatic count). Back-to-back runs without a cool-down were up to twice as
+slow: the laptop throttles under sustained all-core load.
