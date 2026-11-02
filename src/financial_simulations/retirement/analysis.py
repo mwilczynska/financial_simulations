@@ -7,7 +7,8 @@ import numpy as np
 import pandas as pd
 
 from financial_simulations.markets.resampling import Sampler, sample_indices
-from financial_simulations.retirement.plan import horizon, spending_growth
+from financial_simulations.data.plan_markets import load_plan_markets
+from financial_simulations.retirement.plan import future_observations, horizon, spending_growth
 from financial_simulations.retirement.real import stock_deflator
 from financial_simulations.rules.au.superannuation import birthday
 
@@ -173,7 +174,8 @@ def analyse_portfolios(plan: dict, market, target_dates, progress=None) -> Portf
     """Use identical joint donor rows for each entered portfolio.
 
     The stationary bootstrap's length counts source return observations.
-    Business weekdays are a future ledger template, not a holiday forecast.
+    ``target_dates`` should keep the history's observation density (``target_observations``); they are a
+    future ledger template, not a holiday forecast.
     ``progress(fraction, message)`` reports the sampling and simulation stages.
     """
     tell = progress or (lambda fraction, message: None)
@@ -227,8 +229,7 @@ def analyse_portfolios(plan: dict, market, target_dates, progress=None) -> Portf
     planning_end = birthday(plan["person"]["date_of_birth"], plan["assumptions"]["planning_age"]) - timedelta(days=1)
     swr, perpetual = {}, {}
     if planning_end > retire + timedelta(days=366):
-        long_dates = tuple(pd.bdate_range(retire, planning_end).date)
-        long_dates = long_dates if long_dates[0] == retire else (retire, *long_dates)
+        long_dates = future_observations(plan, market, retire, planning_end)
         long_rows = []
         for i in range(count):
             if i % max(1, count // 10) == 0:
@@ -279,7 +280,6 @@ def analyse_portfolios(plan: dict, market, target_dates, progress=None) -> Portf
                              planning_end)
 
 
-def target_observations(plan: dict) -> tuple:
-    start, end, _ = horizon(plan)
-    weekdays = tuple(pd.bdate_range(start, end).date)
-    return weekdays if weekdays[0] == start else (start, *weekdays)
+def target_observations(plan: dict, market=None) -> tuple:
+    """The plan horizon's future observation dates, at the density of the history being sampled."""
+    return future_observations(plan, market or load_plan_markets(plan["assets"]))

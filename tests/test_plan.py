@@ -3,6 +3,8 @@ import json
 from pathlib import Path
 import tempfile
 
+import numpy as np
+import pandas as pd
 import pytest
 
 from financial_simulations.data.plan_markets import load_plan_markets
@@ -127,12 +129,12 @@ def test_portfolios_keep_shared_daily_draws_but_reflect_distinct_weights(process
     plan["plan"]["years"] = 1
     plan["super"]["weights"] = {"COMM": 1.0}
     market = load_plan_markets(plan["assets"], processed_fixture)
-    compared = analyse_portfolios(plan, market, target_observations(plan))
+    compared = analyse_portfolios(plan, market, target_observations(plan, market))
     same_mix = default_plan()
     same_mix["plan"]["years"] = 1
     same_mix["market"]["paths"] = 16
     same_mix["super"]["weights"] = same_mix["outside"]["weights"].copy()
-    control = analyse_portfolios(same_mix, market, target_observations(same_mix))
+    control = analyse_portfolios(same_mix, market, target_observations(same_mix, market))
     assert (compared.indices == control.indices).all()
     outside = compared.outcomes.loc[compared.outcomes["Portfolio"] == "Outside super", "Terminal growth of 100"].to_numpy()
     inside = compared.outcomes.loc[compared.outcomes["Portfolio"] == "Inside super", "Terminal growth of 100"].to_numpy()
@@ -406,3 +408,37 @@ def test_run_keeps_each_paths_account_series_and_wealth_when_super_is_accessible
     total = series.groupby("Date")[["Outside super", "Super and pension"]].sum().sum(axis=1)
     assert total.to_numpy() == pytest.approx(run.wealth_paths.groupby("Date")["Total wealth"].sum().to_numpy())
     assert "Wealth when super accessible" in run.retirement_paths
+
+
+def test_future_calendar_keeps_the_history_density_and_extends_shorter_horizons():
+    from financial_simulations.markets.calendar import observation_calendar, observations_per_year
+
+    year = observation_calendar("2026-07-01", "2027-06-30", 252)
+    # 364 days at 252 a year is 251.1 observations, not the 260 weekdays.
+    assert year[0] == date(2026, 7, 1) and len(year) - 1 == pytest.approx(252 * 364 / 365.25, abs=1)
+    assert all(d.weekday() < 5 for d in year[1:]) and all(a < b for a, b in zip(year, year[1:]))
+    long = observation_calendar("2026-07-01", "2066-06-30", 246.85)
+    short = observation_calendar("2026-07-01", "2027-06-30", 246.85)
+    assert long[:len(short)] == short and long[len(short)] > short[-1]
+    assert (len(long) - 1) / 40 == pytest.approx(246.85, abs=0.05)
+    weekdays = tuple(pd.bdate_range("2026-07-02", "2027-06-30").date)
+    assert observation_calendar("2026-07-01", "2027-06-30", 262) == (date(2026, 7, 1), *weekdays)
+    assert observations_per_year(pd.bdate_range("2021-01-01", "2021-12-31").date) == pytest.approx(260 * 365.25 / 364)
+    # A 10% CAGR calibrated over 252 observations grows about 10% a year on this calendar, not 10.33%.
+    assert 1.1 ** ((len(year) - 1) / 252) - 1 == pytest.approx(0.10, abs=0.001)
+
+
+def test_planner_paths_use_the_history_density_and_the_requested_end(processed_fixture):
+    from financial_simulations.markets.calendar import observations_per_year
+
+    plan = default_plan()
+    plan["plan"].update(start_date="2028-07-01", years=1)  # ends Saturday 30 June 2029
+    market = load_plan_markets(plan["assets"], processed_fixture)
+    path, scenario, _, _ = build_inputs(plan, market=market)
+    assert path.dates == target_observations(plan, market)
+    assert len(path.dates) - 1 == pytest.approx(observations_per_year(market.path.dates), abs=1)
+    assert path.dates[-1] == date(2029, 6, 29) and scenario.end_date == date(2029, 6, 30)
+    # The reference path compounds each ticker's CAGR per calendar day, whatever the calendar.
+    cagr = market.asset_summary.set_index("Ticker").loc[list(path.assets), "Full-sample CAGR"].to_numpy()
+    growth = np.prod(1 + path.returns, axis=0)
+    assert growth == pytest.approx((1 + cagr) ** ((path.dates[-1] - path.dates[0]).days / 365.25))

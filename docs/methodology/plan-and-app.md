@@ -133,9 +133,22 @@ at 15.25% a year rebalanced and 10.21% buy and hold. The tracker reports
 outside-super rebalance is a set of CGT disposals; inside super it is an
 untaxed unit switch.
 
-The future target is a weekday accounting template from plan start to its
-supported end, not a forecast of exchange holidays. The ledger also
-processes calendar events on closed dates. The planner runs past Age
+The future target is an observation calendar from plan start to its
+supported end, not a forecast of exchange holidays
+([ADR 0034](../decisions/0034-future-observation-calendar-and-accounting-end.md)).
+Each sampled return is one historical observation, so the calendar keeps
+the sampled history's density: observations per 365.25 calendar days over
+the joint history (about 247 for the default tickers, against 261
+weekdays). `observation_calendar` keeps weekdays in order while the count
+stays within ceil(density x elapsed days / 365.25), so the dropped weekdays
+are evenly spread. Expected growth and variance per calendar year then
+match the history. The same calendar serves the portfolio paths, the
+retirement-length withdrawal paths and every ledger run. The constant-CAGR
+reference path compounds each step over its calendar days, so it grows at
+the CAGR on any calendar. The ledger's accounting end is the plan's
+requested end, which may follow the last observation by a weekend; those
+days carry the last close, so a 30 June on a weekend is still assessed. The
+ledger also processes calendar events on closed dates. The planner runs past Age
 Pension age with the single Age Pension and SAPTO
 ([age-pension.md](age-pension.md)). It stops only the day before age 110;
 a longer requested horizon is shortened and reported. `person.homeowner`
@@ -575,4 +588,5 @@ References: processed source data and provenance in the sibling
 
 Revision history: 2026-10-28 version 1 plan and browser app under ADR 0016;
 2026-10-28 version 2 ticker portfolios and portfolio-first interactive
-results under ADR 0017.
+results under ADR 0017. 2026-11-02, future calendar at the history's observation density and the
+requested end as the ledger's accounting end (ADR 0034).

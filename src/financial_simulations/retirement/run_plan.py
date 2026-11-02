@@ -59,7 +59,7 @@ def run_plan(plan: dict, output_root: str | Path | None = DEFAULT_ROOT, *, marke
     tell = progress or (lambda fraction, message: None)
     plan = normalize_plan(plan)
     market = market or load_plan_markets(plan["assets"])
-    target = target_observations(plan)
+    target = target_observations(plan, market)
     portfolios = analyse_portfolios(plan, market, target, lambda f, m: tell(0.35 * f, m))
     cpi = plan["assumptions"]["cpi_annual"]
     _, _, years, notes = build_inputs(plan, market=market, returns=portfolios.returns_for(market, 0))
@@ -104,7 +104,8 @@ def run_plan(plan: dict, output_root: str | Path | None = DEFAULT_ROOT, *, marke
         (folder / "plan.toml").write_text(plan_to_toml(plan), encoding="utf-8", newline="\n")
         manifest = {"plan": plan["plan"], "notes": notes, "rules": rules, "code": code_manifest(),
                     "market": market.manifest, "sampler": {"method": "stationary", **plan["market"],
-                                                             "target_calendar": "weekdays; not a holiday forecast",
+                                                             "target_calendar": ("weekdays evenly thinned to the history's observations "
+                                                                                 "per year; not a holiday forecast"),
                                                              "retirement_currency_convention": "USD returns applied as an explicit AUD proxy"},
                     "representative_path": representative}
         write_ledger_report(result, folder, plan["plan"]["name"], manifest)

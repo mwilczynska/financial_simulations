@@ -23,6 +23,7 @@ import pandas as pd
 
 from financial_simulations.dates import as_date
 from financial_simulations.data.plan_markets import load_plan_markets, ticker_name
+from financial_simulations.markets.calendar import observation_calendar, observations_per_year
 from financial_simulations.markets.path import MarketPath
 from financial_simulations.retirement.ledger import (AssetIncome, Employment, LedgerScenario, Parcel, Pension, Person,
                                                      SpendingRule)
@@ -337,6 +338,12 @@ def horizon(plan: dict) -> tuple[date, date, bool]:
     return start, min(requested, limit), requested > limit
 
 
+def future_observations(plan: dict, market, start=None, end=None) -> tuple[date, ...]:
+    """Opening mark and future observation dates (default: the plan horizon) at the sampled history's density."""
+    first, last, _ = horizon(plan)
+    return observation_calendar(start or first, end or last, observations_per_year(market.path.dates))
+
+
 def build_inputs(plan: dict, *, market=None, returns=None):
     """Market path, ledger scenario, rule sets and notes for a normalized plan."""
     plan = normalize_plan(plan)
@@ -348,14 +355,13 @@ def build_inputs(plan: dict, *, market=None, returns=None):
     if shortened:
         notes.append(f"Horizon shortened to {end}: runs stop the day before age {OLDEST_AGE}.")
     names = plan["assets"]
-    dates = tuple(pd.bdate_range(start, end).date)
-    if dates[0] != start:
-        dates = (start, *dates)
+    dates = future_observations(plan, market)
     if returns is None:
         rates = market.asset_summary.set_index("Ticker").loc[names, "Full-sample CAGR"].to_numpy()
-        daily = np.expm1(np.log1p(rates) / 252)
-        returns = np.tile(daily, (len(dates) - 1, 1))
-        notes.append("This reference path uses each ticker's full-sample CAGR at a constant daily rate.")
+        # Each step covers its calendar days, so the path grows at the CAGR whatever the observation calendar.
+        gaps = np.diff([d.toordinal() for d in dates])[:, None] / 365.25
+        returns = np.expm1(np.log1p(rates)[None, :] * gaps)
+        notes.append("This reference path uses each ticker's full-sample CAGR at a constant calendar-day rate.")
     path = MarketPath(dates, tuple(names), returns, "AUD")
     person = Person(plan["person"]["date_of_birth"],
                     retirement_date=birthday(plan["person"]["date_of_birth"], plan["person"]["retirement_age"]),
@@ -402,7 +408,7 @@ def build_inputs(plan: dict, *, market=None, returns=None):
                                          else None),
         outside_contribution_growth=plan["assumptions"]["cpi_annual"] if plan["outside"]["contribution_indexed"] else 0.0,
         cash_interest=plan["outside"]["cash_interest"], payg_withholding=True,
-        age_pension=True, super_realised_gains=plan["super"]["realised_gains"])
+        age_pension=True, super_realised_gains=plan["super"]["realised_gains"], end_date=end)
     return path, scenario, years, notes
 
 

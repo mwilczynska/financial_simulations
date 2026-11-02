@@ -2,7 +2,7 @@
 
 Reviewed revision: `a3b67a9`. The working tree was clean before the review. The review did not change calculation code. This report and its synthetic evidence were subsequently preserved in version control at the user's request.
 
-Status (2 November 2026): findings 1 to 3 are corrected ([ADR 0033](../../decisions/0033-cgt-reform-loss-order-offsets-and-exemption.md)); the rest remain open. Because `reproduce.py` asserts the reviewed defects, it now stops by design at the finding 2 (Age Pension exemption) assertion; the tracked `evidence.json` remains the reviewed-revision snapshot.
+Status (2 November 2026): findings 1 to 3 are corrected ([ADR 0033](../../decisions/0033-cgt-reform-loss-order-offsets-and-exemption.md)), and findings 5, 7 and 12 are corrected ([ADR 0034](../../decisions/0034-future-observation-calendar-and-accounting-end.md)); the rest remain open. Because `reproduce.py` asserts the reviewed defects, it now stops by design at the first corrected probe that asserts one; the tracked `evidence.json` remains the reviewed-revision snapshot.
 
 The daily ledger has useful account separation, explicit tax assumptions, shared market draws and a daily reconciliation. Nevertheless, there are material errors in CGT, fund-tax settlement, calendar mapping and the interpretation of retirement outcomes. A balanced ledger does not establish that the correct tax or economic event was recorded. Some findings increase projected wealth and others decrease it; their net effect on a personal plan has not been measured.
 

@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import date
 
 import numpy as np
@@ -537,3 +538,23 @@ def test_super_funds_realise_a_share_of_gains_taxed_in_accumulation_and_counted_
     assert second["super_realised_gains"] < 0.25 * (second["total_super_balance_30_june"] - 4_000_000)
     with pytest.raises(ValueError, match="between 0 and 1"):
         run_ledger(path, scenario_with(Person("1985-01-01"), super_realised_gains=1.5, **base), years)
+
+
+def test_a_truncated_period_has_no_close_so_identical_prefixes_match():
+    # Zero returns, $100,000 at a 4% yield: $1,000 a quarter, paid on the quarter's last observation.
+    scenario = scenario_with(Person("1980-01-01"), outside_parcels=(Parcel("GL", 100000, 100000, "2025-01-01"),),
+                             income={"GL": AssetIncome(0.04)}, cash_buffer=100000)
+    short = run_ledger(market(end="2026-07-15"), scenario, YEARS)
+    full = run_ledger(market(end="2026-09-30"), scenario, YEARS)
+    assert short.daily["distributions"].sum() == 0
+    columns = ["cash", "outside_investments", "total", "distributions"]
+    assert short.daily[columns].equals(full.daily.loc[:"2026-07-15", columns])
+    assert full.daily["distributions"].sum() == pytest.approx(1000)
+    assert full.daily["distributions"].loc["2026-09-30"] == pytest.approx(1000)
+    # The close depends on the accounting end, not the last observation: with observations through 29 September,
+    # the quarter closes on the 29th only if the accounting horizon reaches 30 September.
+    september = market(end="2026-09-29")
+    assert run_ledger(september, scenario, YEARS).daily["distributions"].sum() == 0
+    ended = run_ledger(september, replace(scenario, end_date=date(2026, 9, 30)), YEARS)
+    assert ended.daily["distributions"].loc["2026-09-29"] == pytest.approx(1000)
+    assert ended.daily["distributions"].sum() == pytest.approx(1000)

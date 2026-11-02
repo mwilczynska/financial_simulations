@@ -252,6 +252,9 @@ class LedgerScenario:
     spending_rule: SpendingRule = field(default_factory=SpendingRule)
     age_pension: bool = False  # pay the means-tested Age Pension and assess SAPTO from Age Pension age
     super_realised_gains: float = 0.0  # share of each super account's unrealised gain the fund realises each 30 June
+    # Last calendar day accounted for; None ends on the last market observation. Days after it carry the last
+    # close (no return is invented), so a horizon ending on a weekend 30 June is still assessed.
+    end_date: date | None = None
 
 
 @dataclass
@@ -279,11 +282,19 @@ class LedgerResult:
     outstanding: dict
 
 
-def _last_observation_per(dates, key):
+def _month_end(day):
+    return date(day.year + day.month // 12, day.month % 12 + 1, 1) - timedelta(days=1)
+
+
+def _period_closes(dates, months, through):
+    """Last observation of each calendar period of ``months`` months that ends by ``through``.
+
+    A period cut off by the horizon has no close, so identical path prefixes give identical histories.
+    """
     last = {}
     for d in dates:
-        last[key(d)] = d
-    return set(last.values())
+        last[(d.year, (d.month - 1) // months)] = d
+    return {d for d in last.values() if _month_end(date(d.year, (d.month - 1) // months * months + months, 1)) <= through}
 
 
 def _value(units, prices):
@@ -300,6 +311,10 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
         raise ValueError("The retirement ledger accounts in AUD; convert or supply an AUD market path.")
     assets, person = path.assets, scenario.person
     start, end = path.dates[0], path.dates[-1]
+    if scenario.end_date is not None:
+        end = as_date(scenario.end_date)
+        if not path.dates[-1] <= end <= path.dates[-1] + timedelta(days=7):
+            raise ValueError("The accounting end must fall within a week after the market path's last observation.")
     check = start
     while check <= end:
         if financial_year_of(check) not in rules_by_year:
@@ -324,8 +339,8 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
     super_weights = _default_weights(scenario.super_weights, scenario.super_units, assets, "Super weights")
     observations = {d: i for i, d in enumerate(path.dates)}
     rebalance_days = {d for previous, d in zip(path.dates, path.dates[1:]) if d.year != previous.year}
-    quarter_ends = _last_observation_per(path.dates, lambda d: (d.year, (d.month - 1) // 3))
-    month_ends = _last_observation_per(path.dates, lambda d: (d.year, d.month))
+    quarter_ends = _period_closes(path.dates, 3, end)
+    month_ends = _period_closes(path.dates, 1, end)
     state = _State(_money(scenario.outside_cash, "Outside cash"), list(scenario.outside_parcels), dict(opening_outside),
                    {a: float(scenario.super_units.get(a, 0.0)) for a in assets}, {a: 0.0 for a in assets},
                    {a: 1.0 for a in assets})

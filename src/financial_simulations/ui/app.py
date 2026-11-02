@@ -1288,7 +1288,8 @@ def section_future(run):
    {market.manifest['common_first']} to {market.manifest['common_last']}: {market.manifest['common_returns']:,}
    rows, one return per ticker per row. A row keeps the tickers' same-day co-movement.
 2. **Stationary block bootstrap.** Each simulated path is a sequence of whole source rows for the
-   {len(portfolios.dates) - 1:,} weekdays from {portfolios.dates[0]} to {portfolios.dates[-1]} ({years:.1f} years).
+   {len(portfolios.dates) - 1:,} future trading days from {portfolios.dates[0]} to {portfolios.dates[-1]} ({years:.1f} years),
+   as many per year as the source history has (weekdays evenly thinned; not a holiday forecast).
    A path starts at a random row and copies consecutive rows (a *block*). After each day it jumps to a new
    random row with probability 1/{plan['market']['block_length']}, so blocks average {plan['market']['block_length']}
    trading days (about {plan['market']['block_length'] / 21:.0f} months) and follow a geometric length

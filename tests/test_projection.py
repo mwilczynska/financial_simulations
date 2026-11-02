@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import date
 
 import numpy as np
@@ -5,7 +6,7 @@ import pandas as pd
 import pytest
 
 from financial_simulations.markets.path import MarketPath
-from financial_simulations.retirement.ledger import LedgerScenario, Parcel, Pension, Person, run_ledger
+from financial_simulations.retirement.ledger import AssetIncome, LedgerScenario, Parcel, Pension, Person, run_ledger
 from financial_simulations.rules.au.parameters import UnsupportedRule, load_ruleset
 from financial_simulations.rules.au.projection import ProjectionAssumptions, project_rulesets
 from financial_simulations.rules.au.tax import (CapitalGainEvent, IncomeYear, assess, indexation_factor,
@@ -183,3 +184,22 @@ def test_ledger_exempts_minimum_tax_only_when_age_pension_is_received(born, othe
     assert (year["age_pension"] > 0) == exempt
     assert assessment.minimum_tax_capital_gain > 0
     assert (assessment.capital_gains_minimum_tax == 0) == exempt
+
+
+def test_a_weekend_30_june_horizon_is_still_assessed():
+    # 30 June 2029 is a Saturday: the last observation is Friday 29 June, the accounting end is the 30th.
+    dates = tuple(pd.bdate_range("2028-07-01", "2029-06-30").date)
+    path = MarketPath(dates, ("AU",), np.zeros((len(dates) - 1, 1)), "AUD")
+    scenario = LedgerScenario(Person("1980-01-01"), super_units={"AU": 100000}, super_weights={"AU": 1.0},
+                              income={"AU": AssetIncome(0.04)}, end_date="2029-06-30")
+    result = run_ledger(path, scenario, YEARS)
+    assert dates[-1] == date(2029, 6, 29) and result.daily.index[-1] == pd.Timestamp("2029-06-30")
+    assert [a["financial_year"] for a in result.annual] == ["2028-29"]
+    assert result.outstanding["unassessed_year"] is None
+    # Four $1,000 distributions, taxed at 15% in the fund on the 30th; no return is invented for the weekend.
+    assert result.daily["fund_tax"].sum() == pytest.approx(600)
+    assert not result.daily.loc["2029-06-30", "is_observation"] and result.daily.loc["2029-06-30", "market_pnl"] == 0
+    without = run_ledger(path, replace(scenario, end_date=None), YEARS)
+    assert without.annual == [] and without.outstanding["unassessed_year"]["financial_year"] == "2028-29"
+    with pytest.raises(ValueError, match="within a week"):
+        run_ledger(path, replace(scenario, end_date="2029-07-10"), YEARS)

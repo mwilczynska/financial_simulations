@@ -36,7 +36,9 @@ Asset unit prices start at 1. On each day:
    flow and assessed as interest income. Market P&L excludes it.
 1. **Market return.** On an observation day, each price is multiplied by
    (1 + daily total return).
-2. **Distributions.** At the last observation of each calendar quarter, each
+2. **Distributions.** At the last observation of each calendar quarter that
+   ends within the accounting horizon (a quarter cut off by the horizon has
+   no close, so identical path prefixes give identical histories), each
    asset pays annual_yield/4 of its price per unit, and the price falls by
    the same amount. Outside holders receive cash. The amount is split by the
    asset's franked fraction, with franking credits of franked cash x t/(1 - t)
@@ -116,7 +118,8 @@ Asset unit prices start at 1. On each day:
    general interest charge are not modelled. Before 2026-10-28 this case
    stopped the run, which removed the worst market paths from planner
    results.
-9. **Pension minimum instalments.** On the last observation of each month,
+9. **Pension minimum instalments.** On the last observation of each month
+   that ends within the accounting horizon,
    (minimum − paid so far) / months remaining in the year goes to cash.
 10. **New outside investment.** With `outside_contribution_per_payday = None`
     (surplus mode), all cash above `cash_buffer` buys new outside parcels at the
@@ -240,7 +243,11 @@ what they report.
 
 - **Horizon.** Years after 2026-27 depend on an assumed CPI and wage growth.
   A horizon ending before 30 June reports the partial year as
-  `unassessed_year`.
+  `unassessed_year`. The horizon is `end_date` when set (the planner sets
+  the requested end), otherwise the last observation. `end_date` may be up
+  to a week after the last observation; those days carry the last close
+  with no return, so a 30 June on a weekend is still assessed
+  ([ADR 0034](../decisions/0034-future-observation-calendar-and-accounting-end.md)).
 - **Age Pension.** With `age_pension=True` (the planner's setting), the
   single Age Pension is paid fortnightly from a fortnight after Age Pension
   age, means-tested on the previous close. SAPTO applies from the year Age
@@ -266,4 +273,5 @@ what they report.
 
 Revision history: 2026-10-28, first implementation. 2026-10-30, surplus cash reinvested from retirement
 (ADR 0030) and parcels sold lowest taxable gain first (ADR 0031). 2026-11-02, Age Pension receipts exempt
-the minimum tax on capital gains (ADR 0033).
+the minimum tax on capital gains (ADR 0033); accounting end separate from the last observation, and period closes
+only for complete periods (ADR 0034).
