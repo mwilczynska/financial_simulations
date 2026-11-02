@@ -9,7 +9,7 @@ from financial_simulations.retirement.ledger import LedgerScenario, Parcel, Pens
 from financial_simulations.rules.au.parameters import UnsupportedRule, load_ruleset
 from financial_simulations.rules.au.projection import ProjectionAssumptions, project_rulesets
 from financial_simulations.rules.au.tax import (CapitalGainEvent, IncomeYear, assess, indexation_factor,
-                                                post_reform_gain)
+                                                net_capital_gain, post_reform_gain)
 
 
 BASE = load_ruleset("2026-27")
@@ -72,6 +72,47 @@ def test_minimum_tax_on_post_reform_gains():
     assert losses.minimum_tax_capital_gain == 0
 
 
+def test_reform_year_losses_reduce_deferred_gains_before_post_reform_gains():
+    rules = YEARS["2027-28"]
+    deferred = CapitalGainEvent("2020-01-01", "2028-03-01", 40000, "deferred")
+    post = CapitalGainEvent("2020-01-01", "2028-03-01", 10000, "post_reform")
+    loss = CapitalGainEvent("2027-08-01", "2028-03-01", -10000, "post_reform")
+    # s102-5 step 1: deferred non-residential gains first. (40,000 - 10,000) x 50% + 10,000 = 25,000.
+    gain, left, base = net_capital_gain((deferred, post, loss), 0, 0.5, with_minimum_tax_base=True)
+    assert gain == pytest.approx(25000) and left == 0 and base == pytest.approx(10000)
+    # Step 2: carried-forward losses follow the same category order.
+    assert net_capital_gain((deferred, post), 10000, 0.5, with_minimum_tax_base=True) == pytest.approx((25000, 0, 10000))
+    # Within the deferred category the favourable choice reduces non-discount deferred gains first.
+    short = CapitalGainEvent("2027-06-01", "2028-03-01", 5000, "deferred")
+    assert not short.discount_eligible
+    assert net_capital_gain((short, deferred, post, loss), 0, 0.5)[0] == pytest.approx(35000 * 0.5 + 10000)
+    # Losses beyond the deferred gains reduce the post-reform gains and the minimum tax base.
+    small = CapitalGainEvent("2020-01-01", "2028-03-01", 10000, "deferred")
+    assert net_capital_gain((small, post), 15000, 0.5, with_minimum_tax_base=True) == pytest.approx((5000, 0, 5000))
+    result = assess(IncomeYear(capital_events=(deferred, post, loss)), rules)
+    assert result.net_capital_gain == pytest.approx(25000) and result.minimum_tax_capital_gain == pytest.approx(10000)
+
+
+def test_non_refundable_offsets_reduce_the_minimum_tax():
+    rules = YEARS["2027-28"]
+    post = CapitalGainEvent("2027-08-01", "2028-03-01", 10000, "post_reform")
+    # Treasury explainer: offsets can reduce the minimum tax. Basic tax nil, extra tax $3,000, LITO $700.
+    alone = assess(IncomeYear(capital_events=(post,)), rules)
+    assert alone.basic_tax == 0 and alone.capital_gains_minimum_tax == 3000
+    assert alone.lito == 700 and alone.income_tax_after_offsets == 2300 and alone.net_tax == 2300
+    # SAPTO (full $2,230 at $10,000 rebate income) is non-refundable: it leaves $70.
+    senior = assess(IncomeYear(capital_events=(post,), sapto_eligible=True), rules)
+    assert senior.sapto == 2230 and senior.income_tax_after_offsets == pytest.approx(70)
+    # LITO and WATO together. $30,000 labour less the $1,000 standard deduction plus the gain: $39,000.
+    worker = assess(IncomeYear(labour_income=30000, capital_events=(post,)), rules)
+    assert worker.capital_gains_minimum_tax == 1600 and worker.lito == pytest.approx(625) and worker.wato == 250
+    assert worker.income_tax_after_offsets == pytest.approx(worker.basic_tax + 1600 - 625 - 250)
+    # Franking credits stay refundable after the non-refundable offsets.
+    franked = assess(IncomeYear(franked_dividends=7000, franking_credits=3000, capital_events=(post,)), rules)
+    assert franked.capital_gains_minimum_tax == 2748 and franked.income_tax_after_offsets == pytest.approx(3000 - 700)
+    assert franked.net_tax == pytest.approx(franked.income_tax_after_offsets + franked.medicare_levy - 3000)
+
+
 def test_working_australians_tax_offset_from_2027_28():
     rules = YEARS["2027-28"]
     assert assess(IncomeYear(labour_income=50000), rules).wato == 250
@@ -121,3 +162,24 @@ def test_multi_year_pension_minimum_resets_each_1_july_and_age_pension_age_stops
     with pytest.raises(ValueError, match="market value just before 1 July 2027"):
         run_ledger(market(start="2027-08-02"), LedgerScenario(Person("1975-03-01"),
                    outside_parcels=(Parcel("AU", 10, 5, "2020-01-01"),)), YEARS)
+
+
+@pytest.mark.parametrize("born, other_assets, exempt", [
+    ("1955-01-01", 0, True),            # part Age Pension all year
+    ("1955-01-01", 5_000_000, False),   # Age Pension age, but the means test pays nil
+    ("1961-06-10", 0, True),            # first payment on 24 June 2028, inside the year
+    ("1961-06-20", 0, False),           # first payment on 4 July 2028, after the year
+])
+def test_ledger_exempts_minimum_tax_only_when_age_pension_is_received(born, other_assets, exempt):
+    dates = tuple(pd.bdate_range("2027-07-01", "2028-06-30").date)
+    returns = np.zeros((len(dates) - 1, 1))
+    returns[0, 0] = 0.5  # a post-reform gain on a parcel bought on 1 July 2027
+    path = MarketPath(dates, ("AU",), returns, "AUD")
+    scenario = LedgerScenario(Person(born, retirement_date="2020-01-01", other_assets=other_assets),
+                              outside_parcels=(Parcel("AU", 100000, 100000, "2027-07-01"),),
+                              outside_weights={"AU": 1.0}, annual_spending=60000, age_pension=True)
+    year = run_ledger(path, scenario, YEARS).annual[0]
+    assessment = year["assessment"]
+    assert (year["age_pension"] > 0) == exempt
+    assert assessment.minimum_tax_capital_gain > 0
+    assert (assessment.capital_gains_minimum_tax == 0) == exempt

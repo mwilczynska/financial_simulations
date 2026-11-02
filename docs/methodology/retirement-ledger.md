@@ -138,7 +138,9 @@ Asset unit prices start at 1. On each day:
     - Assess the year's income tax with `assess`, using labour income,
       franked and unfranked distributions, franking credits, the year's CGT
       events, brought-forward losses, salary sacrifice as reportable employer
-      super, and concessional contributions as low-tax contributions.
+      super, and concessional contributions as low-tax contributions. Any
+      Age Pension payment received in the year exempts the person from the
+      minimum tax on capital gains (s119-15); a means-tested nil rate does not.
     - Schedule the net tax plus Division 293 tax for settlement (default
       31 October).
     - Realise `super_realised_gains` of each super account's unrealised gain
@@ -263,4 +265,5 @@ what they report.
   as unpaid.
 
 Revision history: 2026-10-28, first implementation. 2026-10-30, surplus cash reinvested from retirement
-(ADR 0030) and parcels sold lowest taxable gain first (ADR 0031).
+(ADR 0030) and parcels sold lowest taxable gain first (ADR 0031). 2026-11-02, Age Pension receipts exempt
+the minimum tax on capital gains (ADR 0033).

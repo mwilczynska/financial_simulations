@@ -65,9 +65,15 @@ Act No. 49, 2026, Schedule 1, was read on legislation.gov.au on 2026-10-28.
   gain − (basic tax − basic tax with taxable income reduced by that gain),
   rounded down to whole dollars, if positive. Recipients of the payments in
   s119-15 (for example Age Pension and JobSeeker) are exempt; the input is
-  `minimum_tax_exempt`. Gifts that reduce the base are not modelled. The
-  extra tax is added after non-refundable offsets (engineering
-  interpretation).
+  `minimum_tax_exempt`, which the ledger sets when an Age Pension payment is
+  received in the year. Gifts that reduce the base are not modelled. The
+  extra tax is income tax before offsets: non-refundable offsets reduce
+  basic tax plus the extra tax (Treasury's 2026 explainer, Jack's example).
+  This replaces an earlier engineering interpretation that added it after
+  offsets ([ADR 0033](../decisions/0033-cgt-reform-loss-order-offsets-and-exemption.md)).
+- **Loss order (s102-5 steps 1 and 2, as amended).** Current-year, then
+  carried-forward, losses reduce deferred non-residential gains before other
+  non-residential gains; the taxpayer chooses the order within a category.
 - **CPI path.** The CPI path is the constant assumed annual rate compounded
   quarterly. Real ABS quarterly CPI can replace it once Australian CPI is
   added to the datasets project.

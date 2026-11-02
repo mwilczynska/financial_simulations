@@ -860,6 +860,9 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
                               capital_losses_brought_forward=losses_bf, reportable_employer_super=fy["sacrifice"],
                               low_tax_contributions=fy["concessional"],
                               other_assessable_income=fy["age_pension_taxable"],
+                              # s119-15: any Age Pension payment received in the year exempts the minimum tax;
+                              # a means-tested nil rate does not.
+                              minimum_tax_exempt=fy["age_pension"] > 0,
                               private_hospital_cover=person.private_hospital_cover,
                               # Age Pension age at any time in the year, residence assumed: SAPTO eligibility
                               # holds even when the means test pays no pension.

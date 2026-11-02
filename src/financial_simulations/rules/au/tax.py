@@ -157,24 +157,31 @@ class TaxAssessment:
 
 
 def net_capital_gain(events, losses_brought_forward, discount, *, with_minimum_tax_base=False):
-    """Losses reduce post-reform gains, then other non-discount gains, then discountable gains.
+    """Losses reduce deferred gains, then post-reform gains; before the reform, non-discount then discountable gains.
 
-    This is the taxpayer-favourable order the law permits: post-reform gains
-    are undiscounted and attract the minimum tax. The discount applies to the
-    remaining discountable gains, and unused losses carry forward. With
-    ``with_minimum_tax_base``, also return the post-reform gains remaining
-    after losses (the minimum tax capital gain, before gifts).
+    From 2027-28, s102-5 steps 1 and 2 (as amended by Act No. 49, 2026) require
+    losses to reduce deferred non-residential gains before other
+    non-residential gains; only the order within a category is the
+    taxpayer's choice. Within the deferred gains, non-discount gains go first
+    (the favourable choice). Current-year and carried-forward losses follow
+    the same category order, so they are applied as one amount. Earlier years
+    keep the favourable order of non-discount gains, then discountable gains.
+    The discount applies to the remaining discountable gains, and unused
+    losses carry forward. With ``with_minimum_tax_base``, also return the
+    post-reform gains remaining after losses (the minimum tax capital gain,
+    before gifts).
     """
     gains = [e for e in events if e.amount > 0]
     losses = -sum(e.amount for e in events if e.amount < 0) + losses_brought_forward
-    pools = [sum(e.amount for e in gains if e.category == "post_reform"),
-             sum(e.amount for e in gains if e.category != "post_reform" and not e.discount_eligible),
-             sum(e.amount for e in gains if e.discount_eligible)]
+    # (category, discount eligible) in loss order; a year has either standard or reform categories, not both.
+    order = [("deferred", False), ("deferred", True), ("post_reform", False), ("standard", False), ("standard", True)]
+    pools = [sum(e.amount for e in gains if (e.category, e.discount_eligible) == key) for key in order]
     for i, pool in enumerate(pools):
         used = min(losses, pool)
         pools[i], losses = pool - used, losses - used
-    result = (pools[0] + pools[1] + pools[2] * (1 - discount), losses)
-    return (*result, pools[0]) if with_minimum_tax_base else result
+    gain = sum(pool * (1 - discount) if eligible else pool for pool, (_, eligible) in zip(pools, order))
+    result = (gain, losses)
+    return (*result, pools[2]) if with_minimum_tax_base else result
 
 
 def bracket_tax(taxable_income, thresholds, rates):
@@ -263,19 +270,19 @@ def assess(year: IncomeYear, rules: RuleSet, *, last_day=None) -> TaxAssessment:
         wato = float(rules["wato"]["amount"])
     excess_offset = rules["contributions_tax_rate"] * year.excess_concessional_contributions
     foreign_offset = year.foreign_tax_paid
-    # SAPTO is non-refundable, like LITO: together they can reduce basic tax to nil but not below.
     sapto = seniors_pensioners_offset(rebate_income(taxable, year), rules) if year.sapto_eligible else 0.0
-    after_offsets = max(0.0, basic - lito - wato - sapto - excess_offset - foreign_offset)
     # Division 119: 30% of the minimum tax capital gain less the basic tax attributable to it
-    # (tax with and without the gain), rounded down to whole dollars. It is extra income tax,
-    # added after offsets here.
+    # (tax with and without the gain), rounded down to whole dollars. It is extra income tax
+    # before offsets, so the non-refundable offsets can reduce it (Treasury's 2026 explainer).
     minimum_tax = 0.0
     minimum_base = min(minimum_base, float(taxable))
     if minimum_base > 0 and not year.minimum_tax_exempt:
         without = bracket_tax(max(0.0, taxable - minimum_base), rules["resident_tax_thresholds"], rules["resident_tax_rates"])
         # Round away floating-point noise below a cent before the statutory round-down.
         minimum_tax = max(0.0, floor(round(rules["minimum_capital_gains_rate"] * minimum_base - (basic - without), 6)))
-    after_offsets += minimum_tax
+    # SAPTO is non-refundable, like LITO: together they can reduce income tax to nil but not below.
+    gross = basic + minimum_tax
+    after_offsets = max(0.0, gross - lito - wato - sapto - excess_offset - foreign_offset)
     # Entitlement to at least $1 of SAPTO gives the higher senior Medicare low-income thresholds.
     levy = medicare_levy(taxable, rules, senior=sapto >= 1)
     surcharge = 0.0
@@ -287,10 +294,10 @@ def assess(year: IncomeYear, rules: RuleSet, *, last_day=None) -> TaxAssessment:
     div293 = division["rate"] * min(year.low_tax_contributions,
                                     max(0.0, income_293 + year.low_tax_contributions - division["threshold"]))
     net = after_offsets + levy + surcharge - year.franking_credits
-    return TaxAssessment(taxable, gain, losses_left, work_deduction, basic, min(lito, basic), min(wato, max(0.0, basic - lito)),
+    return TaxAssessment(taxable, gain, losses_left, work_deduction, basic, min(lito, gross), min(wato, max(0.0, gross - lito)),
                          excess_offset, foreign_offset, after_offsets, minimum_base, minimum_tax, levy, surcharge,
                          year.franking_credits, net,
                          div293, {"assessable_income": assessable, "deductions": deductions,
                                   "standard_deduction_available": standard, "income_for_division_293": income_293,
                                   "rebate_income": rebate_income(taxable, year), "sapto_entitlement": sapto},
-                         min(sapto, max(0.0, basic - lito - wato)))
+                         min(sapto, max(0.0, gross - lito - wato)))

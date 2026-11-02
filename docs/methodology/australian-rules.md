@@ -43,10 +43,12 @@ treatments it applies to each parameter.
 
 For one resident full year:
 
-1. **Net capital gain.** Current-year and carried-forward losses offset
-   non-discountable gains first, then discountable gains. The 50% discount
-   then applies to the remaining discountable gains. That order is the
-   favourable one the law allows. Unused losses carry forward. An asset is
+1. **Net capital gain.** Before 2027-28, current-year and carried-forward
+   losses offset non-discountable gains first, then discountable gains. That
+   order is the favourable one the law allows. From 2027-28 the statutory
+   category order applies (see the CGT reform section below). The 50%
+   discount then applies to the remaining discountable gains. Unused losses
+   carry forward. An asset is
    discountable if the CGT event is after the first anniversary of
    acquisition. That is "at least 12 months excluding both days"; a
    29 February acquisition's anniversary is 1 March.
@@ -62,7 +64,7 @@ For one resident full year:
 5. **Basic tax** comes from the marginal brackets.
 6. **Non-refundable offsets.** LITO, the 15% offset on excess concessional
    contributions, and foreign tax paid up to the $1,000 no-calculation limit
-   reduce basic tax to no less than nil. Applying the foreign offset only
+   reduce basic tax plus any Division 119 minimum tax to no less than nil. Applying the foreign offset only
    against basic tax is a simplification.
 7. **Medicare levy.** Nil up to the lower threshold, then 10% of the excess
    until it reaches 2% of taxable income.
@@ -193,17 +195,36 @@ the verification date in the same change.
 
 Capital gain events carry a category: `standard` (before 1 July 2027),
 `deferred` (the pre-reform part of an asset held on 30 June 2027) or
-`post_reform`. Losses reduce post-reform gains first, then other
-non-discount gains, then discountable gains (taxpayer-favourable order).
+`post_reform`. Amended s102-5 steps 1 and 2 fix the order across
+categories: losses reduce deferred non-residential gains before other
+non-residential gains (residential categories are not modelled). Within a
+category the taxpayer chooses, so deferred non-discount gains go before
+deferred discountable gains. Carried-forward losses follow the same order
+after current-year losses, which gives the same result as applying them
+together. Post-reform gains are never discounted, and those left after
+losses are the minimum tax capital gain
+([ADR 0033](../decisions/0033-cgt-reform-loss-order-offsets-and-exemption.md)).
 `indexation_factor` and `post_reform_gain` follow s960-275(1B) and
 s110-36(1A). The s119-10 minimum tax and the Working Australians Tax Offset
-(non-refundable) apply where the rule set defines them. Worked cases:
+(non-refundable) apply where the rule set defines them. The minimum tax is
+extra income tax before offsets, so LITO, WATO, SAPTO and the other
+non-refundable offsets reduce basic tax plus minimum tax together; franking
+credits stay refundable. s119-15 exempts a person who receives an Age
+Pension payment at any time in the income year; the ledger sets the
+exemption from payments actually received. Worked cases:
 
 - A $100,000 post-reform gain alone in 2027-28 gives 30% x $100,000 − $20,252
   = $9,748 extra tax.
 - A $40,000 deferred gain plus a $10,000 post-reform gain gives $3,000 −
   ($1,652 − $252) = $1,600.
+- A $40,000 deferred gain, a $10,000 post-reform gain and a $10,000 loss
+  give (40,000 − 10,000) x 50% + 10,000 = $25,000, with a $10,000 minimum
+  tax capital gain.
+- A $10,000 post-reform gain alone in 2027-28 gives $3,000 of minimum tax,
+  less the $700 LITO: $2,300.
 - Eight quarters at 2.5% CPI give an indexation factor of 1.051.
 
 Revision history: 2026-10-28, first 2026-27 rule set and functions; projected
-rule sets, CGT reform, minimum tax and WATO.
+rule sets, CGT reform, minimum tax and WATO. 2026-11-02, statutory loss
+order for reform years, offsets against the minimum tax and the Age Pension
+exemption in the ledger (ADR 0033, review findings 1 to 3).
