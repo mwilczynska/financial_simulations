@@ -73,7 +73,11 @@ Asset unit prices start at 1. On each day:
    run stops. The fund deducts 15% contributions tax and buys units at the
    super weights.
 5. **Non-concessional contributions** are scheduled from outside cash and
-   checked against the bring-forward rules.
+   checked against the bring-forward rules (the year's total against the
+   state at 1 July). A payment after the age-75 acceptance deadline raises
+   `ValueError`. Salary sacrifice that would reach the fund after that
+   deadline is paid as salary instead, and the super guarantee continues
+   ([ADR 0037](../decisions/0037-contribution-boundaries.md)).
 6. **Pension commencement.** The person needs unrestricted access and must be
    at least 60. The run credits the transfer balance account, moves units pro
    rata from accumulation, and sets the pro-rated minimum. A whole-balance
@@ -295,4 +299,5 @@ Revision history: 2026-10-28, first implementation. 2026-10-30, surplus cash rei
 (ADR 0030) and parcels sold lowest taxable gain first (ADR 0031). 2026-11-02, Age Pension receipts exempt
 the minimum tax on capital gains (ADR 0033); accounting end separate from the last observation, and period closes
 only for complete periods (ADR 0034); fund tax accrued with each accumulation distribution and an estimated tax on
-an unassessed final period (ADR 0035); opening year-to-date position required for a start after 1 July (ADR 0036).
+an unassessed final period (ADR 0035); opening year-to-date position required for a start after 1 July (ADR 0036);
+bring-forward counted once per dollar and the age-75 acceptance deadline (ADR 0037).

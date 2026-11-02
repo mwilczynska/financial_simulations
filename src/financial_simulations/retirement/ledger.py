@@ -66,7 +66,7 @@ from financial_simulations.rules.au.parameters import RuleSet, UnsupportedRule, 
 from financial_simulations.rules.au.superannuation import (
     TransferBalanceAccount, access_date, add_business_days, age_on, apply_concessional, apply_non_concessional, birthday,
     accumulation_earnings_tax, concessional_cap, division_296_tax, minimum_pension_payment, require_tax_free_benefits,
-    super_guarantee)
+    super_guarantee, voluntary_contribution_deadline)
 from financial_simulations.rules.au.tax import (CapitalGainEvent, IncomeYear, assess, held_twelve_months,
                                              indexation_factor, post_reform_gain)
 
@@ -421,6 +421,7 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
     if scenario.outside_contribution_per_payday is not None:
         _money(scenario.outside_contribution_per_payday, "Outside contribution")
     access = access_date(person.born, next(iter(rules_by_year.values())), person.retirement_date)
+    voluntary_deadline = voluntary_contribution_deadline(person.born)
 
     def income_year(fy):
         """The financial year's income so far, as ``assess`` takes it."""
@@ -453,7 +454,7 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
                     "acc_income": 0.0, "acc_credits": 0.0, "acc_tax_accrued": 0.0, "pen_income": 0.0, "pen_credits": 0.0, "spending": 0.0,
                     "shortfall": 0.0,
                     "interest": 0.0, "withheld": 0.0, "withhold_per_pay": 0.0, "age_pension": 0.0,
-                    "age_pension_taxable": 0.0, "other": 0.0}
+                    "age_pension_taxable": 0.0, "other": 0.0, "ncc_period_start": period}
         if scenario.payg_withholding and scenario.employment:
             # Estimated tax on a full year's salary, spread over 26 paydays. Like PAYG it ignores investment
             # income and part-year work; the 30 June assessment settles any difference.
@@ -749,7 +750,7 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
                                   "are not modelled.")
         if opening_year.non_concessional_contributions > 0:
             period = apply_non_concessional(opening_year.non_concessional_contributions, open_rules, tsb_prior,
-                                            _under_75(person.born, open_rules), period)
+                                            _under_75(person.born, open_rules), state.fy["ncc_period_start"])
         state.pending += [(when, amount, sacrifice) for when, amount, sacrifice in opening_year.pending_contributions]
         state.liabilities += [{"due": when, "amount": amount, "financial_year": fy}
                               for when, amount, fy in opening_year.tax_due]
@@ -825,6 +826,10 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
             grown = employment.factor(start, day)
             gross = employment.annual_salary * grown / 26
             sacrifice = employment.salary_sacrifice_per_payday * grown
+            if add_business_days(day, employment.contribution_lag_business_days) > voluntary_deadline:
+                # Salary sacrifice is not a mandated contribution: a fund cannot accept it after the age-75 deadline,
+                # so the amount is paid as salary instead. The super guarantee continues.
+                sacrifice = 0.0
             sg = super_guarantee(gross, state.fy["labour"] + state.fy["sacrifice"], rules)
             state.cash += gross - sacrifice
             state.fy["labour"] += gross - sacrifice
@@ -873,8 +878,13 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
             amount = nonconcessional.pop(day)
             if amount > state.cash + TOLERANCE:
                 raise ValueError("Non-concessional contributions must be funded from outside cash on hand.")
+            if day > voluntary_deadline:
+                raise ValueError(f"A fund cannot accept a non-concessional contribution after {voluntary_deadline} "
+                                 "(28 days after the end of the month the member turns 75).")
+            # The year's cumulative total against the bring-forward state at 1 July, so earlier payments this year
+            # are not counted twice.
             period = apply_non_concessional(state.fy["non_concessional"] + amount, rules, tsb_prior,
-                                            _under_75(person.born, rules), period)
+                                            _under_75(person.born, rules), state.fy["ncc_period_start"])
             state.fy["non_concessional"] += amount
             state.cash -= amount
             log("non_concessional_contribution", amount, "accumulation")

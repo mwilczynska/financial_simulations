@@ -16,6 +16,18 @@ from financial_simulations.dates import as_date
 from financial_simulations.rules.au.parameters import RuleSet, UnsupportedRule, financial_year_of
 
 
+def voluntary_contribution_deadline(born) -> date:
+    """Last day a fund may accept a contribution other than a mandated employer or downsizer contribution.
+
+    From age 75 a fund may accept only mandated employer and downsizer contributions (SIS reg 7.04(1) table item 3,
+    as replaced from 1 January 2023); reg 7.04(1A) allows others received within 28 days after the end of the
+    month in which the member turns 75.
+    """
+    turns = birthday(born, 75)
+    month_end = date(turns.year + turns.month // 12, turns.month % 12 + 1, 1) - timedelta(days=1)
+    return month_end + timedelta(days=28)
+
+
 def birthday(born, years):
     """The date a person attains an age; 29 February birthdays fall on 1 March in common years."""
     born = as_date(born)
@@ -158,7 +170,11 @@ def non_concessional_available(rules: RuleSet, tsb_prior_30_june, under_75_in_ye
 
 
 def apply_non_concessional(contributions, rules: RuleSet, tsb_prior_30_june, under_75_in_year, period):
-    """Return the bring-forward state after this year's contributions; excess contributions fail."""
+    """Return the bring-forward state after this year's contributions; excess contributions fail.
+
+    ``contributions`` is the financial year's cumulative total so far and ``period`` the bring-forward state at the
+    start of that year (not the state after earlier payments in the same year, which would count them twice).
+    """
     room, length = non_concessional_available(rules, tsb_prior_30_june, under_75_in_year, period)
     if contributions > room + 1e-9:
         raise UnsupportedRule("Excess non-concessional contributions are not modelled; reduce contributions to the cap.")

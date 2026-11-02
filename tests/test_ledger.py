@@ -654,3 +654,38 @@ def test_opening_year_carries_last_years_tax_and_rejects_dates_outside_the_part_
             capital_events=(CapitalGainEvent("2020-01-01", "2027-02-01", 100),))), YEARS)
     with pytest.raises(ValueError, match="on or after the start"):
         run_ledger(later, replace(scenario, opening_year=OpeningYear(pending_contributions=(("2026-12-20", 100, 0),))), YEARS)
+
+
+def test_several_non_concessional_payments_count_each_dollar_once():
+    # Review finding 9: $200,000 then $50,000 against a $390,000 three-year cap was wrongly rejected.
+    scenario = scenario_with(Person("1980-01-01"), outside_cash=600000, cash_buffer=600000,
+                             non_concessional=(("2026-08-03", 200000), ("2026-09-01", 50000), ("2026-10-01", 100000)))
+    result = run_ledger(market(), scenario, YEARS)
+    assert result.annual[0]["non_concessional_contributions"] == pytest.approx(350000)
+    over = replace(scenario, non_concessional=scenario.non_concessional + (("2026-11-02", 50000),))
+    with pytest.raises(UnsupportedRule, match="Excess non-concessional"):
+        run_ledger(market(), over, YEARS)
+
+
+def test_voluntary_contributions_stop_28_days_after_the_month_of_the_75th_birthday():
+    from financial_simulations.rules.au.superannuation import voluntary_contribution_deadline
+
+    # Turns 75 on 10 August 2026: the window closes on 28 September 2026 (SIS reg 7.04(1) item 3 and (1A)).
+    born = "1951-08-10"
+    assert voluntary_contribution_deadline(born) == date(2026, 9, 28)
+    assert voluntary_contribution_deadline("1951-03-15") == date(2026, 4, 28)
+    person = Person(born)
+    base = scenario_with(person, outside_cash=100000, cash_buffer=100000, super_units={"GL": 100000}, age_pension=True)
+    accepted = run_ledger(market(), replace(base, non_concessional=(("2026-09-28", 50000),)), YEARS)
+    assert accepted.annual[0]["non_concessional_contributions"] == 50000
+    with pytest.raises(ValueError, match="cannot accept"):
+        run_ledger(market(), replace(base, non_concessional=(("2026-09-29", 50000),)), YEARS)
+    # Salary sacrifice reaching the fund after the deadline is paid as salary; the super guarantee continues.
+    working = run_ledger(market(), replace(base, employment=Employment(52000, "2026-07-02", salary_sacrifice_per_payday=200)),
+                         YEARS)
+    pays = working.events[working.events["event"] == "salary"]
+    arrive = pays["date"].map(lambda d: add_business_days(d, 7))
+    assert (pays.loc[arrive <= date(2026, 9, 28), "sacrifice"] == 200).all()
+    assert (pays.loc[arrive > date(2026, 9, 28), "sacrifice"] == 0).all()
+    assert pays.loc[arrive > date(2026, 9, 28), "amount"].iloc[0] == pytest.approx(2000)
+    assert (pays["super_guarantee"] > 0).all()

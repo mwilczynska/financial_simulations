@@ -122,7 +122,16 @@ held as assumptions for 2026-27. See [age-pension.md](age-pension.md).
   applies, and later indexation is ignored, as the ATO describes. Otherwise a
   person under 75 at any time in the year gets 3-, 2- or 1-year room by TSB.
   Exceeding the available room fails. A period opens only when a
-  contribution exceeds the annual cap.
+  contribution exceeds the annual cap. `apply_non_concessional` takes the
+  financial year's cumulative total and the bring-forward state at the start
+  of that year, so several payments in one year count each dollar once
+  ([ADR 0037](../decisions/0037-contribution-boundaries.md)).
+- **Acceptance from age 75.** `voluntary_contribution_deadline` is 28 days
+  after the end of the month in which the member turns 75. From age 75 a
+  fund may accept only mandated employer and downsizer contributions (SIS reg
+  7.04(1) table item 3, as replaced from 1 January 2023). Reg 7.04(1A)
+  allows other contributions received within that 28-day window. This is
+  separate from the cap arithmetic.
 
 ### Retirement phase and fund tax
 

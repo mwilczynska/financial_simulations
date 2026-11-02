@@ -204,3 +204,15 @@ def test_a_weekend_30_june_horizon_is_still_assessed():
     assert without.annual == [] and without.outstanding["unassessed_year"]["financial_year"] == "2028-29"
     with pytest.raises(ValueError, match="within a week"):
         run_ledger(path, replace(scenario, end_date="2029-07-10"), YEARS)
+
+
+def test_bring_forward_counts_this_years_total_against_the_opening_period():
+    from financial_simulations.rules.au.superannuation import BringForward, apply_non_concessional
+
+    opening = BringForward(2026, 3, 390000, 250000)  # triggered in 2026-27 with $250,000
+    rules = YEARS["2027-28"]
+    assert apply_non_concessional(50000, rules, 0, True, opening) == BringForward(2026, 3, 390000, 300000)
+    # A second payment this year: the year's total of $90,000 against the same opening state.
+    assert apply_non_concessional(90000, rules, 0, True, opening) == BringForward(2026, 3, 390000, 340000)
+    with pytest.raises(UnsupportedRule, match="Excess non-concessional"):
+        apply_non_concessional(150000, rules, 0, True, opening)
