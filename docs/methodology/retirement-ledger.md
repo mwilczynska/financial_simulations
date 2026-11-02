@@ -60,6 +60,10 @@ Asset unit prices start at 1. On each day:
    reinvested, so a later transfer or withdrawal cannot escape it
    ([ADR 0035](../decisions/0035-fund-tax-accrual-and-tax-owed-at-the-horizon.md)). Total return is
    unchanged: the distribution only moves value from price to cash.
+   All entitlements come from one holdings snapshot and every
+   price falls before each super account reinvests its total once, so results
+   do not depend on the order of the assets
+   ([ADR 0038](../decisions/0038-working-pensioners-and-distribution-order.md)).
 3. **Payday.** On fortnightly paydays before the retirement date, gross salary
    less salary sacrifice goes to cash as labour income. Salary and sacrifice
    are multiplied by `(1 + annual_growth)^n`, where `n` is the number of whole
@@ -300,4 +304,5 @@ Revision history: 2026-10-28, first implementation. 2026-10-30, surplus cash rei
 the minimum tax on capital gains (ADR 0033); accounting end separate from the last observation, and period closes
 only for complete periods (ADR 0034); fund tax accrued with each accumulation distribution and an estimated tax on
 an unassessed final period (ADR 0035); opening year-to-date position required for a start after 1 July (ADR 0036);
-bring-forward counted once per dollar and the age-75 acceptance deadline (ADR 0037).
+bring-forward counted once per dollar and the age-75 acceptance deadline (ADR 0037); gross wages and the Work Bonus
+starting credit, and order-independent distributions (ADR 0038).

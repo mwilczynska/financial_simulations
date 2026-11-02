@@ -294,6 +294,9 @@ class LedgerScenario:
     # close (no return is invented), so a horizon ending on a weekend 30 June is still assessed.
     end_date: date | None = None
     opening_year: OpeningYear | None = None  # required when the run starts after 1 July
+    # Work Bonus bank of a person already receiving the Age Pension at the start; a person whose first payment falls
+    # in the run starts with the legislated starting credit instead.
+    work_bonus_balance: float = 0.0
 
 
 @dataclass
@@ -404,7 +407,7 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
             if payday >= start:
                 pension_paydays.add(payday)
             payday += timedelta(days=14)
-    work_bonus = {"balance": 0.0, "earned": 0.0}
+    work_bonus = {"balance": 0.0, "earned": 0.0, "started": False}
     nonconcessional = {}
     for when, amount in scenario.non_concessional:
         nonconcessional.setdefault(as_date(when), 0.0)
@@ -788,6 +791,9 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
                                    - opening - flows["interest"])
             rule_state["fy_pnl"] += flows["market_pnl"]
         if day in quarter_ends:
+            # Every entitlement comes from one holdings snapshot and every price falls before anything is reinvested,
+            # so the result does not depend on the order of the assets.
+            received = {"accumulation": [0.0, 0.0], "pension": [0.0, 0.0]}  # cash and franking credits
             for asset in assets:
                 q = income[asset].annual_yield / 4
                 if q <= 0:
@@ -808,19 +814,24 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
                 for account, units_map in (("accumulation", state.super_acc), ("pension", state.super_pen)):
                     if units_map[asset]:
                         cash = per_unit * units_map[asset]
-                        key = "acc" if account == "accumulation" else "pen"
-                        credits = cash * spec.franked_fraction * credit_ratio
-                        state.fy[f"{key}_income"] += cash
-                        state.fy[f"{key}_credits"] += credits
+                        received[account][0] += cash
+                        received[account][1] += cash * spec.franked_fraction * credit_ratio
                         log("distribution", cash, account, asset=asset)
-                        tax = 0.0
-                        if account == "accumulation":
-                            # Fund tax on income accrues as it is earned (as unit prices do), so a later transfer
-                            # to pension or withdrawal cannot escape it; excess franking credits accrue as a credit.
-                            tax = accumulation_earnings_tax(cash, 0.0, 0.0, credits, rules)["tax"]
-                            state.fy["acc_tax_accrued"] += tax
-                            flows["fund_tax"] += tax
-                        buy(units_map, super_weights, cash - tax, account)
+            for account, units_map in (("accumulation", state.super_acc), ("pension", state.super_pen)):
+                cash, credits = received[account]
+                if not cash:
+                    continue
+                key = "acc" if account == "accumulation" else "pen"
+                state.fy[f"{key}_income"] += cash
+                state.fy[f"{key}_credits"] += credits
+                tax = 0.0
+                if account == "accumulation":
+                    # Fund tax on income accrues as it is earned (as unit prices do), so a later transfer to pension
+                    # or withdrawal cannot escape it; excess franking credits accrue as a credit.
+                    tax = accumulation_earnings_tax(cash, 0.0, 0.0, credits, rules)["tax"]
+                    state.fy["acc_tax_accrued"] += tax
+                    flows["fund_tax"] += tax
+                buy(units_map, super_weights, cash - tax, account)
         if day in paydays:
             employment = scenario.employment
             grown = employment.factor(start, day)
@@ -836,7 +847,8 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
             state.fy["sacrifice"] += sacrifice
             flows["salary"] += gross - sacrifice
             if day >= pension_age_day:
-                work_bonus["earned"] += gross - sacrifice  # employment income for the next Age Pension fortnight
+                # Employment income for the next Age Pension fortnight includes salary sacrifice (Services Australia).
+                work_bonus["earned"] += gross
             log("salary", gross - sacrifice, "outside", sacrifice=sacrifice, super_guarantee=sg)
             withheld = state.fy["withhold_per_pay"]
             if withheld > 0:
@@ -852,6 +864,15 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
             # Means test on the previous close: every account is a financial asset at Age Pension age, and
             # other assessable assets count in the assets test only.
             financial = opening
+            if not work_bonus["started"]:
+                # The first payday in the run: an existing recipient brings their bank; a new recipient starts with
+                # the starting credit, which is the whole first fortnight's balance (DSS Guide 3.1.15.40, Example 1).
+                work_bonus["started"] = True
+                if day == pension_age_day + timedelta(days=14):
+                    income_test = rules["age_pension_income_test"]
+                    work_bonus["balance"] = income_test["work_bonus_starting_credit"] - income_test["work_bonus_credit"]
+                else:
+                    work_bonus["balance"] = scenario.work_bonus_balance
             employment, work_bonus["balance"] = apply_work_bonus(work_bonus["earned"], work_bonus["balance"], rules)
             work_bonus["earned"] = 0.0
             rate = fortnightly_rate(financial + person.other_assets, financial, employment, rules, homeowner=person.homeowner)

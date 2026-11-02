@@ -90,7 +90,16 @@ The published part-pension cut-offs ($745,750 homeowner, $1,012,750
 non-homeowner) are reproduced: limit + maximum rate / 0.003.
 
 **Work Bonus.** A $300 credit accrues each fortnight, up to an $11,800
-balance. It offsets employment income before the income test.
+balance. It offsets employment income before the income test. Employment
+income is gross wages, including salary sacrifice, which Services Australia
+lists as employment income. A person whose first payment falls in the run
+starts with the $4,000 starting credit as the whole first fortnight's balance
+(from 1 January 2024; DSS Social Security Guide 3.1.15.40, Example 1). A
+person already receiving at the start brings `work_bonus_balance` (default
+nil). The planner does not set it, so a planner run that starts after Age
+Pension age assumes an empty bank. The bank starts at the first payday from
+Age Pension age, whatever the means test pays
+([ADR 0038](../decisions/0038-working-pensioners-and-distribution-order.md)).
 
 ## Tax treatment
 

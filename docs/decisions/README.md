@@ -43,6 +43,7 @@ Decision records preserve why Financial Simulations makes a material modelling o
 | [0035](0035-fund-tax-accrual-and-tax-owed-at-the-horizon.md) | 2026-11-02 | Accepted; implemented and tested; refines 0019 | Accumulation fund tax accrues with each distribution; outcomes report tax owed at the horizon, net wealth and whether it can be settled |
 | [0036](0036-opening-year-to-date-position.md) | 2026-11-02 | Accepted; implemented and tested | A start after 1 July requires the financial year's opening year-to-date position; prior-year tax and contributions in flight are inputs |
 | [0037](0037-contribution-boundaries.md) | 2026-11-02 | Accepted; implemented and tested | Bring-forward counts the year's total against the 1 July state; voluntary contributions and sacrifice stop at the age-75 acceptance deadline |
+| [0038](0038-working-pensioners-and-distribution-order.md) | 2026-11-02 | Accepted; implemented and tested | Gross wages (with sacrifice) in the income test, the $4,000 Work Bonus starting credit, and order-independent super distributions |
 
 ## When to write a record
 

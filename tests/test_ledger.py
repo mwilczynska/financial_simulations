@@ -689,3 +689,37 @@ def test_voluntary_contributions_stop_28_days_after_the_month_of_the_75th_birthd
     assert (pays.loc[arrive > date(2026, 9, 28), "sacrifice"] == 0).all()
     assert pays.loc[arrive > date(2026, 9, 28), "amount"].iloc[0] == pytest.approx(2000)
     assert (pays["super_guarantee"] > 0).all()
+
+
+def test_working_pensioner_income_includes_sacrifice_and_a_new_recipient_gets_the_starting_credit():
+    from financial_simulations.rules.au.age_pension import FORTNIGHTS, deemed_income
+
+    def first_pension(born, **kwargs):
+        scenario = scenario_with(Person(born, "2030-01-01"), outside_cash=10000, cash_buffer=100000, age_pension=True,
+                                 employment=Employment(26000, "2026-07-02", salary_sacrifice_per_payday=500), **kwargs)
+        event = run_ledger(market(end="2026-07-31"), scenario, YEARS).events.query("event == 'age_pension'").iloc[0]
+        return event["assessed_income"] - deemed_income(event["assessed_assets"], RULES) / FORTNIGHTS
+
+    # Review finding 11: an existing pensioner with an empty bank and $1,000 gross wages, $500 of it sacrificed.
+    # Services Australia counts salary sacrifice as employment income: $1,000 + $300 credit gives $700 assessed.
+    assert first_pension("1955-01-01") == pytest.approx(700)
+    assert first_pension("1955-01-01", work_bonus_balance=2000) == pytest.approx(0)
+    # Turning 67 on 1 July 2026, first paid on 15 July: the $4,000 starting credit covers the $1,000 (DSS 3.1.15.40).
+    assert first_pension("1959-07-01") == pytest.approx(0)
+
+
+def test_super_distributions_do_not_depend_on_the_order_of_assets():
+    # Review finding 13: $80,000 A and $20,000 B, target weights 20%/80%, yields 4% and 8%, zero total returns.
+    def run(order):
+        path = market(assets=order)
+        scenario = scenario_with(Person("1985-01-01"), super_units={"A": 80000, "B": 20000},
+                                 super_weights={"A": 0.2, "B": 0.8}, outside_weights={"A": 1.0},
+                                 income={"A": AssetIncome(0.04), "B": AssetIncome(0.08)})
+        return run_ledger(path, scenario, YEARS)
+
+    ab, ba = run(("A", "B")), run(("B", "A"))
+    assert ab.daily["fund_tax"].sum() == pytest.approx(ba.daily["fund_tax"].sum(), rel=1e-12)
+    assert ab.daily["total"].iloc[-1] == pytest.approx(ba.daily["total"].iloc[-1], rel=1e-12)
+    # The first quarter pays from the opening holdings alone: 1% of $80,000 plus 2% of $20,000.
+    first = ab.events.query("event == 'distribution' and account == 'accumulation'")
+    assert first.groupby("date")["amount"].sum().iloc[0] == pytest.approx(800 + 400)

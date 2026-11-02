@@ -188,6 +188,12 @@ url = "https://www.servicesaustralia.gov.au/how-work-bonus-works"
 page_updated = "2026-10-29"
 
 [[sources]]
+id = "dss-work-bonus-examples"
+title = "Social Security Guide 3.1.15.40 Work bonus - examples of calculation (DSS)"
+url = "https://guides.dss.gov.au/social-security-guide/3/1/15/40"
+page_updated = "2024-08-12"
+
+[[sources]]
 id = "ato-sapto"
 title = "Seniors and pensioners tax offset (ATO)"
 url = "https://www.ato.gov.au/individuals-and-families/income-deductions-offsets-and-records/tax-offsets/seniors-and-pensioners-tax-offset"
@@ -426,11 +432,11 @@ source = "services-australia-assets-test"
 note = "Single full-pension limits. The $3 a fortnight per $1,000 taper reproduces the published part-pension cut-offs ($745,750 homeowner, $1,012,750 non-homeowner from 20 September 2026). The principal home is exempt."
 
 [parameters.age_pension_income_test]
-value = { free_area = 226, taper = 0.50, work_bonus_credit = 300, work_bonus_cap = 11800 }
+value = { free_area = 226, taper = 0.50, work_bonus_credit = 300, work_bonus_cap = 11800, work_bonus_starting_credit = 4000 }
 units = "AUD a fortnight (Work Bonus cap is a balance)"
 status = "published_indexed"
 source = "services-australia-income-test"
-note = "Single free area $226 a fortnight and 50c reduction per dollar over; cut-off $2,701.40 (= free area + 2 x maximum rate). Work Bonus: $300 credit a fortnight up to an $11,800 balance, offsetting employment income (services-australia-work-bonus)."
+note = "Single free area $226 a fortnight and 50c reduction per dollar over; cut-off $2,701.40 (= free area + 2 x maximum rate). Work Bonus: $300 credit a fortnight up to an $11,800 balance, offsetting employment income (services-australia-work-bonus); from 1 January 2024 a person commencing an eligible payment starts with a $4,000 balance (dss-work-bonus-examples, Example 1)."
 
 [parameters.deeming]
 value = { threshold = 66800, lower_rate = 0.0175, upper_rate = 0.0375 }
