@@ -233,8 +233,11 @@ components are absent. Ledgers run in worker processes when there are
 more than four; each worker returns only a summary row, month-end account
 series and financial-year rows. Every calculated path is classified:
 
-- **funded:** all spending and tax was paid;
-- **depleted:** some spending shortfall or unpaid tax arose. These paths stay
+- **funded:** all spending and tax was paid, and the tax owed at the
+  horizon can be settled;
+- **depleted:** some spending shortfall or unpaid tax arose, or the tax owed
+  at the horizon exceeds the money available to settle it (outside wealth,
+  the pension, and accumulation if accessible at the end). These paths stay
   in every band and rate. Before 2026-10-28 an unpaid tax debt stopped the
   ledger, which silently removed the worst paths. See
   [ADR 0019](../decisions/0019-retirement-path-results.md).
@@ -248,6 +251,13 @@ Per path the planner reports, in today's dollars (`retirement/real.py`,
 [ADR 0026](../decisions/0026-results-in-todays-dollars.md)):
 
 - ending wealth (and `Ending wealth, nominal`, kept for the CSV only);
+- tax owed at the end: tax already incurred but not yet paid at the
+  horizon. That is assessments not yet due (refunds count against them),
+  pending Division 296, unpaid tax and the ledger's estimate for an
+  unassessed final period. It is deflated at the end date. Also reported:
+  ending wealth after tax owed (the headline ending figure in the app) and
+  whether that tax can be settled
+  ([ADR 0035](../decisions/0035-fund-tax-accrual-and-tax-owed-at-the-horizon.md));
 - ending outside and super/pension wealth, and wealth at the retirement date;
 - spending paid, shortfall, shortfall years, and the first shortfall date;
 - the date outside-super money (cash plus investments) first runs out;
@@ -384,8 +394,8 @@ positions them.
    markets, the daily ledger, retirement, tax, government support and how
    results are summarised. It points to section 5 and the methodology for
    detail. Then:
-   - headline metrics (paths calculated, share funded, median ending wealth,
-     wealth at retirement, withdrawal rates, total tax), all in today's
+   - headline metrics (paths calculated, share funded, median ending wealth
+     after tax owed, wealth at retirement, withdrawal rates, total tax), all in today's
      dollars;
    - wealth bands selectable by account;
    - **risk statistics** above the all-paths chart:

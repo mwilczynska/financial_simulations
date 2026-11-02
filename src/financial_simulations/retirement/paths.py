@@ -17,7 +17,7 @@ import pandas as pd
 from financial_simulations.retirement.flows import account_flows, household_flows
 from financial_simulations.retirement.ledger import LedgerResult, run_ledger
 from financial_simulations.retirement.plan import build_inputs
-from financial_simulations.retirement.real import flow_deflator, real_daily, real_events, year_deflator
+from financial_simulations.retirement.real import flow_deflator, real_daily, real_events, stock_deflator, year_deflator
 from financial_simulations.rules.au.parameters import UnsupportedRule
 
 
@@ -81,11 +81,26 @@ def _summarise(path: int, result: LedgerResult, retire: date, cpi: float):
     accessible = daily.index[daily["super_accessible"].astype(bool)]
     unpaid = sum(item["amount"] / step(int(item["financial_year"][:4]) + 1) for item in result.outstanding["unpaid_tax"])
     shortfall = float(daily["shortfall"].sum())
+    # Tax already incurred but not paid at the horizon: assessments not yet due (refunds count against them),
+    # pending Division 296, unpaid debts and an estimate for an unassessed closing period. Nominal, at the end date.
+    owed = result.outstanding
+    owed_nominal = (sum(l["amount"] for l in owed["tax_liabilities"]) + sum(d["amount"] for d in owed["division_296"])
+                    + sum(u["amount"] for u in owed["unpaid_tax"])
+                    + (owed["unassessed_year"] or {}).get("estimated_tax", 0.0))
+    end_row = nominal.iloc[-1]
+    # Money that could settle it: outside wealth, the pension and accumulation if accessible at the end.
+    available = (end_row["cash"] + end_row["outside_investments"] + end_row["pension"]
+                 + (end_row["accumulation"] if bool(end_row["super_accessible"]) else 0.0))
+    settles = owed_nominal <= available + 1.0
+    end_price = float(stock_deflator([nominal.index[-1]], nominal.index[0], cpi)[0])
     pension_start = daily.index[daily["pension"] > 0]
     age_pension_paid = daily.index[daily["age_pension"] > 0]
-    outcome = {"Path": path, "Status": "depleted" if shortfall > 0 or unpaid > 0 else "funded", "Reason": "",
+    outcome = {"Path": path, "Status": "depleted" if shortfall > 0 or unpaid > 0 or not settles else "funded", "Reason": "",
                "Ending wealth": float(daily["total"].iloc[-1]),
                "Ending wealth, nominal": float(nominal["total"].iloc[-1]),
+               "Tax owed at end": owed_nominal / end_price,
+               "Ending wealth after tax owed": float(daily["total"].iloc[-1]) - owed_nominal / end_price,
+               "Can settle tax owed at end": bool(settles),
                "Ending outside wealth": float(outside.iloc[-1]),
                "Ending super and pension": float(daily["accumulation"].iloc[-1] + daily["pension"].iloc[-1]),
                "Wealth at retirement": float(at_retirement.iloc[-1]) if len(at_retirement) else np.nan,

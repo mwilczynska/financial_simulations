@@ -127,8 +127,11 @@ def test_outside_sales_realise_discounted_gains_and_reduce_cost_base():
 def test_fund_tax_on_accumulation_income_and_pension_franking_refund():
     accumulation = run_ledger(market(), scenario_with(Person("1985-01-01"), super_units={"GL": 200000},
                                                        income={"GL": AssetIncome(0.04)}), YEARS)
-    assert accumulation.annual[0]["accumulation_tax"] == pytest.approx(1200)
-    assert accumulation.daily["accumulation"].iloc[-1] == pytest.approx(198800)
+    # Tax on each 1% quarterly distribution accrues as it is paid, so the balance is x 0.9985 each quarter.
+    distributions = [2000 * 0.9985 ** q for q in range(4)]
+    assert accumulation.annual[0]["accumulation_tax"] == pytest.approx(0.15 * sum(distributions))
+    assert accumulation.daily["accumulation"].iloc[-1] == pytest.approx(200000 * 0.9985 ** 4)
+    assert accumulation.daily["fund_tax"].sum() == pytest.approx(accumulation.annual[0]["accumulation_tax"])
     pension = run_ledger(market(), scenario_with(Person("1965-03-01", retirement_date="2025-12-31"),
                                                   super_units={"AU": 200000}, super_weights={"AU": 1.0},
                                                   income={"AU": AssetIncome(0.04, 1.0)}, pension=Pension("2026-07-01")), YEARS)
@@ -558,3 +561,55 @@ def test_a_truncated_period_has_no_close_so_identical_prefixes_match():
     ended = run_ledger(september, replace(scenario, end_date=date(2026, 9, 30)), YEARS)
     assert ended.daily["distributions"].loc["2026-09-29"] == pytest.approx(1000)
     assert ended.daily["distributions"].sum() == pytest.approx(1000)
+
+
+@pytest.mark.parametrize("franked", [0.0, 1.0])
+def test_fund_tax_accrued_before_a_transfer_to_pension_is_not_lost(franked):
+    # Review finding 4: $100,000 at a 4% yield, the whole balance moved to pension on 1 April 2027.
+    person = Person("1965-01-01", retirement_date="2025-01-01")
+    result = run_ledger(market(), scenario_with(person, super_units={"GL": 100000}, income={"GL": AssetIncome(0.04, franked)},
+                                                pension=Pension("2027-04-01")), YEARS)
+    events = result.events
+    accumulation = events[(events["event"] == "distribution") & (events["account"] == "accumulation")]["amount"]
+    pension = events[(events["event"] == "distribution") & (events["account"] == "pension")]["amount"]
+    assert len(accumulation) == 3 and len(pension) == 1
+    credit = 0.3 / 0.7 * franked
+    # Three quarters taxed in accumulation as they accrue: 15% of grossed-up income less franking credits. Unfranked,
+    # that is $450 less the compounding of the earlier deductions; franked, a credit of 6.4% of the income.
+    assessed = result.annual[0]["accumulation_tax"]
+    assert assessed == pytest.approx((0.15 * (1 + credit) - credit) * accumulation.sum())
+    if not franked:
+        assert assessed == pytest.approx(0.15 * sum(1000 * 0.9985 ** q for q in range(3)))
+    # The pension's June-quarter credits are refunded at 30 June; nothing assessed is dropped.
+    assert result.daily["fund_tax"].sum() == pytest.approx(assessed - credit * pension.sum())
+
+
+def test_outcomes_report_tax_owed_at_the_horizon_and_whether_it_can_be_settled():
+    from financial_simulations.retirement.paths import _summarise
+
+    # Review finding 6: every zero-cost holding is sold for spending, leaving nothing for the October tax bill.
+    person = Person("1965-01-01", retirement_date="2025-01-01")
+    scenario = scenario_with(person, outside_parcels=(Parcel("GL", 120000, 0, "2020-01-01"),), annual_spending=120000)
+    result = run_ledger(market(), scenario, YEARS)
+    bill = sum(l["amount"] for l in result.outstanding["tax_liabilities"])
+    assert result.daily["total"].iloc[-1] == pytest.approx(0, abs=1) and bill > 9000
+    outcome = _summarise(0, result, date(2025, 1, 1), 0.0)[0]
+    assert outcome["Status"] == "depleted" and not outcome["Can settle tax owed at end"]
+    assert outcome["Tax owed at end"] == pytest.approx(bill)
+    assert outcome["Ending wealth after tax owed"] == pytest.approx(outcome["Ending wealth"] - bill)
+    # With money left over, the same bill is settled and reduces net wealth only.
+    rich = run_ledger(market(), replace(scenario, outside_cash=50000, cash_buffer=50000), YEARS)
+    summary = _summarise(0, rich, date(2025, 1, 1), 0.0)[0]
+    assert summary["Status"] == "funded" and summary["Can settle tax owed at end"]
+    assert summary["Ending wealth after tax owed"] == pytest.approx(summary["Ending wealth"] - summary["Tax owed at end"])
+
+
+def test_an_unassessed_final_period_estimates_the_tax_already_incurred():
+    result = run_ledger(market(end="2026-12-31"), scenario_with(Person("1985-01-01"), super_units={"GL": 100000},
+                                                                 employment=Employment(104000, "2026-07-02")), YEARS)
+    partial = result.outstanding["unassessed_year"]
+    salary = result.events[result.events["event"] == "salary"]["amount"].sum()
+    assert partial["labour_income"] == pytest.approx(salary)
+    expected = assess(IncomeYear(labour_income=salary, low_tax_contributions=partial["concessional_contributions"]),
+                      RULES).net_tax
+    assert partial["estimated_tax"] == pytest.approx(expected) and expected > 0

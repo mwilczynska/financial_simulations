@@ -40,6 +40,7 @@ Decision records preserve why Financial Simulations makes a material modelling o
 | [0032](0032-defer-early-pension-to-super-access.md) | 2026-10-30 | Accepted; implemented and locally validated | A planner pension set before super is accessible starts on the access date, with a run note, instead of stopping the run |
 | [0033](0033-cgt-reform-loss-order-offsets-and-exemption.md) | 2026-11-02 | Accepted; implemented and tested; corrects parts of 0015 | Statutory loss order from 2027-28, non-refundable offsets reduce the minimum tax, Age Pension receipts exempt it |
 | [0034](0034-future-observation-calendar-and-accounting-end.md) | 2026-11-02 | Accepted; implemented and tested; replaces the weekday template of 0017 | Future observations at the sampled history's density; accounting end apart from the last observation; closes only for complete periods |
+| [0035](0035-fund-tax-accrual-and-tax-owed-at-the-horizon.md) | 2026-11-02 | Accepted; implemented and tested; refines 0019 | Accumulation fund tax accrues with each distribution; outcomes report tax owed at the horizon, net wealth and whether it can be settled |
 
 ## When to write a record
 

@@ -383,6 +383,23 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
         _money(scenario.outside_contribution_per_payday, "Outside contribution")
     access = access_date(person.born, next(iter(rules_by_year.values())), person.retirement_date)
 
+    def income_year(fy):
+        """The financial year's income so far, as ``assess`` takes it."""
+        rules = fy["rules"]
+        return IncomeYear(labour_income=fy["labour"], interest=fy["interest"], unfranked_dividends=fy["unfranked"],
+                          franked_dividends=fy["franked"],
+                          franking_credits=fy["credits"], capital_events=tuple(fy["events"]),
+                          capital_losses_brought_forward=losses_bf, reportable_employer_super=fy["sacrifice"],
+                          low_tax_contributions=fy["concessional"],
+                          other_assessable_income=fy["age_pension_taxable"],
+                          # s119-15: any Age Pension payment received in the year exempts the minimum tax;
+                          # a means-tested nil rate does not.
+                          minimum_tax_exempt=fy["age_pension"] > 0,
+                          private_hospital_cover=person.private_hospital_cover,
+                          # Age Pension age at any time in the year, residence assumed: SAPTO eligibility
+                          # holds even when the means test pays no pension.
+                          sapto_eligible=scenario.age_pension and pension_age_day <= rules.end)
+
     def log(kind, amount, account, **detail):
         events.append({"date": day, "event": kind, "account": account, "amount": float(amount), **detail})
 
@@ -394,7 +411,7 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
         cap = concessional_cap(rules, tsb_prior, unused)
         state.fy = {"rules": rules, "cap": cap, "concessional": 0.0, "non_concessional": 0.0, "labour": 0.0,
                     "sacrifice": 0.0, "unfranked": 0.0, "franked": 0.0, "credits": 0.0, "events": [],
-                    "acc_income": 0.0, "acc_credits": 0.0, "pen_income": 0.0, "pen_credits": 0.0, "spending": 0.0,
+                    "acc_income": 0.0, "acc_credits": 0.0, "acc_tax_accrued": 0.0, "pen_income": 0.0, "pen_credits": 0.0, "spending": 0.0,
                     "shortfall": 0.0,
                     "interest": 0.0, "withheld": 0.0, "withhold_per_pay": 0.0, "age_pension": 0.0,
                     "age_pension_taxable": 0.0}
@@ -720,10 +737,18 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
                     if units_map[asset]:
                         cash = per_unit * units_map[asset]
                         key = "acc" if account == "accumulation" else "pen"
+                        credits = cash * spec.franked_fraction * credit_ratio
                         state.fy[f"{key}_income"] += cash
-                        state.fy[f"{key}_credits"] += cash * spec.franked_fraction * credit_ratio
+                        state.fy[f"{key}_credits"] += credits
                         log("distribution", cash, account, asset=asset)
-                        buy(units_map, super_weights, cash, account)
+                        tax = 0.0
+                        if account == "accumulation":
+                            # Fund tax on income accrues as it is earned (as unit prices do), so a later transfer
+                            # to pension or withdrawal cannot escape it; excess franking credits accrue as a credit.
+                            tax = accumulation_earnings_tax(cash, 0.0, 0.0, credits, rules)["tax"]
+                            state.fy["acc_tax_accrued"] += tax
+                            flows["fund_tax"] += tax
+                        buy(units_map, super_weights, cash - tax, account)
         if day in paydays:
             employment = scenario.employment
             grown = employment.factor(start, day)
@@ -869,20 +894,7 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
                 buy_outside(amount)
         if day == rules.end:
             fy = state.fy
-            year = IncomeYear(labour_income=fy["labour"], interest=fy["interest"], unfranked_dividends=fy["unfranked"],
-                              franked_dividends=fy["franked"],
-                              franking_credits=fy["credits"], capital_events=tuple(fy["events"]),
-                              capital_losses_brought_forward=losses_bf, reportable_employer_super=fy["sacrifice"],
-                              low_tax_contributions=fy["concessional"],
-                              other_assessable_income=fy["age_pension_taxable"],
-                              # s119-15: any Age Pension payment received in the year exempts the minimum tax;
-                              # a means-tested nil rate does not.
-                              minimum_tax_exempt=fy["age_pension"] > 0,
-                              private_hospital_cover=person.private_hospital_cover,
-                              # Age Pension age at any time in the year, residence assumed: SAPTO eligibility
-                              # holds even when the means test pays no pension.
-                              sapto_eligible=scenario.age_pension and pension_age_day <= rules.end)
-            assessment = assess(year, rules)
+            assessment = assess(income_year(fy), rules)
             losses_bf = assessment.capital_losses_carried_forward
             due = date(rules.end.year + (scenario.tax_settlement_month_day[0] <= 6), *scenario.tax_settlement_month_day)
             # Withholding already paid counts against the assessment; a negative balance is a refund.
@@ -899,15 +911,19 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
                     accumulation=gains["accumulation"], pension=gains["pension"])
             accumulation_tax = accumulation_earnings_tax(fy["acc_income"], gains["accumulation"], 0.0, fy["acc_credits"],
                                                          rules)["tax"]
-            if accumulation_tax > 0:
-                flows["fund_tax"] += sell_units(state.super_acc, accumulation_tax)
-            elif accumulation_tax < 0 and any(state.super_acc.values()):
-                buy(state.super_acc, super_weights, -accumulation_tax, "accumulation")
-                flows["fund_tax"] += accumulation_tax
+            # Tax on income was accrued with each distribution; the remainder is tax on the realised gain, charged to
+            # the accumulation units that carried that gain.
+            remainder = accumulation_tax - fy["acc_tax_accrued"]
+            if remainder > 0:
+                flows["fund_tax"] += sell_units(state.super_acc, remainder)
+            elif remainder < 0 and any(state.super_acc.values()):
+                buy(state.super_acc, super_weights, -remainder, "accumulation")
+                flows["fund_tax"] += remainder
             if fy["pen_credits"] > 0 and state.tba is not None:
                 buy(state.super_pen, super_weights, fy["pen_credits"], "pension")
                 flows["fund_tax"] -= fy["pen_credits"]
-            log("fund_tax", flows["fund_tax"], "super", accumulation_income=fy["acc_income"])
+            log("fund_tax", flows["fund_tax"], "super", accumulation_income=fy["acc_income"],
+                accrued_during_year=fy["acc_tax_accrued"])
             if (state.tba is not None and state.pension_paid < state.pension_minimum - TOLERANCE
                     and _value(state.super_pen, state.prices) > TOLERANCE):
                 raise ArithmeticError("Pension minimum was not met by 30 June.")
@@ -971,6 +987,10 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
                       "net_realised_gains": sum(e.amount for e in fy["events"]),
                       "concessional_contributions": fy["concessional"], "accumulation_income": fy["acc_income"],
                       "interest": fy["interest"], "payg_withheld": fy["withheld"], "age_pension": fy["age_pension"]}
+        # Tax already incurred on the partial year: assessed as if the year ended here (full-year thresholds), less
+        # withholding. An estimate for closing-wealth reporting; the fund's realised-gain tax is not included.
+        partial = assess(income_year(fy), fy["rules"])
+        unassessed["estimated_tax"] = partial.net_tax + partial.division_293_tax - fy["withheld"]
     outstanding = {"tax_liabilities": [dict(l, due=str(l["due"])) for l in state.liabilities],
                    "division_296": [dict(d, due=str(d["due"])) for d in state.division_296],
                    "unpaid_tax": unpaid_tax,

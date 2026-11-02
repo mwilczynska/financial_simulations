@@ -1407,7 +1407,10 @@ def typical_flows_section(annual, marks, calculated, start_wealth):
     w[2].metric("Median wealth when super becomes accessible", compact(median("Wealth when super accessible")),
                 help="Total wealth on the first day super can be withdrawn (preservation age and retirement), when that "
                      "is after the start.")
-    w[3].metric("Median ending wealth", compact(median("Ending wealth")))
+    w[3].metric("Median ending wealth after tax owed", compact(median("Ending wealth after tax owed")),
+                help="Total wealth at the horizon less tax already incurred but not yet paid (assessments not yet due, "
+                     f"Division 296, unpaid tax and an estimate for an unassessed final period). Before that tax the "
+                     f"median is {compact(median('Ending wealth'))}.")
     a, b, c, d = st.columns(4)
     a.metric("Median Age Pension received", compact(median("Age Pension received")))
     b.metric("Median spending shortfall", compact(median("Spending shortfall")))
@@ -1489,7 +1492,8 @@ def ruin_statistics(run, calculated, marks):
     c, d = st.columns(2)
     a.metric(f"Risk of ruin to {end.year}", share(len(depleted) / total),
              help=f"Share of the {total} tax-ledger paths where some spending could not be paid, or tax could not be "
-                  f"paid, before the horizon ({end}).")
+                  f"paid, before the horizon ({end}), or where the tax owed at the horizon exceeds the money available "
+                  "to settle it.")
     b.metric("Ran short before super was accessible", share(early / total),
              help="Paths whose first shortfall came before super could be withdrawn: outside money alone was not "
                   "enough to bridge to the access date.")
@@ -1734,8 +1738,9 @@ full, down to each payment. The project's methodology documents give every rule 
     a.metric("Paths calculated", f"{len(calculated)} / {len(paths)}", help=f"{unsupported} unsupported")
     b.metric("Funded all spending", share(funded / len(calculated)) if len(calculated) else "–",
              help=f"{funded} funded, {depleted} depleted")
-    c.metric("Median ending wealth", compact(calculated["Ending wealth"].median()),
-             help=f"In today's dollars (deflated at the assumed {plan['assumptions']['cpi_annual']:.1%} CPI), at the horizon.")
+    c.metric("Median ending wealth after tax owed", compact(calculated["Ending wealth after tax owed"].median()),
+             help=f"In today's dollars (deflated at the assumed {plan['assumptions']['cpi_annual']:.1%} CPI), at the horizon, "
+                  "less tax already incurred but not yet paid.")
     d.metric("Median wealth at retirement", compact(calculated["Wealth at retirement"].median()), help="Today's dollars.")
     a, b, c, d = st.columns(4)
     a.metric("Median first retired-year withdrawal", share(calculated["First retired-year withdrawal rate"].median()),

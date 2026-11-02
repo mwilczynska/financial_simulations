@@ -43,7 +43,11 @@ Asset unit prices start at 1. On each day:
    the same amount. Outside holders receive cash. The amount is split by the
    asset's franked fraction, with franking credits of franked cash x t/(1 - t)
    for company tax rate t (default 30%). Super holders reinvest within the
-   fund, and the fund tracks income and credits for fund tax. Total return is
+   fund, and the fund tracks income and credits for fund tax. In
+   accumulation, fund tax on each distribution, 15% x (cash + credits) −
+   credits, accrues on the day it is paid: only the net amount is
+   reinvested, so a later transfer or withdrawal cannot escape it
+   ([ADR 0035](../decisions/0035-fund-tax-accrual-and-tax-owed-at-the-horizon.md)). Total return is
    unchanged: the distribution only moves value from price to cash.
 3. **Payday.** On fortnightly paydays before the retirement date, gross salary
    less salary sacrifice goes to cash as labour income. Salary and sacrifice
@@ -149,8 +153,10 @@ Asset unit prices start at 1. On each day:
     - Realise `super_realised_gains` of each super account's unrealised gain
       (value less its aggregate cost base, when positive) and add it to the
       cost base ([ADR 0029](../decisions/0029-super-realised-gains.md)).
-    - Charge accumulation fund tax: 15% x (income + credits + realised gain x
-      2/3) − credits, selling units or crediting them. Credit retirement-phase
+    - Assess accumulation fund tax: 15% x (income + credits + realised gain x
+      2/3) − credits. The part on income accrued with each distribution; the
+      remainder, tax on the realised gain, is charged by selling units (or
+      credited). Credit retirement-phase
       franking credits to the pension; pension gains are exempt.
     - Update unused concessional cap amounts and the TSB at 30 June.
     - Assess Division 296: earnings are the year's super distributions,
@@ -248,6 +254,9 @@ what they report.
   to a week after the last observation; those days carry the last close
   with no return, so a 30 June on a weekend is still assessed
   ([ADR 0034](../decisions/0034-future-observation-calendar-and-accounting-end.md)).
+  `unassessed_year["estimated_tax"]` assesses the partial year as if it ended
+  on the last day (full-year thresholds), less withholding. It excludes
+  Division 296 and fund tax on gains for the partial year.
 - **Age Pension.** With `age_pension=True` (the planner's setting), the
   single Age Pension is paid fortnightly from a fortnight after Age Pension
   age, means-tested on the previous close. SAPTO applies from the year Age
@@ -274,4 +283,5 @@ what they report.
 Revision history: 2026-10-28, first implementation. 2026-10-30, surplus cash reinvested from retirement
 (ADR 0030) and parcels sold lowest taxable gain first (ADR 0031). 2026-11-02, Age Pension receipts exempt
 the minimum tax on capital gains (ADR 0033); accounting end separate from the last observation, and period closes
-only for complete periods (ADR 0034).
+only for complete periods (ADR 0034); fund tax accrued with each accumulation distribution and an estimated tax on
+an unassessed final period (ADR 0035).

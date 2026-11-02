@@ -196,8 +196,9 @@ def test_a_weekend_30_june_horizon_is_still_assessed():
     assert dates[-1] == date(2029, 6, 29) and result.daily.index[-1] == pd.Timestamp("2029-06-30")
     assert [a["financial_year"] for a in result.annual] == ["2028-29"]
     assert result.outstanding["unassessed_year"] is None
-    # Four $1,000 distributions, taxed at 15% in the fund on the 30th; no return is invented for the weekend.
-    assert result.daily["fund_tax"].sum() == pytest.approx(600)
+    # Four 1% distributions taxed at 15% as they accrue (about $600); no return is invented for the weekend.
+    assert result.daily["fund_tax"].sum() == pytest.approx(0.15 * sum(1000 * 0.9985 ** q for q in range(4)))
+    assert result.annual[0]["accumulation_tax"] == pytest.approx(result.daily["fund_tax"].sum())
     assert not result.daily.loc["2029-06-30", "is_observation"] and result.daily.loc["2029-06-30", "market_pnl"] == 0
     without = run_ledger(path, replace(scenario, end_date=None), YEARS)
     assert without.annual == [] and without.outstanding["unassessed_year"]["financial_year"] == "2028-29"
