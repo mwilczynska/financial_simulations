@@ -216,3 +216,24 @@ def test_bring_forward_counts_this_years_total_against_the_opening_period():
     assert apply_non_concessional(90000, rules, 0, True, opening) == BringForward(2026, 3, 390000, 340000)
     with pytest.raises(UnsupportedRule, match="Excess non-concessional"):
         apply_non_concessional(150000, rules, 0, True, opening)
+
+
+def test_withdrawal_rates_are_the_nominal_ratio_for_a_start_after_1_july():
+    from financial_simulations.retirement.ledger import OpeningYear
+    from financial_simulations.retirement.paths import _summarise
+
+    # Review finding 14: a 1 November start and a 10% CPI stress. Stepped real flows over day-deflated wealth gave
+    # 3.87% for a nominal 4% withdrawal; the rate must be the nominal ratio.
+    dates = tuple(pd.bdate_range("2026-11-02", "2028-06-30").date)
+    dates = (date(2026, 11, 1), *dates)
+    path = MarketPath(dates, ("AU",), np.zeros((len(dates) - 1, 1)), "AUD")
+    scenario = LedgerScenario(Person("1965-01-01", retirement_date="2025-01-01"), outside_cash=1_000_000,
+                              cash_buffer=1_000_000, outside_weights={"AU": 1.0}, annual_spending=40000, opening_year=OpeningYear(), end_date="2028-06-30")
+    result = run_ledger(path, scenario, YEARS)
+    rows = _summarise(0, result, date(2025, 1, 1), 0.10)[2]
+    year = next(r for r in rows if r["FY ending"] == 2028)
+    nominal = result.daily.loc["2027-07-01":"2028-06-30"]
+    drawn = (nominal["spending_paid"].sum() + max(nominal["tax_paid"].sum(), 0) + nominal["division_296"].sum()
+             - nominal["age_pension"].sum())
+    assert year["Withdrawal rate"] == pytest.approx(drawn / result.daily.loc["2027-06-30", "total"])
+    assert year["Withdrawal rate"] == pytest.approx(40000 / result.daily.loc["2027-06-30", "total"])

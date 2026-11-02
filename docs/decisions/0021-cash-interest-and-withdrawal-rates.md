@@ -1,6 +1,8 @@
 # ADR 0021: interest on cash, and withdrawal rates over a whole retirement
 
-Date: 2026-10-29. Status: accepted; implemented and locally validated.
+Date: 2026-10-29. Status: accepted; implemented and locally validated. The "lasts indefinitely"
+interpretation of the second rate is superseded by
+[ADR 0039](0039-withdrawal-rate-basis-and-claims.md); the calculation is unchanged.
 Amends [ADR 0019](0019-retirement-path-results.md) (withdrawal rates) and
 the interest convention of the [retirement ledger](../methodology/retirement-ledger.md).
 

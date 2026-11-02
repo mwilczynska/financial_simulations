@@ -147,9 +147,12 @@ def sustainable_withdrawal_rates(values: np.ndarray, start_column: int, growth: 
     return 1 / (steps / later).sum(axis=1)
 
 
-def perpetual_withdrawal_rates(values: np.ndarray, start_column: int, growth: float, inflation: float,
+def capital_preserving_withdrawal_rates(values: np.ndarray, start_column: int, growth: float, inflation: float,
                                years: float) -> np.ndarray:
     """Largest first-year withdrawal that leaves the portfolio's real value intact at the end of the window.
+
+    This preserves starting real capital at one finite date (the planning age); it is not a probability of
+    sustaining withdrawals indefinitely, and it is a stricter criterion than the 30-year spend-down "4% rule".
 
     With the same monthly withdrawals as ``sustainable_withdrawal_rates``,
     ending wealth is ``G_T * (1 - rate * S)`` where ``S = sum_k step_k / G_k``.
@@ -227,7 +230,7 @@ def analyse_portfolios(plan: dict, market, target_dates, progress=None) -> Portf
     # Withdrawal rates need a whole retirement, not the tax ledger's horizon (which stops before Age Pension
     # age), so they use separate draws of the same sampler from the retirement date to the planning age.
     planning_end = birthday(plan["person"]["date_of_birth"], plan["assumptions"]["planning_age"]) - timedelta(days=1)
-    swr, perpetual = {}, {}
+    swr, preserving = {}, {}
     if planning_end > retire + timedelta(days=366):
         long_dates = future_observations(plan, market, retire, planning_end)
         long_rows = []
@@ -242,9 +245,9 @@ def analyse_portfolios(plan: dict, market, target_dates, progress=None) -> Portf
         swr = {title: sustainable_withdrawal_rates(series.snapshots, 0, spending_growth(plan))
                for title, series in retirement.items()}
         window = (long_dates[-1] - long_dates[0]).days / 365.25
-        perpetual = {title: perpetual_withdrawal_rates(series.snapshots, 0, spending_growth(plan),
-                                                       plan["assumptions"]["cpi_annual"], window)
-                     for title, series in retirement.items()}
+        preserving = {title: capital_preserving_withdrawal_rates(series.snapshots, 0, spending_growth(plan),
+                                                                 plan["assumptions"]["cpi_annual"], window)
+                      for title, series in retirement.items()}
     else:
         planning_end = None
 
@@ -258,14 +261,14 @@ def analyse_portfolios(plan: dict, market, target_dates, progress=None) -> Portf
         terminal = real[:, -1]
         cagr = np.power(terminal / 100, 1 / pyears) - 1
         rates = swr.get(title, np.full(count, np.nan))
-        lasting = perpetual.get(title, np.full(count, np.nan))
+        lasting = preserving.get(title, np.full(count, np.nan))
         for i in range(count):
             outcomes.append({"Portfolio": title, "Path": i, "Terminal growth of 100": float(terminal[i]),
                              "Annualised growth": float(cagr[i]), "Annualised volatility": float(series.volatility[i]),
                              "Maximum drawdown": float(series.max_drawdown[i]),
                              "Longest drawdown (years)": float(series.longest_underwater_days[i] / 365.25),
                              "Sustainable withdrawal rate": float(rates[i]),
-                             "Perpetual withdrawal rate": float(lasting[i])})
+                             "Capital-preserving withdrawal rate": float(lasting[i])})
         for column, pos in enumerate(future_marks):
             if pos not in month_ends:
                 continue  # the retirement mark is only for withdrawal rates, not a month end

@@ -232,7 +232,9 @@ positive, so the horizon binds and
 over two years with 10% growth, `rate = 12 / (12 + 13.2) = 0.476`. The rate
 spends the portfolio to exactly zero on the last day.
 
-The **rate that lasts indefinitely** (`Perpetual withdrawal rate`) instead
+The **rate that keeps real capital to the planning age** (`Capital-preserving
+withdrawal rate`, `capital_preserving_withdrawal_rates`; called the perpetual
+rate before [ADR 0039](../decisions/0039-withdrawal-rate-basis-and-claims.md)) instead
 requires the portfolio to end the window worth at least its starting value
 grown by CPI over the window's `T` years. Ending wealth is
 `G_T * (1 - rate * S)`, where `S` is the sum above. The condition gives
@@ -240,11 +242,12 @@ grown by CPI over the window's `T` years. Ending wealth is
 real value even without withdrawals. Earlier months are then automatically
 positive. In a market compounding at 5% a year, with 2.5% CPI and spending
 growth, the test checks that ending wealth equals `1.025 ** 30` of the
-start after 30 years. This keep-the-real-capital rate is the usual meaning
-of a perpetual or "safe" rate for an outside-super portfolio. Its
-5th percentile is the closest analogue of the 4% rule, which was derived
-from 30-year US retirements. Both rates are undefined with fewer than 12
-month ends.
+start after 30 years. The rate checks only the end of the finite window,
+so it is not a probability of sustaining withdrawals indefinitely. A path
+that keeps its real capital at the planning age could still fall below it
+later. The 4% rule, derived from 30-year US retirements that may spend down
+to nothing, compares with the first rate over 30 years, not with this one.
+Both rates are undefined with fewer than 12 month ends.
 
 The first `retirement_paths` of those same joint draws run through the
 [daily tax ledger](retirement-ledger.md). USD source returns are explicitly
@@ -291,7 +294,11 @@ Per path the planner reports, in today's dollars (`retirement/real.py`,
 - withdrawal rates.
 
 A **withdrawal rate** for a full financial year that starts on or after
-the retirement date is `(spending paid + tax paid) / wealth at 1 July`.
+the retirement date is `(spending paid + max(tax paid, 0) + Division 296
+− Age Pension) / wealth at 1 July`. Both parts are nominal, from the
+ledger's own dollars, so the ratio is the nominal rate whatever the start
+date and CPI
+([ADR 0039](../decisions/0039-withdrawal-rate-basis-and-claims.md)).
 Each path reports its first, median and highest rate. Financial-year rows
 also record pension payments and super lump sums. Retirement bands summarise
 total, outside, super-plus-pension and pension-account wealth at month ends.
@@ -341,8 +348,10 @@ expander at the top of the Results tab explains the conversion:
 - A balance on date `d` is divided by `(1 + CPI) ** ((d - start) / 365.25)`.
 - A flow during a financial year is divided by `(1 + CPI) ** n`, where `n` is
   the number of whole financial years since the opening year. That is the
-  step on which spending rises, so CPI-indexed spending is flat, and a
-  withdrawal rate (a year's flows over wealth on its 1 July) is unchanged.
+  step on which spending rises, so CPI-indexed spending is flat. Flows
+  deflated in yearly steps over wealth deflated by days would not keep a
+  nominal ratio for a start after 1 July, so withdrawal rates are computed
+  from nominal amounts.
 - An `Inflation` flow in the money in and out charts is the buying power
   wealth lost in the year, so each year's flows still sum to the change in
   real wealth.
@@ -363,8 +372,8 @@ Inputs:
   they stay constant in nominal dollars.
 - Fixed outside additions are indexed only when that option is ticked.
 - Rule thresholds are projected with CPI and wages.
-- Withdrawal rates rise with spending (CPI plus any real change); the perpetual rate keeps the
-  CPI-grown value.
+- Withdrawal rates rise with spending (CPI plus any real change); the capital-preserving rate keeps the
+  CPI-grown value at the planning age.
 
 **Block length.** The Assumptions tab explains the average block length in
 plain terms: average run length in trading days, the jump probability

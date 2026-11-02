@@ -436,9 +436,11 @@ def spending_rule_inputs(plan):
             spending["floor"] = percent("Largest yearly cut %", spending["floor"], "vg_floor", low=0, high=90, step=0.5)
     else:
         st.info("**A percentage of wealth each year.** On your retirement date and each 1 July after that, spending is "
-                "the starting rate times your total wealth that day. It can never run out (bounded by the minimum "
-                "below), but spending moves fully with the markets: a 30% fall cuts next year's spending by 30%. It is a "
-                "useful reference for how much variability the other rules remove.")
+                "the starting rate times your total wealth that day, so spending moves fully with the markets: a 30% fall "
+                "cuts next year's spending by 30%. It can still run short: spending is reset only each 1 July, so a fall "
+                "during the year is not followed until the next review; super may not yet be accessible to pay it; and "
+                "the minimum below can force spending above the rate. It is a useful reference for how much "
+                "variability the other rules remove.")
     if not fixed:
         a, b = st.columns(2)
         with a:
@@ -1223,15 +1225,16 @@ def withdrawal_rates_section(plan, portfolios, names):
         rows.append({"Portfolio": title,
                      f"Lasts to age {age}: cautious (5th pct)": share(part["Sustainable withdrawal rate"].quantile(0.05)),
                      f"Lasts to age {age}: median": share(part["Sustainable withdrawal rate"].median()),
-                     "Lasts indefinitely: cautious (5th pct)": share(part["Perpetual withdrawal rate"].quantile(0.05)),
-                     "Lasts indefinitely: median": share(part["Perpetual withdrawal rate"].median())})
+                     f"Keeps real capital to age {age}: cautious (5th pct)": share(part["Capital-preserving withdrawal rate"].quantile(0.05)),
+                     f"Keeps real capital to age {age}: median": share(part["Capital-preserving withdrawal rate"].median())})
     st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
     a, b = st.columns(2)
     with a:
         st.altair_chart(overlay_histogram(outcomes, "Sustainable withdrawal rate", f"Rate that lasts to age {age}", series=tuple(names)),
                         width="stretch")
     with b:
-        st.altair_chart(overlay_histogram(outcomes, "Perpetual withdrawal rate", "Rate that lasts indefinitely", series=tuple(names)),
+        st.altair_chart(overlay_histogram(outcomes, "Capital-preserving withdrawal rate", f"Rate that keeps real capital to age {age}",
+                                          series=tuple(names)),
                         width="stretch")
     with st.expander("What these withdrawal rates mean", expanded=True):
         st.markdown(f"""
@@ -1246,14 +1249,15 @@ Age Pension, so they test the portfolio alone. For each path it solves two quest
 
 1. **Lasts to age {age}.** The highest rate at which the portfolio is spent down to exactly \\$0 on the last day.
    Nothing is left over, so this is the most aggressive way to read the result.
-2. **Lasts indefinitely.** The highest rate that still leaves the portfolio worth at least what it started with in
-   real terms (grown by {cpi:.1%} CPI) after {years:.0f} years. A portfolio in that state could keep paying the same
-   real income forever, provided future returns were similar. This is the usual meaning of a "safe" or
-   "perpetual" withdrawal rate for money held outside super, and it is always lower than the first rate.
+2. **Keeps real capital to age {age}.** The highest rate that still leaves the portfolio worth at least what it
+   started with in real terms (grown by {cpi:.1%} CPI) after {years:.0f} years. It checks only that one date, so it
+   is not a probability of lasting forever: a path that ends with its real capital could still fall below it later.
+   It is always lower than the first rate.
 
 **Reading the numbers.** The *median* is what half the market paths could do. The *cautious* figure is the
-5th percentile, which 95% of paths could sustain. The cautious perpetual rate is the closest equivalent to the
-"4% rule", which was derived for 30-year US stock and bond retirements.
+5th percentile, which 95% of paths could sustain. The "4% rule" was derived for 30-year US stock and bond
+retirements that may spend down to nothing, so it compares with the first rate over 30 years, not with the
+capital-keeping rate.
 
 **What is not included.**
 - Tax. Outside super, distributions and capital gains are taxed. Pension-phase super earnings are tax free, but
@@ -1338,8 +1342,9 @@ def section_future(run):
 
 Seed {plan['market']['seed']} makes the run repeatable. With {n:,} paths the median is stable to well under a
 percentage point of annual growth; the 5th percentile rests on about {max(1, n // 20)} paths, so tails are less
-precise. These are resamples of history, not a forecast: they cannot produce a crash worse than the worst
-block in the source, and they treat every era as equally likely.
+precise. These are resamples of history, not a forecast. Every sampled day is a real historical day, so no
+single day is worse than the worst day in the source; but blocks can repeat and join bad stretches, so a path can
+contain longer or deeper losses than history did. They treat every era as equally likely.
 """)
     names = [p for p in ("Outside super", "Inside super", "Combined") if p in set(portfolios.paths["Portfolio"])]
     portfolio_detail(run, names)
@@ -1378,7 +1383,7 @@ block in the source, and they treat every era as equally likely.
                                     "Maximum drawdown": ("Maximum drawdown", "percent"),
                                     "Longest drawdown (years)": ("Longest drawdown (years)", "number"),
                                     "Withdrawal rate lasting to the planning age": ("Sustainable withdrawal rate", "percent"),
-                                    "Withdrawal rate lasting indefinitely": ("Perpetual withdrawal rate", "percent")})
+                                    "Withdrawal rate keeping real capital to the planning age": ("Capital-preserving withdrawal rate", "percent")})
         t.insert(0, "Portfolio", title)
         table.append(t)
     table = pd.concat(table)
@@ -1843,9 +1848,9 @@ full, down to each payment. The project's methodology documents give every rule 
         combined = run.portfolios.outcomes.loc[run.portfolios.outcomes["Portfolio"] == "Combined"]
         age = plan["assumptions"]["planning_age"]
         if combined["Sustainable withdrawal rate"].notna().any():
-            lasting = float(combined["Perpetual withdrawal rate"].quantile(0.05))
+            lasting = float(combined["Capital-preserving withdrawal rate"].quantile(0.05))
             to_age = float(combined["Sustainable withdrawal rate"].quantile(0.05))
-            reference = pd.DataFrame([{"Rate": lasting, "Label": f"Cautious rate that lasts indefinitely {lasting:.1%}"},
+            reference = pd.DataFrame([{"Rate": lasting, "Label": f"Cautious rate that keeps real capital to age {age} {lasting:.1%}"},
                                       {"Rate": to_age, "Label": f"Cautious rate that lasts to age {age} {to_age:.1%}"}])
             rules = alt.Chart(reference).mark_rule(strokeWidth=2).encode(
                 y="Rate:Q", strokeDash=alt.StrokeDash("Label:N", scale=alt.Scale(range=[[6, 3], [2, 2]]), legend=None),
@@ -1858,8 +1863,8 @@ full, down to each payment. The project's methodology documents give every rule 
         with st.expander("How to read the withdrawal rate", expanded=True):
             st.markdown(f"""
 **What it is.** For each financial year (1 July to 30 June) that starts after you retire, the money taken out of your
-wealth that year (spending paid plus personal tax paid, less any Age Pension received) divided by your **total** wealth on that 1 July, outside and
-inside super together. A rate of 5% means that year used 5% of what you had at its start.
+wealth that year (spending paid plus personal and Division 296 tax paid, less any Age Pension received) divided by your **total** wealth on that 1 July, outside and
+inside super together, both in the dollars of that year. A rate of 5% means that year used 5% of what you had at its start.
 
 **What the bands show.** Each path has its own rate every year. The line is the median across paths; the dark band
 the middle half; the light band 90% of paths. Upper paths are the ones where markets went badly, wealth shrank and
@@ -1869,7 +1874,7 @@ the same spending became a bigger share of it.
 - A rate that stays roughly flat means wealth is keeping pace with spending; a rate that climbs year after year
   means wealth is shrinking relative to spending, which is the warning sign.
 - Compare it with the red dotted lines, both from the combined portfolio in section 3 and both the 5th percentile
-  (95% of market paths manage it): the rate that **lasts indefinitely** (keeps the portfolio's real value) and the
+  (95% of market paths manage it): the rate that **keeps the portfolio's real value to the planning age** and the
   rate that spends it down to zero at the planning age. Staying below the lower line is the cautious choice.
 - Those lines are pre-tax, while this chart includes tax paid, so a rate here near a line leaves less margin than
   it appears.

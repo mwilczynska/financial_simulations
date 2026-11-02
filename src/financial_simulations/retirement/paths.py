@@ -45,21 +45,28 @@ def _summarise(path: int, result: LedgerResult, retire: date, cpi: float):
     monthly = {name: series.resample("ME").last().to_numpy() for name, series in totals.items()}
     shortfall_days = daily.index[daily["shortfall"] > 0]
     depleted = daily.index[(outside <= 1.0) & (daily.index.date > first)]
-    flows = daily[["spending_paid", "tax_paid", "shortfall", "pension_payments", "lump_sums", "age_pension"]].resample("YE-JUN").sum()
+    flow_columns = ["spending_paid", "tax_paid", "division_296", "shortfall", "pension_payments", "lump_sums", "age_pension"]
+    flows = daily[flow_columns].resample("YE-JUN").sum()
+    # Withdrawal rates use nominal flows over nominal wealth: today's-dollar flows are deflated in whole financial-year
+    # steps but wealth by exact days, so their ratio would not be the nominal rate (review finding 14).
+    nominal_flows = nominal[flow_columns].resample("YE-JUN").sum()
     rows = []
     for end, values in flows.iterrows():
         begin = _fy_start(end.date())
         before = daily.index[daily.index.date < begin]
         opening = float(daily["total"].iloc[0] if before.empty else daily["total"].loc[before[-1]])
+        opening_nominal = float(nominal["total"].iloc[0] if before.empty else nominal["total"].loc[before[-1]])
         retired = begin >= retire and end.date() <= last
-        # The draw on your own wealth: spending and tax, less the Age Pension that paid part of them.
-        withdrawal = max(0.0, float(values["spending_paid"] + max(values["tax_paid"], 0.0) - values["age_pension"]))
+        # The draw on your own wealth: spending and tax (personal and Division 296), less the Age Pension that paid
+        # part of them.
+        n = nominal_flows.loc[end]
+        withdrawal = max(0.0, float(n["spending_paid"] + max(n["tax_paid"], 0.0) + n["division_296"] - n["age_pension"]))
         rows.append({"Path": path, "Financial year": f"{begin.year}-{str(begin.year + 1)[2:]}", "FY ending": begin.year + 1,
                      "Full retired year": retired, "Wealth at 1 July": opening, "Spending paid": float(values["spending_paid"]),
                      "Tax paid": float(values["tax_paid"]), "Shortfall": float(values["shortfall"]),
                      "Pension payments": float(values["pension_payments"]), "Super lump sums": float(values["lump_sums"]),
-                     "Age Pension": float(values["age_pension"]),
-                     "Withdrawal rate": withdrawal / opening if retired and opening > 1 else np.nan})
+                     "Age Pension": float(values["age_pension"]), "Division 296": float(values["division_296"]),
+                     "Withdrawal rate": withdrawal / opening_nominal if retired and opening_nominal > 1 else np.nan})
     # Each year's money in and out on this path, so the app can show medians across paths.
     yearly = household_flows(daily, inflation=True)
     household = yearly.pivot_table(index="FY ending", columns="Flow", values="AUD", aggfunc="sum")

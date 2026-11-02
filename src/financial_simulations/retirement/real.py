@@ -5,8 +5,10 @@ is divided by ``(1 + cpi) ** ((d - start).days / 365.25)``. Money that flows
 during a financial year (salary, spending, tax, returns) is divided by
 ``(1 + cpi) ** n``, where ``n`` is the number of whole financial years since
 the opening year. That is the step on which spending is indexed each 1 July,
-so spending that keeps its buying power shows the same amount every year, and a
-withdrawal rate (a year's flows over wealth on its 1 July) is unchanged.
+so spending that keeps its buying power shows the same amount every year. A
+withdrawal rate is computed from nominal amounts (``paths.py``): stepped flows
+over day-deflated wealth would not keep the nominal ratio for a start after
+1 July.
 
 Prices keep rising inside a year while flows are stepped, so real wealth
 changes by more than the sum of real flows. ``household_flows`` reports that

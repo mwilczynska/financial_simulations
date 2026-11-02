@@ -296,20 +296,20 @@ def test_fixed_outside_contribution_maps_to_paydays(processed_fixture):
         normalize_plan(plan)
 
 
-def test_perpetual_withdrawal_rate_keeps_real_capital():
-    from financial_simulations.retirement.analysis import perpetual_withdrawal_rates
+def test_capital_preserving_withdrawal_rate_keeps_real_capital():
+    from financial_simulations.retirement.analysis import capital_preserving_withdrawal_rates
     import numpy as np
 
     # 5% a year compounded monthly for 30 years with 2.5% inflation-indexed withdrawals and 2.5% inflation.
     months = 360
     values = 100 * 1.05 ** (np.arange(months + 1) / 12)
-    rate = perpetual_withdrawal_rates(values[None, :], 0, 0.025, 0.025, 30)[0]
+    rate = capital_preserving_withdrawal_rates(values[None, :], 0, 0.025, 0.025, 30)[0]
     steps = 1.025 ** (np.arange(months) // 12) / 12
     growth = values[1:] / 100
     ending = growth[-1] * (1 - rate * (steps / growth).sum())
     assert ending == pytest.approx(1.025 ** 30)
     flat = np.full((1, months + 1), 100.0)
-    assert perpetual_withdrawal_rates(flat, 0, 0.0, 0.025, 30)[0] == 0
+    assert capital_preserving_withdrawal_rates(flat, 0, 0.0, 0.025, 30)[0] == 0
 
 
 def test_run_keeps_every_paths_monthly_wealth(processed_fixture):
