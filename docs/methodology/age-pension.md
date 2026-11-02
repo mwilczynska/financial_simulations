@@ -17,8 +17,8 @@ From Age Pension age (67) two rules change a retiree's cash flow:
 
 Before these were modelled, the planner stopped before the income year in
 which the person turned 67. That left most of an early retiree's retirement
-untested by the tax ledger. With both rules in place, the ledger runs to the
-planning age.
+untested by the tax ledger. With both rules in place, the ledger can run to
+an advanced age, set by *Years to simulate*.
 
 ## Scope and assumptions
 
@@ -158,9 +158,11 @@ Each financial year holds one value. The law indexes rates on 20 March and
   rate, which is the draw on your own wealth: spending plus tax, less Age
   Pension.
 - **Age Pension section in the app:** the share of paths receiving any, the
-  median starting age, a typical year's amount and a band chart.
-- **Risk to the planning age.** When the horizon reaches the planning age,
-  the ledger's own risk of ruin replaces the portfolio-only estimate.
+  median starting age, a typical year's amount, the median total among the
+  paths that receive any (ADR 0040) and a band chart.
+- **Risk beyond the horizon.** The risk of ruin is the ledger's own, over
+  the years simulated. When the horizon stops before age 90 the app warns
+  that money can still run out later (ADR 0041).
 
 ## Validation
 

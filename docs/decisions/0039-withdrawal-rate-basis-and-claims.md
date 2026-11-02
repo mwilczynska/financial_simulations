@@ -3,7 +3,9 @@
 Date: 2026-11-02.
 
 Status: accepted; implemented and tested. Supersedes the "lasts indefinitely" interpretation in
-[ADR 0021](0021-cash-interest-and-withdrawal-rates.md), whose calculation is unchanged.
+[ADR 0021](0021-cash-interest-and-withdrawal-rates.md), whose calculation is unchanged. The portfolio-only
+withdrawal rates were removed on 2026-11-02 by
+[ADR 0041](0041-remove-portfolio-withdrawal-rates-and-plots.md); the nominal ledger withdrawal rate stands.
 
 ## Context
 

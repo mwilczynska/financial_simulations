@@ -15,7 +15,7 @@ import streamlit as st
 
 from financial_simulations.data.plan_markets import CUSTOM_TICKERS, TICKERS, load_plan_markets
 from financial_simulations.retirement.plan import (PlanError, default_plan, load_plan_text, normalize_plan, plan_to_json,
-                                                   plan_to_toml, sacrifice_per_year, slug, spending_growth)
+                                                   plan_to_toml, sacrifice_per_year, slug)
 from financial_simulations.retirement.flows import account_flows, household_flows, milestones
 from financial_simulations.retirement.paths import warm_pool
 from financial_simulations.retirement.real import real_daily, real_events, year_deflator
@@ -540,8 +540,9 @@ def inputs_assumptions(plan):
                                                    date(2040, 6, 30), key=key("start"), format="YYYY-MM-DD").isoformat()
     with b:
         plan["plan"]["years"] = int(st.number_input("Years to simulate", 1, 60, int(plan["plan"]["years"]), 1, key=key("years"),
-                                                    help="Runs can go past Age Pension age; set this to reach your planning "
-                                                         "age to see the whole retirement in the tax ledger."))
+                                                    help="Runs can go past Age Pension age. Results only cover the years "
+                                                         "simulated, so run to an advanced age (90 or more) to see the "
+                                                         "whole retirement in the tax ledger."))
     year_to_date_inputs(plan)
     st.subheader("Economic assumptions")
     a, b = st.columns(2)
@@ -552,9 +553,6 @@ def inputs_assumptions(plan):
         plan["assumptions"]["wage_growth_annual"] = percent("Wage growth %/yr", plan["assumptions"]["wage_growth_annual"], "wages",
                                                             low=-10, high=20, help="Raises salary each year (if ticked on the You tab) and indexes "
                                                                                      "contribution caps and MLS thresholds.")
-    plan["assumptions"]["planning_age"] = int(st.number_input(
-        "Plan retirement income to age", 60, 110, int(plan["assumptions"]["planning_age"]), 1, key=key("planning_age"),
-        help="Sustainable withdrawal rates test whether the portfolios last from retirement to this age."))
     st.caption("Tax and super rules are sourced for 2026-27; later years apply enacted changes and project indexed "
                "thresholds with these assumptions (see docs/rules/au-projection.md).")
     st.subheader("Market simulation")
@@ -642,6 +640,18 @@ def compact(value):
 
 def share(value):
     return "–" if value is None or not np.isfinite(value) else f"{value:.1%}"
+
+
+def affected(values):
+    """A measure that is zero on most paths: the share of paths above zero and the median among those paths.
+
+    The median over every path is often exactly $0 and hides the paths where it matters (ADR 0040).
+    """
+    values = pd.Series(values, dtype=float).dropna()
+    hit = values.loc[values > 0]
+    if values.empty:
+        return "–"
+    return "None" if hit.empty else f"{share(len(hit) / len(values))} · {compact(float(hit.median()))}"
 
 
 def fit(frame):
@@ -817,6 +827,7 @@ def quantile_bands(frame, by, field):
 
 SHOWN_PATHS = 300  # funded paths drawn; every path that ran out is drawn as well
 GREY, RED, MEDIAN = "#3d3d3d", "#c0392b", "#126a63"
+SHORT_HORIZON_AGE = 90  # ledger horizons ending before this age get a warning that ruin can come later
 
 
 def shown_paths(paths):
@@ -1186,98 +1197,13 @@ def section_history(run):
     st.caption("$100 invested at the start of the shared history, valued at each month end. On a log scale equal "
                "vertical distances are equal percentage changes, so a straight line means steady compound growth "
                "and early decades stay visible. Reconstructed pre-fund history is a model, not observed fund performance.")
-    drawdown = zoomable(alt.Chart(history).mark_line(strokeWidth=1.3).encode(
-        x=alt.X("Date:T", title=None, axis=year_axis(history)),
-        y=alt.Y("Drawdown:Q", title="Below previous peak", axis=alt.Axis(format=".0%")),
-        color=alt.Color("Portfolio:N", scale=scale_for(names), legend=alt.Legend(orient="bottom", title=None)),
-        tooltip=[alt.Tooltip("Date:T", format="%b %Y"), "Portfolio:N", alt.Tooltip("Drawdown:Q", format=".1%")]
-    ).properties(height=380))
-    st.altair_chart(drawdown, width="stretch")
-    st.caption("How far each portfolio sat below its previous high at each month end (0% = at a new high). Deep and "
-               "long dips are what a retiree has to live through while still withdrawing.")
-    yearly = run.portfolios.historical_annual
-    if not yearly.empty:
-        bars = alt.Chart(yearly).mark_bar().encode(
-            x=alt.X("Year:O", title=None, axis=alt.Axis(labelAngle=-90, values=[y for y in yearly["Year"].unique() if y % 5 == 0])),
-            xOffset="Portfolio:N", y=alt.Y("Return:Q", title="Calendar-year return", axis=alt.Axis(format=".0%")),
-            color=alt.Color("Portfolio:N", scale=scale_for(names), legend=alt.Legend(orient="bottom", title=None)),
-            tooltip=["Year:O", "Portfolio:N", alt.Tooltip("Return:Q", format=".1%")]).properties(height=430)
-        st.altair_chart(bars, width="stretch")
-        st.caption("Return in each full calendar year. The spread between good and bad years is the sequence risk a "
-                   "retirement plan has to absorb.")
-
-
-def withdrawal_rates_section(plan, portfolios, names):
-    """Two retirement withdrawal rates per portfolio path, with an explanation of what each answers."""
-    outcomes = portfolios.outcomes
-    st.subheader("How much could each portfolio pay out each year?")
-    end = portfolios.planning_end
-    if end is None:
-        st.info("Retirement starts too close to the planning age for withdrawal rates; raise the planning age on the "
-                "Assumptions tab.")
-        return
-    years = (end - portfolios.retirement_start).days / 365.25
-    age = plan["assumptions"]["planning_age"]
-    growth, cpi = spending_growth(plan), plan["assumptions"]["cpi_annual"]
-    rows = []
-    for title in names:
-        part = outcomes.loc[outcomes["Portfolio"] == title]
-        rows.append({"Portfolio": title,
-                     f"Lasts to age {age}: cautious (5th pct)": share(part["Sustainable withdrawal rate"].quantile(0.05)),
-                     f"Lasts to age {age}: median": share(part["Sustainable withdrawal rate"].median()),
-                     f"Keeps real capital to age {age}: cautious (5th pct)": share(part["Capital-preserving withdrawal rate"].quantile(0.05)),
-                     f"Keeps real capital to age {age}: median": share(part["Capital-preserving withdrawal rate"].median())})
-    st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
-    a, b = st.columns(2)
-    with a:
-        st.altair_chart(overlay_histogram(outcomes, "Sustainable withdrawal rate", f"Rate that lasts to age {age}", series=tuple(names)),
-                        width="stretch")
-    with b:
-        st.altair_chart(overlay_histogram(outcomes, "Capital-preserving withdrawal rate", f"Rate that keeps real capital to age {age}",
-                                          series=tuple(names)),
-                        width="stretch")
-    with st.expander("What these withdrawal rates mean", expanded=True):
-        st.markdown(f"""
-A **withdrawal rate** is the first year's withdrawal as a percentage of the portfolio on the day you retire. Each
-later year withdraws the same amount in today's dollars (it rises with inflation{"" if not plan['spending']['real_change'] else f", plus your {plan['spending']['real_change']:+.1%} real change"}), so it
-keeps its buying power. Example: a 4% rate on \\$1,000,000 is \\$40,000 a year in today's dollars. Withdrawals are
-taken monthly.
-
-The planner tests every simulated market path from your retirement date ({portfolios.retirement_start}) for
-{years:.0f} years, to age {age}. These paths are separate from the tax-ledger paths: they are pre-tax and have no
-Age Pension, so they test the portfolio alone. For each path it solves two questions exactly:
-
-1. **Lasts to age {age}.** The highest rate at which the portfolio is spent down to exactly \\$0 on the last day.
-   Nothing is left over, so this is the most aggressive way to read the result.
-2. **Keeps real capital to age {age}.** The highest rate that still leaves the portfolio worth at least what it
-   started with in real terms (grown by {cpi:.1%} CPI) after {years:.0f} years. It checks only that one date, so it
-   is not a probability of lasting forever: a path that ends with its real capital could still fall below it later.
-   It is always lower than the first rate.
-
-**Reading the numbers.** The *median* is what half the market paths could do. The *cautious* figure is the
-5th percentile, which 95% of paths could sustain. The "4% rule" was derived for 30-year US stock and bond
-retirements that may spend down to nothing, so it compares with the first rate over 30 years, not with the
-capital-keeping rate.
-
-**What is not included.**
-- Tax. Outside super, distributions and capital gains are taxed. Pension-phase super earnings are tax free, but
-  the transfer balance cap limits how much can move into the pension.
-- The Age Pension, fees beyond those already in the return series, and any change in spending as you age.
-- Super access rules. A rate for inside super assumes you could draw on it from retirement.
-
-**Why it can look high.** These portfolios use reconstructed leveraged histories since 1970, which compounded
-strongly. Resampling cannot produce a worse sequence than the worst stretch in that history, and a rate is only
-as reliable as the assumption that the future resembles that history.
-""")
 
 
 # Widgets inside a fragment rerun only that fragment, so choosing an option does not redraw the whole results page
 # (which jumped the browser back to the top while the page above re-rendered).
 @st.fragment
 def portfolio_detail(run, names):
-    """The selected portfolio's fan, drawdowns and calendar-year returns."""
-    import altair as alt
-
+    """The selected portfolio's fan of growth paths."""
     plan, portfolios = run.plan, run.portfolios
     marks = milestones(plan, portfolios.dates[0], portfolios.dates[-1])
     selected = st.radio("Portfolio", names, horizontal=True, key=key("portfolio_result"))
@@ -1288,21 +1214,6 @@ def portfolio_detail(run, names):
     st.caption("Dark band: middle half of paths (25th–75th percentile). Light band: 90% of paths (5th–95th). Line: "
                "median at each month. Dashed lines mark retirement, super access and the pension start. Hover for values; "
                "drag to pan, Shift+scroll to zoom, double-click to reset.")
-    dd = fan.rename(columns={"Drawdown P05": "Bad (5th pct)", "Drawdown P50": "Typical (median)"})
-    dd = dd.melt("Date", value_vars=["Bad (5th pct)", "Typical (median)"], var_name="Path", value_name="Drawdown")
-    st.altair_chart(zoomable(alt.Chart(dd).mark_line().encode(
-        x=alt.X("Date:T", title=None, axis=year_axis(dd)), y=alt.Y("Drawdown:Q", title="Below previous peak", axis=alt.Axis(format=".0%")),
-        strokeDash=alt.StrokeDash("Path:N", legend=alt.Legend(orient="bottom", title=None)), color=alt.value(PALETTE[selected]),
-        tooltip=[alt.Tooltip("Date:T", format="%b %Y"), "Path:N", alt.Tooltip("Drawdown:Q", format=".1%")]
-    ).properties(height=360)), width="stretch")
-    st.caption(f"{selected}: how far below its running peak the portfolio sits at each month end, for the median "
-               "path and for the worst 5% of paths at that date.")
-    if not portfolios.annual_returns.empty:
-        annual = portfolios.annual_returns.loc[portfolios.annual_returns["Portfolio"] == selected]
-        st.altair_chart(band_chart(quantile_bands(annual, "Year", "Return"), "Calendar-year return after inflation", percent=True,
-                                   color=PALETTE[selected], x="Year:Q"), width="stretch")
-        st.caption(f"{selected}: spread of each full calendar year's return across paths. Partial first and last years "
-                   "are left out.")
 
 
 def section_future(run):
@@ -1373,7 +1284,6 @@ contain longer or deeper losses than history did. They treat every era as equall
         st.caption("Compound growth per year over the whole horizon on each path, after inflation.")
         st.altair_chart(overlay_histogram(outcomes, "Maximum drawdown", "Maximum drawdown", series=tuple(names)), width="stretch")
         st.caption("Deepest peak-to-trough fall on each path. −50% means the portfolio halved at some point.")
-    withdrawal_rates_section(plan, portfolios, names)
     table = []
     for title in names:
         part = outcomes.loc[outcomes["Portfolio"] == title]
@@ -1381,9 +1291,7 @@ contain longer or deeper losses than history did. They treat every era as equall
                                     "Annualised growth after inflation": ("Annualised growth", "percent"),
                                     "Annualised volatility": ("Annualised volatility", "percent"),
                                     "Maximum drawdown": ("Maximum drawdown", "percent"),
-                                    "Longest drawdown (years)": ("Longest drawdown (years)", "number"),
-                                    "Withdrawal rate lasting to the planning age": ("Sustainable withdrawal rate", "percent"),
-                                    "Withdrawal rate keeping real capital to the planning age": ("Capital-preserving withdrawal rate", "percent")})
+                                    "Longest drawdown (years)": ("Longest drawdown (years)", "number")})
         t.insert(0, "Portfolio", title)
         table.append(t)
     table = pd.concat(table)
@@ -1447,8 +1355,12 @@ def typical_flows_section(annual, marks, calculated, start_wealth):
                      f"Division 296, unpaid tax and an estimate for an unassessed final period). Before that tax the "
                      f"median is {compact(median('Ending wealth'))}.")
     a, b, c, d = st.columns(4)
-    a.metric("Median Age Pension received", compact(median("Age Pension received")))
-    b.metric("Median spending shortfall", compact(median("Spending shortfall")))
+    a.metric("Age Pension: paths · median", affected(calculated["Age Pension received"]),
+             help="Share of paths paid any Age Pension, then the median total received among those paths, today's "
+                  "dollars. Most paths may receive none, so a median over every path would show $0.")
+    b.metric("Shortfall: paths · median", affected(calculated["Spending shortfall"]),
+             help="Share of paths with any unpaid spending, then the median total shortfall among those paths, today's "
+                  "dollars.")
     c.metric("Median tax (personal, fund, Division 296)",
              compact(float((calculated["Personal tax assessed"] + calculated["Fund tax"]
                             + calculated["Division 296 tax"]).median())),
@@ -1512,7 +1424,7 @@ def typical_flows_section(annual, marks, calculated, start_wealth):
 
 
 def ruin_statistics(run, calculated, marks):
-    """Risk of ruin and related measures for the tax-ledger paths, plus a to-95 estimate from the portfolio draws."""
+    """Risk of ruin and related measures for the tax-ledger paths, with a warning when the horizon stops early."""
     plan = run.plan
     end = run.result.daily.index[-1].date()
     total = len(calculated)
@@ -1537,22 +1449,10 @@ def ruin_statistics(run, calculated, marks):
     d.metric("Outside money ever ran out", share(outside_gone),
              help="Share of paths where cash and outside investments reached zero at some point (super may still "
                   "have been available).")
-    combined = run.portfolios.outcomes.loc[run.portfolios.outcomes["Portfolio"] == "Combined", "Sustainable withdrawal rate"]
-    rate = calculated["First retired-year withdrawal rate"].median()
-    age = plan["assumptions"]["planning_age"]
-    if age_on(born, end) >= age - 1:
-        st.caption(f"The tax ledger runs to {end} (age {age_on(born, end)}), so the risk of ruin above covers your "
-                   f"retirement to your planning age of {age}, with tax and the Age Pension.")
-    elif combined.notna().any() and np.isfinite(rate):
-        estimate = float((combined < rate).mean())
-        st.caption(f"**Estimated chance of running out by age {age}: {estimate:.0%}.** Your median first retired-year "
-                   f"withdrawal is {rate:.1%} of wealth; in {estimate:.0%} of the combined portfolio's market paths from "
-                   f"retirement to {age}, that rate (rising with inflation) would run the portfolio to zero. This is "
-                   "a pre-tax, portfolio-only estimate that ignores the Age Pension and assumes fixed spending; the figures "
-                   f"above come from the full tax ledger but stop at {end}. Set *Years to simulate* to reach age {age} to "
-                   "replace this estimate with the ledger's own result."
-                   + (" Your spending rule cuts spending when markets fall, so this estimate overstates your risk."
-                      if plan["spending"]["rule"] != "fixed" else ""))
+    if age_on(born, end) < SHORT_HORIZON_AGE:
+        st.warning(f"The tax ledger stops on {end}, at age {age_on(born, end)}. The risk of ruin above covers only those "
+                   "years: money can still run out later. Raise *Years to simulate* on the Assumptions tab to run to "
+                   f"age {SHORT_HORIZON_AGE} or beyond.")
 
 
 def ending_statistics(run, calculated):
@@ -1662,8 +1562,10 @@ def age_pension_section(plan, annual, calculated, marks):
     c.metric("Typical year's Age Pension", dollars(float(paid_years.median())) if len(paid_years) else "–",
              help="Median Age Pension in the years it is paid, today's dollars. The full single rate is about "
                   f"{dollars(26 * 1237.70)} a year now.")
-    d.metric("Total received (median path)", dollars(float(calculated["Age Pension received"].median())),
-             help="Each path's Age Pension over the horizon, in today's dollars; the median across paths.")
+    d.metric("Total received (median, paths receiving it)",
+             dollars(float(calculated.loc[received, "Age Pension received"].median())) if received.any() else "–",
+             help="Each path's Age Pension over the horizon, in today's dollars; the median among the paths that "
+                  "receive any. Paths that receive none are counted in the share on the left.")
     if len(years):
         st.altair_chart(band_chart(quantile_bands(years, "FY ending", "Age Pension"), "Age Pension per year, today's dollars",
                                    color="#d08c2f", x="FY ending:Q", marks=marks), width="stretch")
@@ -1782,10 +1684,10 @@ full, down to each payment. The project's methodology documents give every rule 
              help="Spending plus tax paid in the first full retired financial year, over wealth at its 1 July.")
     b.metric("Median highest withdrawal rate", share(calculated["Highest withdrawal rate"].median()),
              help="Each path's highest financial-year withdrawal rate while retired.")
-    c.metric("Median total tax", compact(calculated["Personal tax assessed"].median() + calculated["Fund tax"].median()
-                                         + calculated["Division 296 tax"].median()),
-             help="Personal tax assessed, super fund tax and Division 296 tax over the horizon, each year in today's "
-                  "dollars.")
+    c.metric("Median total tax", compact(float((calculated["Personal tax assessed"] + calculated["Fund tax"]
+                                                + calculated["Division 296 tax"]).median())),
+             help="Each path's personal tax assessed, super fund tax and Division 296 tax over the horizon, each year in "
+                  "today's dollars; the median of those path totals.")
     if (calculated["Division 296 tax"] > 0).any():
         d.metric("Paths paying Division 296", share(float((calculated["Division 296 tax"] > 0).mean())),
                  help="Share of paths whose total super balance passed the large balance threshold (3 million "
@@ -1845,20 +1747,6 @@ full, down to each payment. The project's methodology documents give every rule 
     else:
         rate_chart = band_chart(quantile_bands(retired, "FY ending", "Withdrawal rate"), "Withdrawal rate", percent=True,
                                 color="#b76a42", x="FY ending:Q", marks=marks, height=600)
-        combined = run.portfolios.outcomes.loc[run.portfolios.outcomes["Portfolio"] == "Combined"]
-        age = plan["assumptions"]["planning_age"]
-        if combined["Sustainable withdrawal rate"].notna().any():
-            lasting = float(combined["Capital-preserving withdrawal rate"].quantile(0.05))
-            to_age = float(combined["Sustainable withdrawal rate"].quantile(0.05))
-            reference = pd.DataFrame([{"Rate": lasting, "Label": f"Cautious rate that keeps real capital to age {age} {lasting:.1%}"},
-                                      {"Rate": to_age, "Label": f"Cautious rate that lasts to age {age} {to_age:.1%}"}])
-            rules = alt.Chart(reference).mark_rule(strokeWidth=2).encode(
-                y="Rate:Q", strokeDash=alt.StrokeDash("Label:N", scale=alt.Scale(range=[[6, 3], [2, 2]]), legend=None),
-                color=alt.Color("Label:N", scale=alt.Scale(range=["#8c2f2f", "#c2577a"]),
-                                legend=alt.Legend(orient="bottom", title="Pre-tax reference lines", direction="vertical",
-                                                  labelLimit=360, symbolType="stroke", symbolStrokeWidth=3)),
-                tooltip=["Label:N", alt.Tooltip("Rate:Q", format=".1%")])
-            rate_chart = alt.layer(rate_chart, rules)
         st.altair_chart(rate_chart, width="stretch")
         with st.expander("How to read the withdrawal rate", expanded=True):
             st.markdown(f"""
@@ -1873,11 +1761,8 @@ the same spending became a bigger share of it.
 **How to use it.**
 - A rate that stays roughly flat means wealth is keeping pace with spending; a rate that climbs year after year
   means wealth is shrinking relative to spending, which is the warning sign.
-- Compare it with the red dotted lines, both from the combined portfolio in section 3 and both the 5th percentile
-  (95% of market paths manage it): the rate that **keeps the portfolio's real value to the planning age** and the
-  rate that spends it down to zero at the planning age. Staying below the lower line is the cautious choice.
-- Those lines are pre-tax, while this chart includes tax paid, so a rate here near a line leaves less margin than
-  it appears.
+- Watch the upper band most: those are the paths where markets went badly, and a rate there that keeps climbing
+  is the one that runs out of money.
 
 **Limits.** Tax paid includes tax on investment income and capital gains; super that is not yet accessible counts in
 total wealth; spending rises with inflation{"" if not plan['spending']['real_change'] else f" and {plan['spending']['real_change']:+.1%} a year in real terms"}.
@@ -1968,41 +1853,46 @@ def ordinal(value):
     return f"{n}{'th' if 10 <= n % 100 <= 20 else {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')}"
 
 
-def averaged_paths(run, members, label):
-    """A group of paths averaged month by month (balances) and year by year (flows), from the stored summaries."""
+def group_paths(run, members, label):
+    """A group of paths summarised by medians (tiles, balances, table) and by averages for the stacked flows, which
+    must add up (ADR 0040)."""
     import altair as alt
 
     plan, paths = run.plan, run.retirement_paths
     group = paths.loc[paths["Path"].isin(members)]
     st.subheader(f"{label} ({len(members)} path{'s' if len(members) != 1 else ''})")
     if len(members) < 5:
-        st.caption(f"Only {len(members)} path{'s' if len(members) != 1 else ''} in this group, so its average rests on very "
+        st.caption(f"Only {len(members)} path{'s' if len(members) != 1 else ''} in this group, so its figures rest on very "
                    "few market sequences. Raise *Daily retirement-ledger paths* on the Assumptions tab (500 gives 5 paths "
                    "in the worst 1%) for a steadier picture.")
     a, b, c, d = st.columns(4)
     a.metric("Wealth at start", compact(float(run.result.daily["total"].iloc[0])))
-    b.metric("Wealth at retirement (average)", compact(float(group["Wealth at retirement"].mean())))
-    c.metric("Wealth when super becomes accessible (average)", compact(float(group["Wealth when super accessible"].mean()))
+    b.metric("Wealth at retirement (median)", compact(float(group["Wealth at retirement"].median())))
+    c.metric("Wealth when super becomes accessible (median)", compact(float(group["Wealth when super accessible"].median()))
              if "Wealth when super accessible" in group and group["Wealth when super accessible"].notna().any() else "–")
-    d.metric("Ending wealth (average)", compact(float(group["Ending wealth"].mean())))
+    d.metric("Ending wealth (median)", compact(float(group["Ending wealth"].median())))
     a, b, c, d = st.columns(4)
     a.metric("Paths in the group that ran out", share(float((group["Status"] == "depleted").mean())),
              help="Share of the group's paths with any unpaid spending or tax.")
-    b.metric("Spending shortfall (average)", compact(float(group["Spending shortfall"].mean())))
-    c.metric("Age Pension received (average)", compact(float(group["Age Pension received"].mean()))
-             if "Age Pension received" in group else "–")
-    d.metric("Withdrawal rate (average of path medians)", share(float(group["Median withdrawal rate"].mean())))
+    b.metric("Shortfall: paths · median", affected(group["Spending shortfall"]),
+             help="Share of the group's paths with any unpaid spending, then the median total shortfall among them.")
+    c.metric("Age Pension: paths · median", affected(group["Age Pension received"])
+             if "Age Pension received" in group else "–",
+             help="Share of the group's paths paid any Age Pension, then the median total received among them.")
+    d.metric("Withdrawal rate (median of path medians)", share(float(group["Median withdrawal rate"].median())))
     series = run.path_series.loc[run.path_series["Path"].isin(members)] if run.path_series is not None else None
     marks = milestones(plan, run.result.daily.index[0].date(), run.result.daily.index[-1].date())
     if series is not None and not series.empty:
-        mean = series.groupby("Date")[["Outside super", "Super and pension", "Pension account"]].mean()
-        frame = pd.DataFrame({"cash": 0.0, "outside_investments": mean["Outside super"],
-                              "accumulation": mean["Super and pension"] - mean["Pension account"],
-                              "pension": mean["Pension account"]}, index=pd.DatetimeIndex(mean.index, name="Date"))
+        series = series.assign(Accumulation=series["Super and pension"] - series["Pension account"])
+        middle = series.groupby("Date")[["Outside super", "Accumulation", "Pension account"]].median()
+        frame = pd.DataFrame({"cash": 0.0, "outside_investments": middle["Outside super"],
+                              "accumulation": middle["Accumulation"], "pension": middle["Pension account"]},
+                             index=pd.DatetimeIndex(middle.index, name="Date"))
         st.altair_chart(with_milestones(balances_chart(frame), marks), width="stretch")
-        st.caption("Average month-end balances of the group's paths by account, today's dollars (outside super combines "
-                   "cash and investments). Averages smooth timing: paths that ran out did so in different years, so "
-                   "the average falls gradually where each path fell sharply.")
+        st.caption("Median month-end balance of each account across the group's paths, today's dollars (outside super "
+                   "combines cash and investments). Each account's median is taken on its own, so the stacked total "
+                   "need not equal any one path's wealth. Medians are used because one extreme path can pull an "
+                   "average a long way, especially in the open-ended best and worst groups.")
     annual = run.retirement_annual.loc[run.retirement_annual["Path"].isin(members)]
     flows = [c for c in annual.columns if c.startswith("Flow: ")]
     if flows:
@@ -2030,26 +1920,32 @@ def averaged_paths(run, members, label):
         layers = [bars, zero, line] + ([added] if added is not None else [])
         st.subheader("Money in and out, averaged across the group")
         st.altair_chart(with_milestones(alt.layer(*layers).properties(height=600), marks, "Position:Q"), width="stretch")
-        st.caption("Each bar is the average of that flow across the group's paths in that year, so the bars add up to the "
-                   "average net change in wealth (black line). The dashed teal line is the average added to outside "
-                   "investments from pay.")
+        st.caption("Each bar is the **average** of that flow across the group's paths in that year, unlike the medians "
+                   "elsewhere in this group: averages add up, so the bars sum to the average net change in wealth "
+                   "(black line). The dashed teal line is the average added to outside investments from pay.")
         born = date.fromisoformat(plan["person"]["date_of_birth"])
-        table = annual.groupby("FY ending")[[c for c in ("Wealth at 1 July", "Spending paid", "Shortfall", "Tax paid",
-                                                          "Age Pension", "Pension payments", "Withdrawal rate")
-                                             if c in annual]].mean().reset_index()
+        table = annual.groupby("FY ending")[[c for c in ("Wealth at 1 July", "Spending paid", "Tax paid", "Age Pension",
+                                                          "Pension payments", "Withdrawal rate")
+                                             if c in annual]].median().reset_index()
+        if "Shortfall" in annual:  # usually zero, so a median would hide it: show how many paths fell short instead
+            short = annual.groupby("FY ending")["Shortfall"].agg(lambda x: 100 * float((x > 0).mean()))
+            table.insert(3, "Paths with a shortfall", table["FY ending"].map(short).to_numpy())
         table.insert(0, "Year", table["FY ending"].map(period))
         table.insert(1, "Age at 30 June", [age_on(born, date(int(y), 6, 30)) for y in table["FY ending"]])
         if "Withdrawal rate" in table:
             table["Withdrawal rate"] *= 100
-        st.subheader("Year by year, averaged")
+        st.subheader("Year by year, medians across the group")
         st.dataframe(table.drop(columns="FY ending"), width="stretch", hide_index=True, height=fit(table),
                      column_config={"Year": st.column_config.TextColumn("Year (1 July – 30 June)", pinned=True),
                                     "Age at 30 June": st.column_config.NumberColumn(format="%d"),
                                     "Withdrawal rate": percent_column("Withdrawal rate"),
+                                    "Paths with a shortfall": percent_column("Paths with a shortfall"),
                                     **{c: money_column(c) for c in table.columns
-                                       if c not in ("Year", "Age at 30 June", "FY ending", "Withdrawal rate")}})
-        st.caption("Averages across the group's paths, today's dollars. Each path's daily ledger and event log are "
-                   "available by picking it on its own.")
+                                       if c not in ("Year", "Age at 30 June", "FY ending", "Withdrawal rate",
+                                                    "Paths with a shortfall")}})
+        st.caption("Medians across the group's paths for each year, today's dollars, each column taken on its own. "
+                   "*Paths with a shortfall* is the share of the group's paths that could not pay all spending that "
+                   "year. Each path's daily ledger and event log are available by picking it on its own.")
 
 
 @st.fragment
@@ -2063,10 +1959,10 @@ def section_ledger(run):
                 "see each salary payment, sale, tax bill and pension payment that produced its result.")
     ranks = ending_percentiles(calculated)
     choices = {f"Median ending wealth · path {run.representative_path}": run.representative_path}
-    headings = {}  # averaged choices: their members and view heading
+    headings = {}  # group choices: their members and view heading
     everyone = calculated["Path"].astype(int).tolist()
-    for label, heading, members in [("Average of all paths", "Average of all paths", everyone)] + [
-            (f"Average of the {name.lower()}", f"Average of the {name.lower()} of paths", group_members(calculated, low, high))
+    for label, heading, members in [("Group: all paths", "All paths", everyone)] + [
+            (f"Group: the {name.lower()}", f"The {name.lower()} of paths", group_members(calculated, low, high))
             for name, low, high in PATH_GROUPS]:
         choice = f"{label} · {len(members)} path{'s' if len(members) != 1 else ''}"
         choices[choice], headings[choice] = members, heading
@@ -2075,13 +1971,13 @@ def section_ledger(run):
     picked = st.selectbox("Path to inspect", list(choices), key=key("ledger_path"))
     st.caption(f"The default is path {run.representative_path}: of the calculated paths, its ending wealth is closest "
                "to the median. The number is simply its position in the draw sequence. A median *ending* does not "
-               "make every year median; the path may have had a bad start and a strong finish. The **averages** "
-               "combine paths month by month and year by year: the average of all paths uses every calculated path, "
-               "and the other groups are ranked by ending wealth, so the worst 5% "
+               "make every year median; the path may have had a bad start and a strong finish. The **groups** "
+               "summarise several paths month by month and year by year, mostly by medians: *all paths* uses every "
+               "calculated path, and the other groups are ranked by ending wealth, so the worst 5% "
                "is what the bad outcomes typically look like, not one unlucky path. Single paths follow, from the "
                "worst to the best, tagged with their ending-wealth percentile.")
     if isinstance(choices[picked], list):
-        averaged_paths(run, choices[picked], headings[picked])
+        group_paths(run, choices[picked], headings[picked])
         return
     path = choices[picked]
     with st.spinner(f"Running the daily ledger for path {path}..."):

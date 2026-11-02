@@ -111,10 +111,11 @@ def run_plan(plan: dict, output_root: str | Path | None = DEFAULT_ROOT, *, marke
         write_ledger_report(result, folder, plan["plan"]["name"], manifest)
         for name, frame in (("asset_summary", market.asset_summary), ("portfolio_summary", portfolios.summary),
                             ("portfolio_history", portfolios.historical), ("portfolio_bands", portfolios.paths),
-                            ("portfolio_outcomes", portfolios.outcomes), ("portfolio_annual", portfolios.annual_returns),
+                            ("portfolio_outcomes", portfolios.outcomes),
                             ("retirement_paths", outcome_frame), ("retirement_bands", account_bands),
                             ("retirement_annual", retirement_annual)):
             frame.to_csv(folder / f"{name}.csv", index=False, lineterminator="\n")
+        (folder / "portfolio_annual.csv").unlink(missing_ok=True)  # written by earlier versions; no longer calculated
         write_plan_plots(folder, plan, market, portfolios, outcome_frame, retirement_bands, result)
         (folder / "manifest.json").write_text(json.dumps(manifest, indent=2, default=str) + "\n", encoding="utf-8", newline="\n")
     return PlanRun(plan, result, notes, folder, rules, market, portfolios, outcome_frame, retirement_bands, representative,

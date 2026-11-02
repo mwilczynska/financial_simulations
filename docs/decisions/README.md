@@ -26,7 +26,7 @@ Decision records preserve why Financial Simulations makes a material modelling o
 | [0018](0018-planner-annual-rebalancing.md) | 2026-10-28 | Accepted; implemented and locally validated | Annual rebalancing per account in the planner and tax ledger |
 | [0019](0019-retirement-path-results.md) | 2026-10-28 | Accepted; implemented and locally validated | Keep depleted retirement paths, cap whole-balance pension transfers, more paths and results |
 | [0020](0020-outside-contributions-stop-at-retirement.md) | 2026-10-29 | Accepted; stop on investing at retirement superseded by 0030 | Surplus or fixed (optionally indexed) outside contributions that stop at retirement; sacrifice as a percentage |
-| [0021](0021-cash-interest-and-withdrawal-rates.md) | 2026-10-29 | Accepted; "lasts indefinitely" interpretation superseded by 0039 | Interest on cash; withdrawal rates to a planning age, and a rate that lasts indefinitely |
+| [0021](0021-cash-interest-and-withdrawal-rates.md) | 2026-10-29 | Accepted; "lasts indefinitely" interpretation superseded by 0039; withdrawal rates removed by 0041 | Interest on cash; withdrawal rates to a planning age, and a rate that lasts indefinitely |
 | [0022](0022-payg-withholding.md) | 2026-10-29 | Accepted; implemented and locally validated | Estimated PAYG withholding on salary each payday; assessment settles the balance |
 | [0023](0023-retirement-spending-rules.md) | 2026-10-29 | Accepted; implemented and locally validated | Optional Guyton–Klinger and Vanguard retirement spending rules; fixed dollar spending stays the default |
 | [0024](0024-salary-indexed-to-wage-growth.md) | 2026-10-29 | Accepted; implemented and locally validated | Salary and salary sacrifice rise each 1 July with the wage-growth assumption by default |
@@ -44,7 +44,9 @@ Decision records preserve why Financial Simulations makes a material modelling o
 | [0036](0036-opening-year-to-date-position.md) | 2026-11-02 | Accepted; implemented and tested | A start after 1 July requires the financial year's opening year-to-date position; prior-year tax and contributions in flight are inputs |
 | [0037](0037-contribution-boundaries.md) | 2026-11-02 | Accepted; implemented and tested | Bring-forward counts the year's total against the 1 July state; voluntary contributions and sacrifice stop at the age-75 acceptance deadline |
 | [0038](0038-working-pensioners-and-distribution-order.md) | 2026-11-02 | Accepted; implemented and tested | Gross wages (with sacrifice) in the income test, the $4,000 Work Bonus starting credit, and order-independent super distributions |
-| [0039](0039-withdrawal-rate-basis-and-claims.md) | 2026-11-02 | Accepted; implemented and tested; supersedes the interpretation in 0021 | Nominal withdrawal rates including Division 296; the finite-window rate renamed capital-preserving; bootstrap and percentage-rule claims corrected |
+| [0039](0039-withdrawal-rate-basis-and-claims.md) | 2026-11-02 | Accepted; portfolio withdrawal-rate parts superseded by 0041 | Nominal withdrawal rates including Division 296; the finite-window rate renamed capital-preserving; bootstrap and percentage-rule claims corrected |
+| [0040](0040-medians-and-mostly-zero-measures.md) | 2026-11-02 | Accepted; implemented and tested | Medians for path-group summaries (averages only for stacked flows), share plus conditional median for mostly-zero measures, median of total tax |
+| [0041](0041-remove-portfolio-withdrawal-rates-and-plots.md) | 2026-11-02 | Accepted; implemented and tested; supersedes withdrawal-rate parts of 0021 and 0039 | Portfolio-only withdrawal rates, `planning_age`, drawdown and calendar-year return charts removed; short-horizon warning |
 
 ## When to write a record
 

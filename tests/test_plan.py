@@ -56,7 +56,7 @@ def test_minimal_plan_gets_documented_defaults():
     plan = normalize_plan({"person": {"date_of_birth": "1980-01-01"}, "assets": ["USLCAP"],
                            "outside": {"weights": {"USLCAP": 1.0}}, "super": {"weights": {"USLCAP": 1.0}}})
     assert plan["plan"]["start_date"] == "2026-07-01" and plan["plan"]["years"] == 10
-    assert plan["assumptions"] == {"cpi_annual": 0.025, "wage_growth_annual": 0.035, "planning_age": 95}
+    assert plan["assumptions"] == {"cpi_annual": 0.025, "wage_growth_annual": 0.035}
     assert plan["outside"]["investment_balance"] == 0 and plan["pension"]["start_age"] == 0
     assert plan["market"]["block_length"] == 63
 
@@ -177,10 +177,11 @@ def test_browser_app_runs_with_tickers_and_interactive_results(tmp_path, monkeyp
     assert len(app.get("vega_lite_chart")) >= 15
     assert app.session_state.plan["outside"]["rebalance"] == "annual"
     picker = app.selectbox(key="ledger_path__0")
-    everyone = next(option for option in picker.options if option.startswith("Average of all paths"))
+    everyone = next(option for option in picker.options if option.startswith("Group: all paths"))
     assert picker.options.index(everyone) == 1  # straight after the median path
     picker.set_value(everyone).run()
-    assert not app.exception and any(h.value.startswith("Average of all paths (") for h in app.subheader)
+    assert not app.exception and any(h.value.startswith("All paths (") for h in app.subheader)
+    assert any(h.value == "Year by year, medians across the group" for h in app.subheader)
 
 
 def test_35_year_path_and_plots_keep_yearly_summary_compact(tmp_path, processed_fixture):
@@ -223,20 +224,6 @@ def test_annual_rebalancing_is_the_default_and_harvests_dispersion():
     # The combined series holds opening shares of each account without moving money between them.
     assert series["Combined"].terminal[0] == pytest.approx(0.25 * 110 + 0.75 * 110.25)
     assert series["held"].max_drawdown[0] == 0
-
-
-def test_sustainable_withdrawal_rate_exhausts_wealth_exactly_at_the_horizon():
-    from financial_simulations.retirement.analysis import sustainable_withdrawal_rates
-    import numpy as np
-
-    # Flat markets: 24 monthly withdrawals of rate/12, the second year 10% larger, use exactly the opening value.
-    flat = np.full((1, 25), 100.0)
-    rate = sustainable_withdrawal_rates(flat, 0, 0.10)[0]
-    assert rate * (12 + 12 * 1.1) / 12 == pytest.approx(1.0)
-    # Doubling immediately after the start halves what each later withdrawal costs.
-    doubled = np.r_[100.0, np.full(24, 200.0)][None, :]
-    assert sustainable_withdrawal_rates(doubled, 0, 0.0)[0] == pytest.approx(1.0)
-    assert np.isnan(sustainable_withdrawal_rates(flat[:, :6], 0, 0.0)[0])
 
 
 def test_salary_sacrifice_percentage_adds_to_the_dollar_amount(processed_fixture):
@@ -294,22 +281,6 @@ def test_fixed_outside_contribution_maps_to_paydays(processed_fixture):
     plan["outside"]["saving"] = "sometimes"
     with pytest.raises(PlanError, match="outside.saving: must be one of surplus, fixed"):
         normalize_plan(plan)
-
-
-def test_capital_preserving_withdrawal_rate_keeps_real_capital():
-    from financial_simulations.retirement.analysis import capital_preserving_withdrawal_rates
-    import numpy as np
-
-    # 5% a year compounded monthly for 30 years with 2.5% inflation-indexed withdrawals and 2.5% inflation.
-    months = 360
-    values = 100 * 1.05 ** (np.arange(months + 1) / 12)
-    rate = capital_preserving_withdrawal_rates(values[None, :], 0, 0.025, 0.025, 30)[0]
-    steps = 1.025 ** (np.arange(months) // 12) / 12
-    growth = values[1:] / 100
-    ending = growth[-1] * (1 - rate * (steps / growth).sum())
-    assert ending == pytest.approx(1.025 ** 30)
-    flat = np.full((1, months + 1), 100.0)
-    assert capital_preserving_withdrawal_rates(flat, 0, 0.0, 0.025, 30)[0] == 0
 
 
 def test_run_keeps_every_paths_monthly_wealth(processed_fixture):
@@ -472,3 +443,18 @@ def test_a_1_july_plan_start_passes_last_years_tax_and_age_pension_split(process
     assert opening.tax_due == ((date(2026, 10, 31), 2500.0, "2025-26"),)
     rate = years["2026-27"]["age_pension_rate"]
     assert opening.age_pension_taxable == pytest.approx(1000 * (rate["basic"] + rate["supplement_taxable"]) / 1237.70)
+
+
+def test_legacy_planning_age_still_loads_and_is_dropped():
+    # ADR 0041 removed the portfolio-only withdrawal rates that planning_age controlled.
+    plan = default_plan()
+    plan["assumptions"]["planning_age"] = 95
+    assert "planning_age" not in normalize_plan(plan)["assumptions"]
+
+
+def test_mostly_zero_measures_report_share_and_median_among_affected():
+    from financial_simulations.ui.app import affected
+
+    assert affected([0, 0, 10, 30]) == "50.0% · $20"
+    assert affected([0.0, 0.0]) == "None"
+    assert affected([]) == "–"

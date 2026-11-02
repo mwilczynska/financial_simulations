@@ -2,7 +2,9 @@
 
 Date: 2026-10-29. Status: accepted; implemented and locally validated. The "lasts indefinitely"
 interpretation of the second rate is superseded by
-[ADR 0039](0039-withdrawal-rate-basis-and-claims.md); the calculation is unchanged.
+[ADR 0039](0039-withdrawal-rate-basis-and-claims.md); the calculation is unchanged. The withdrawal rates and
+`planning_age` were removed on 2026-11-02 by
+[ADR 0041](0041-remove-portfolio-withdrawal-rates-and-plots.md); the cash-interest decision stands.
 Amends [ADR 0019](0019-retirement-path-results.md) (withdrawal rates) and
 the interest convention of the [retirement ledger](../methodology/retirement-ledger.md).
 

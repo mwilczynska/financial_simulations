@@ -85,7 +85,7 @@ Schema version 2 uses:
 | `assets` | Selected local ticker codes |
 | `[outside]` | Cash, cash buffer, `cash_interest`, `investment_balance`, `opening_cost_base`, `opening_acquired`, `weights`, `rebalance`, `saving` (`surplus` or `fixed`), `contribution_per_year`, `contribution_indexed` |
 | `[super]` | Balance, prior 30 June total super balance, `weights`, `rebalance`, `realised_gains` (share of the fund's unrealised gains realised each year; default 0.2, an assumption; ADR 0029) |
-| `[spending]`, `[pension]`, `[assumptions]` | `annual` (today's dollars), `real_change` (a year, on top of CPI; default 0), `retirement` (`same` default, `amount` with `retirement_annual`, or `percent` with `retirement_percent` of total wealth on the retirement date), `rule` (`fixed` default, `guyton_klinger`, `vanguard`, `percent`; non-fixed rules require `retirement = "percent"`), `minimum`, `maximum` (today's dollars, CPI-indexed), `guardrail_band`, `guardrail_step`, `ceiling`, `floor`; pension transfer; projected-rule assumptions and `planning_age`. A legacy nominal `annual_growth` is read as `real_change = (1 + annual_growth) / (1 + cpi) - 1` (ADR 0025) |
+| `[spending]`, `[pension]`, `[assumptions]` | `annual` (today's dollars), `real_change` (a year, on top of CPI; default 0), `retirement` (`same` default, `amount` with `retirement_annual`, or `percent` with `retirement_percent` of total wealth on the retirement date), `rule` (`fixed` default, `guyton_klinger`, `vanguard`, `percent`; non-fixed rules require `retirement = "percent"`), `minimum`, `maximum` (today's dollars, CPI-indexed), `guardrail_band`, `guardrail_step`, `ceiling`, `floor`; pension transfer; projected-rule assumptions. A `planning_age` in older files is accepted and ignored (ADR 0041). A legacy nominal `annual_growth` is read as `real_change = (1 + annual_growth) / (1 + cpi) - 1` (ADR 0025) |
 | `[market]` | Portfolio path count, retirement path count, seed, mean block length |
 
 `outside.weights` and `super.weights` each sum to one. They represent the
@@ -198,8 +198,8 @@ loop runs:
 - **Maximum drawdown:** the lowest `value / running peak - 1`.
 - **Longest drawdown:** the most calendar time between a peak and either
   recovery to it or the horizon.
-- Month-end value and drawdown snapshots, which feed the pointwise 5th, 25th,
-  50th, 75th and 95th percentile bands.
+- Month-end value snapshots, which feed the pointwise 5th, 25th, 50th, 75th
+  and 95th percentile bands.
 
 Historical statistics add the worst and best calendar years and the share
 of positive years. A full calendar-year return is its final wealth mark
@@ -207,47 +207,12 @@ divided by the prior year-end mark minus one; partial years are excluded.
 Monthly and yearly values summarize daily compounding. For example, +10%
 then -10% turns $100 into $99, a -1% total return.
 
-Withdrawal rates use a separate set of `paths` draws of the same sampler
-([ADR 0021](../decisions/0021-cash-interest-and-withdrawal-rates.md)). Each
-draw runs from the retirement date (or plan start, if later) to the day
-before the birthday at `assumptions.planning_age` (default 95). The tax
-ledger's horizon stops before Age Pension age, about nine years for the
-example. Measured over that horizon, the median rate came out near 15%:
-correct arithmetic, but not a retirement-length answer. Two rates are solved
-per path and portfolio. Both are pre-tax and ignore the Age Pension, salary,
-contributions and super access.
-
-The **rate that lasts to the planning age** (`Sustainable withdrawal rate`)
-is the largest first-year withdrawal the path could fund, as a fraction of
-the portfolio's value at the start of the window. Withdrawals are paid
-monthly at each month end, one twelfth of the annual amount. The annual
-amount rises by the plan's spending growth, `(1 + CPI)(1 + real_change) - 1`, every 12 months, and the
-portfolio must not run out before the end. Let
-`G_k` be the growth factor from retirement to the `k`-th month end.
-Proportional sales leave each later month's growth factor unchanged, so
-remaining wealth is nonnegative exactly while
-`1 >= rate * sum_k (1 + g) ** floor(k / 12) / (12 * G_k)`. Every term is
-positive, so the horizon binds and
-`rate = 1 / sum_k (1 + g) ** floor(k / 12) / (12 * G_k)`. In a flat market
-over two years with 10% growth, `rate = 12 / (12 + 13.2) = 0.476`. The rate
-spends the portfolio to exactly zero on the last day.
-
-The **rate that keeps real capital to the planning age** (`Capital-preserving
-withdrawal rate`, `capital_preserving_withdrawal_rates`; called the perpetual
-rate before [ADR 0039](../decisions/0039-withdrawal-rate-basis-and-claims.md)) instead
-requires the portfolio to end the window worth at least its starting value
-grown by CPI over the window's `T` years. Ending wealth is
-`G_T * (1 - rate * S)`, where `S` is the sum above. The condition gives
-`rate = (1 - (1 + cpi) ** T / G_T) / S`, floored at zero for paths that lose
-real value even without withdrawals. Earlier months are then automatically
-positive. In a market compounding at 5% a year, with 2.5% CPI and spending
-growth, the test checks that ending wealth equals `1.025 ** 30` of the
-start after 30 years. The rate checks only the end of the finite window,
-so it is not a probability of sustaining withdrawals indefinitely. A path
-that keeps its real capital at the planning age could still fall below it
-later. The 4% rule, derived from 30-year US retirements that may spend down
-to nothing, compares with the first rate over 30 years, not with this one.
-Both rates are undefined with fewer than 12 month ends.
+Until 2 November 2026 a separate set of draws from the retirement date to
+`assumptions.planning_age` produced two pre-tax, portfolio-only withdrawal
+rates per path (ADR 0021 and ADR 0039 describe the method).
+[ADR 0041](../decisions/0041-remove-portfolio-withdrawal-rates-and-plots.md)
+removed them: the daily tax ledger answers whether the money lasts, with
+tax and the Age Pension, over the years simulated.
 
 The first `retirement_paths` of those same joint draws run through the
 [daily tax ledger](retirement-ledger.md). USD source returns are explicitly
@@ -355,9 +320,9 @@ expander at the top of the Results tab explains the conversion:
 - An `Inflation` flow in the money in and out charts is the buying power
   wealth lost in the year, so each year's flows still sum to the change in
   real wealth.
-- Section 3 deflates each month-end portfolio value, so growth, ending value
-  and calendar-year returns are after inflation. Volatility and drawdowns
-  stay on nominal daily returns.
+- Section 3 deflates each month-end portfolio value, so growth and ending
+  value are after inflation. Volatility and drawdowns stay on nominal daily
+  returns.
 - Section 2's history is nominal, because the source data have no
   inflation series.
 - The ledger runs in nominal dollars; the event log and the CSV downloads in
@@ -372,8 +337,6 @@ Inputs:
   they stay constant in nominal dollars.
 - Fixed outside additions are indexed only when that option is ticked.
 - Rule thresholds are projected with CPI and wages.
-- Withdrawal rates rise with spending (CPI plus any real change); the capital-preserving rate keeps the
-  CPI-grown value at the planning age.
 
 **Block length.** The Assumptions tab explains the average block length in
 plain terms: average run length in trading days, the jump probability
@@ -392,13 +355,15 @@ positions them.
    policy, and historical CAGR, volatility and maximum drawdown, plus the
    combined split. A whole-portfolio statistics table covers outside, inside
    and combined. Ticker-level source statistics sit in an expander.
-2. **Historical behaviour.** Growth of $100 on a log axis, drawdown below the
-   running peak, and calendar-year returns for all three series.
+2. **Historical behaviour.** Growth of $100 on a log axis for all three
+   series. The drawdown and calendar-year return charts were removed by
+   ADR 0041; maximum drawdown and the worst and best calendar years remain
+   in the section 1 statistics.
 3. **Future simulations.** A step-by-step description of the calculation
    with the run's actual dates, row counts, block length, seed and path
    count. Then:
-   - for the selected portfolio, a fan, median and 5th-percentile drawdowns,
-     and calendar-year return bands. These sit in a Streamlit fragment
+   - for the selected portfolio, a fan of growth paths. It sits in a
+     Streamlit fragment
      with the selector, as do the account choice in section 4 and the
      whole of section 5. A choice then reruns only its own charts, so the
      page does not redraw and jump back to the top;
@@ -408,7 +373,6 @@ positions them.
    - four distributions (ending value on a log axis, annualised growth,
      volatility, maximum drawdown), each overlaying outside super, inside
      super and the combined portfolio with dashed medians;
-   - the sustainable-withdrawal-rate distribution;
    - a percentile table;
 4. **Retirement outcomes.** It opens with a **withdrawal strategy** box,
    built from the plan by `withdrawal_strategy`:
@@ -433,10 +397,8 @@ positions them.
      - the share whose first shortfall came before super was accessible;
      - the median age at the first shortfall;
      - the share where outside money ever reached zero;
-     - an *estimated chance of running out by the planning age*: the share of
-       the combined portfolio's long draws whose rate that lasts to the
-       planning age is below the median first retired-year withdrawal rate.
-       It is pre-tax and portfolio-only, and labelled as such.
+     - a warning when the ledger stops before age 90 (`SHORT_HORIZON_AGE`):
+       the risk of ruin covers only the years simulated (ADR 0041).
 
      Above the ending-wealth chart, in today's dollars:
      - the share of paths ending below their starting wealth, and below half
@@ -489,44 +451,46 @@ positions them.
      tooltip gives their medians. Above the chart, the single-path figures
      from the daily ledger section appear as medians across calculated
      paths: wealth at start (the same on every path), at retirement, when
-     super becomes accessible and at the end; Age Pension received;
-     spending shortfall; total personal, fund and Division 296 tax; and
-     largest fall in wealth. Each is a separate median;
+     super becomes accessible and at the end; total personal, fund and
+     Division 296 tax (the median of each path's total); and largest fall
+     in wealth. Each is a separate median. Age Pension received and
+     spending shortfall are zero on many paths, so they show the share of
+     paths above zero and the median among those paths (`affected`;
+     ADR 0040);
    - **spending in retirement**. With a percentage start, it shows the median
      and 5th–95th percentile dollar amounts the percentage produced. With a
      dollar start, it shows that amount as a percentage of wealth at
      retirement (median and 5th–95th percentile). It also shows the share of
      paths that ever spent more than 1% below the start, the 5th percentile
      of each path's lowest retired year, the deepest cut, and bands of
-     spending paid in each full retired year. With a rule, the risk-of-ruin
-     estimate to the planning age is flagged as an overstatement, because it
-     assumes fixed spending;
-   - withdrawal-rate bands by financial year. These are set against the
-     combined portfolio's 5th-percentile and median sustainable rates, with
-     an expanded explanation of how to read them;
+     spending paid in each full retired year;
+   - withdrawal-rate bands by financial year, with an expanded explanation
+     of how to read them;
    - the share of paths with a shortfall each year;
    - pension payment bands;
    - an outcome percentile table, and every path in a formatted table. The
      table is sorted from the worst ending wealth to the best and tagged with
      each path's ending-wealth percentile, `(rank + 0.5) / n x 100`.
 5. **One path in full.** The median-ending path by default.
-   - **Averaged groups.** The picker also offers groups averaged across their
-     paths: all calculated paths, then the worst 1%, 5% and 10%, the middle
-     10% (45th to 55th percentile), the best 10% and the best 1%. The ranked
-     groups are ranked by ending wealth, and each has at least one path. The
-     all-paths average is a plain arithmetic mean over every calculated path,
-     not a path any market sequence produced. A group's view averages:
-     - month-end balances by account (from `PlanRun.path_series`, each path's
-       stored account series);
-     - each year's flows, net change and additions (from the
-       `retirement_annual` rows);
-     - its outcomes, including wealth at retirement and when super becomes
-       accessible, the share that ran out, the shortfall, Age Pension and
-       the withdrawal rate.
+   - **Groups.** The picker also offers groups of paths: all calculated
+     paths, then the worst 1%, 5% and 10%, the middle 10% (45th to 55th
+     percentile), the best 10% and the best 1%. The ranked groups are
+     ranked by ending wealth, and each has at least one path. A group's
+     view uses **medians** across its paths (ADR 0040) for:
+     - its outcomes: wealth at retirement, when super becomes accessible
+       and at the end, and each path's median withdrawal rate;
+     - month-end balances by account (from `PlanRun.path_series`); each
+       account's median is taken on its own, so the stacked total need
+       not be any path's wealth;
+     - the year-by-year table, except that the shortfall column is the
+       share of the group's paths with any shortfall that year.
 
-     No ledger is re-run, so it is immediate. The group view says when a
-     group has fewer than five paths. Averages smooth timing, and the view
-     says so.
+     Shortfall and Age Pension received show the share of paths above
+     zero and the median among them, and the share that ran out is a
+     share. The stacked money in and out bars stay **averages** of each
+     year's flows, net change and additions, so that they add up to the
+     net change; the chart says so. No ledger is re-run, so the view is
+     immediate. It says when a group has fewer than five paths.
    - **Single paths.** The picker lists every path from the worst to the
      best, each tagged with its ending-wealth percentile. A single path is
      re-run on demand. Its metrics include wealth at the start, at

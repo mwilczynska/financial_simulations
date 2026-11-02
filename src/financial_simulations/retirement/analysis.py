@@ -1,14 +1,14 @@
 """Portfolio-first daily bootstrap and retirement path summaries for a plan."""
 
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date
 
 import numpy as np
 import pandas as pd
 
 from financial_simulations.markets.resampling import Sampler, sample_indices
 from financial_simulations.data.plan_markets import load_plan_markets
-from financial_simulations.retirement.plan import future_observations, horizon, spending_growth
+from financial_simulations.retirement.plan import future_observations, horizon
 from financial_simulations.retirement.real import stock_deflator
 from financial_simulations.rules.au.superannuation import birthday
 
@@ -25,12 +25,9 @@ class PortfolioAnalysis:
     historical: pd.DataFrame
     paths: pd.DataFrame
     outcomes: pd.DataFrame
-    annual_returns: pd.DataFrame
     summary: pd.DataFrame
-    historical_annual: pd.DataFrame
     combined_shares: dict
     retirement_start: date
-    planning_end: date | None = None
 
     def returns_for(self, market, path: int) -> np.ndarray:
         """The joint daily source returns drawn for one path (shared by every portfolio)."""
@@ -40,7 +37,6 @@ class PortfolioAnalysis:
 @dataclass(frozen=True)
 class _Series:
     snapshots: np.ndarray
-    drawdowns: np.ndarray
     terminal: np.ndarray
     volatility: np.ndarray
     max_drawdown: np.ndarray
@@ -55,7 +51,7 @@ def _simulate(source, indices, dates, accounts, shares, snapshots, progress=None
     observation of each calendar year (the Stage 1 and tracker convention);
     otherwise weights drift. ``shares`` maps accounts to opening value shares of
     an unrebalanced combined series, or is empty. ``snapshots`` are positions in
-    ``dates`` (0 is the opening mark) at which value and drawdown are recorded.
+    ``dates`` (0 is the opening mark) at which value is recorded.
     """
     count, steps = indices.shape
     ordinals = np.array([d.toordinal() for d in dates])
@@ -69,11 +65,9 @@ def _simulate(source, indices, dates, accounts, shares, snapshots, progress=None
     total, squares = {n: np.zeros(count) for n in names}, {n: np.zeros(count) for n in names}
     where = {pos: col for col, pos in enumerate(snapshots)}
     snap = {n: np.empty((count, len(snapshots))) for n in names}
-    snap_dd = {n: np.empty((count, len(snapshots))) for n in names}
     if 0 in where:
         for n in names:
             snap[n][:, where[0]] = 100.0
-            snap_dd[n][:, where[0]] = 0.0
     report = max(1, steps // 50)
     for step in range(steps):
         if progress and step % report == 0:
@@ -104,11 +98,10 @@ def _simulate(source, indices, dates, accounts, shares, snapshots, progress=None
             column = where.get(step + 1)
             if column is not None:
                 snap[n][:, column] = new
-                snap_dd[n][:, column] = drawdown
     result = {}
     for n in names:
         variance = (squares[n] - total[n] ** 2 / steps) / (steps - 1) if steps > 1 else np.zeros(count)
-        result[n] = _Series(snap[n], snap_dd[n], value[n], np.sqrt(np.maximum(variance, 0) * 252), worst[n], underwater[n])
+        result[n] = _Series(snap[n], value[n], np.sqrt(np.maximum(variance, 0) * 252), worst[n], underwater[n])
     return result
 
 
@@ -128,44 +121,6 @@ def _calendar_years(dates, snapshots, values) -> list[tuple[int, np.ndarray]]:
         if (end - start).days >= 330:  # a partial opening calendar year is not an annual return
             years.append((year, values[:, after] / values[:, before] - 1))
     return years
-
-
-def sustainable_withdrawal_rates(values: np.ndarray, start_column: int, growth: float) -> np.ndarray:
-    """Largest first-year withdrawal (fraction of value at ``start_column``) each path can fund.
-
-    Withdrawals are paid monthly at each later month-end snapshot, one twelfth
-    of the annual amount, which steps up by ``growth`` every 12 months. With
-    proportional sales the portfolio's growth factors do not depend on the
-    withdrawals, so wealth stays nonnegative exactly when
-    ``1 >= rate * sum_k (1 + growth) ** (k // 12) / 12 / G_k``; the constraint
-    binds at the horizon. Pre-tax and without salary or contributions.
-    """
-    later = values[:, start_column + 1:] / values[:, [start_column]]
-    if later.shape[1] < 12:
-        return np.full(len(values), np.nan)
-    steps = (1 + growth) ** (np.arange(later.shape[1]) // 12) / 12
-    return 1 / (steps / later).sum(axis=1)
-
-
-def capital_preserving_withdrawal_rates(values: np.ndarray, start_column: int, growth: float, inflation: float,
-                               years: float) -> np.ndarray:
-    """Largest first-year withdrawal that leaves the portfolio's real value intact at the end of the window.
-
-    This preserves starting real capital at one finite date (the planning age); it is not a probability of
-    sustaining withdrawals indefinitely, and it is a stricter criterion than the 30-year spend-down "4% rule".
-
-    With the same monthly withdrawals as ``sustainable_withdrawal_rates``,
-    ending wealth is ``G_T * (1 - rate * S)`` where ``S = sum_k step_k / G_k``.
-    Requiring it to be at least the starting value grown by ``inflation`` over
-    ``years`` gives ``rate = (1 - (1 + inflation) ** years / G_T) / S``. A path
-    that cannot keep its real value even without withdrawals gets 0.
-    """
-    later = values[:, start_column + 1:] / values[:, [start_column]]
-    if later.shape[1] < 12:
-        return np.full(len(values), np.nan)
-    steps = (1 + growth) ** (np.arange(later.shape[1]) // 12) / 12
-    target = (1 + inflation) ** years
-    return np.maximum(0.0, (1 - target / later[:, -1]) / (steps / later).sum(axis=1))
 
 
 def retirement_start(plan: dict) -> date:
@@ -202,23 +157,16 @@ def analyse_portfolios(plan: dict, market, target_dates, progress=None) -> Portf
     history = _simulate(market.path.returns, np.arange(len(market.path.returns))[None, :], history_dates, accounts, shares,
                         history_marks, lambda f: tell(0.25 + 0.15 * f, "Compounding the portfolios over their history"))
     future_marks = _month_ends(target_dates)
-    month_ends = set(future_marks)
-    retire = retirement_start(plan)
-    retire_pos = int(np.searchsorted(np.array(target_dates), retire, side="right") - 1)
-    if retire_pos not in future_marks:
-        future_marks = sorted({*future_marks, retire_pos})
     future = _simulate(market.path.returns, indices, target_dates, accounts, shares, future_marks,
-                       lambda f: tell(0.4 + 0.35 * f, f"Compounding {count:,} future portfolio paths day by day"))
+                       lambda f: tell(0.4 + 0.6 * f, f"Compounding {count:,} future portfolio paths day by day"))
 
-    historical, summaries, historical_annual = [], [], []
+    historical, summaries = [], []
     hyears = (history_dates[-1] - history_dates[0]).days / 365.25
     for title, series in history.items():
         for column, pos in enumerate(history_marks):
-            historical.append({"Date": history_dates[pos], "Portfolio": title, "Growth of 100": float(series.snapshots[0, column]),
-                               "Drawdown": float(series.drawdowns[0, column])})
+            historical.append({"Date": history_dates[pos], "Portfolio": title, "Growth of 100": float(series.snapshots[0, column])})
         years = _calendar_years(history_dates, history_marks, series.snapshots)
         returns = np.array([float(r[0]) for _, r in years])
-        historical_annual += [{"Portfolio": title, "Year": year, "Return": float(r[0])} for year, r in years]
         summaries.append({"Portfolio": title, "CAGR": float((series.terminal[0] / 100) ** (1 / hyears) - 1),
                           "Volatility": float(series.volatility[0]), "Maximum drawdown": float(series.max_drawdown[0]),
                           "Longest drawdown (years)": float(series.longest_underwater_days[0] / 365.25),
@@ -227,60 +175,26 @@ def analyse_portfolios(plan: dict, market, target_dates, progress=None) -> Portf
                           "Positive years": float((returns > 0).mean()) if len(returns) else np.nan,
                           "First": history_dates[0], "Last": history_dates[-1]})
 
-    # Withdrawal rates need a whole retirement, not the tax ledger's horizon (which stops before Age Pension
-    # age), so they use separate draws of the same sampler from the retirement date to the planning age.
-    planning_end = birthday(plan["person"]["date_of_birth"], plan["assumptions"]["planning_age"]) - timedelta(days=1)
-    swr, preserving = {}, {}
-    if planning_end > retire + timedelta(days=366):
-        long_dates = future_observations(plan, market, retire, planning_end)
-        long_rows = []
-        for i in range(count):
-            if i % max(1, count // 10) == 0:
-                tell(0.75 + 0.05 * i / count, f"Sampling retirement-length paths to age {plan['assumptions']['planning_age']}")
-            long_rows.append(sample_indices(len(market.path.returns), len(long_dates) - 1, sampler,
-                                            seed=plan["market"]["seed"], path_id=i).indices)
-        retirement = _simulate(market.path.returns, np.stack(long_rows).astype(np.int32), long_dates, accounts, shares,
-                               _month_ends(long_dates), lambda f: tell(0.8 + 0.2 * f, "Testing withdrawal rates to "
-                                                                          f"age {plan['assumptions']['planning_age']}"))
-        swr = {title: sustainable_withdrawal_rates(series.snapshots, 0, spending_growth(plan))
-               for title, series in retirement.items()}
-        window = (long_dates[-1] - long_dates[0]).days / 365.25
-        preserving = {title: capital_preserving_withdrawal_rates(series.snapshots, 0, spending_growth(plan),
-                                                                 plan["assumptions"]["cpi_annual"], window)
-                      for title, series in retirement.items()}
-    else:
-        planning_end = None
-
     # Future values are reported in today's dollars: each snapshot is deflated by the CPI assumption to its date.
     # Volatility and drawdowns come from nominal daily returns; inflation changes them very little.
-    paths, outcomes, annual = [], [], []
+    paths, outcomes = [], []
     pyears = (target_dates[-1] - target_dates[0]).days / 365.25
     prices = stock_deflator([target_dates[pos] for pos in future_marks], target_dates[0], plan["assumptions"]["cpi_annual"])
     for title, series in future.items():
         real = series.snapshots / prices[None, :]
         terminal = real[:, -1]
         cagr = np.power(terminal / 100, 1 / pyears) - 1
-        rates = swr.get(title, np.full(count, np.nan))
-        lasting = preserving.get(title, np.full(count, np.nan))
         for i in range(count):
             outcomes.append({"Portfolio": title, "Path": i, "Terminal growth of 100": float(terminal[i]),
                              "Annualised growth": float(cagr[i]), "Annualised volatility": float(series.volatility[i]),
                              "Maximum drawdown": float(series.max_drawdown[i]),
-                             "Longest drawdown (years)": float(series.longest_underwater_days[i] / 365.25),
-                             "Sustainable withdrawal rate": float(rates[i]),
-                             "Capital-preserving withdrawal rate": float(lasting[i])})
+                             "Longest drawdown (years)": float(series.longest_underwater_days[i] / 365.25)})
         for column, pos in enumerate(future_marks):
-            if pos not in month_ends:
-                continue  # the retirement mark is only for withdrawal rates, not a month end
             q = np.quantile(real[:, column], QUANTILES)
-            dq = np.quantile(series.drawdowns[:, column], QUANTILES)
             paths.append({"Date": target_dates[pos], "Portfolio": title, "P05": q[0], "P25": q[1], "P50": q[2], "P75": q[3],
-                          "P95": q[4], "Drawdown P05": dq[0], "Drawdown P50": dq[2]})
-        for year, returns in _calendar_years(target_dates, future_marks, real):
-            annual += [{"Portfolio": title, "Path": i, "Year": int(year), "Return": float(v)} for i, v in enumerate(returns)]
+                          "P95": q[4]})
     return PortfolioAnalysis(target_dates, indices, pd.DataFrame(historical), pd.DataFrame(paths), pd.DataFrame(outcomes),
-                             pd.DataFrame(annual), pd.DataFrame(summaries), pd.DataFrame(historical_annual), shares, retire,
-                             planning_end)
+                             pd.DataFrame(summaries), shares, retirement_start(plan))
 
 
 def target_observations(plan: dict, market=None) -> tuple:

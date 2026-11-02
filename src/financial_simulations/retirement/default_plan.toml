@@ -69,8 +69,6 @@ transfer_all = true
 [assumptions]
 cpi_annual = 0.025
 wage_growth_annual = 0.035
-# Sustainable withdrawal rates cover retirement up to this age (portfolio only; no tax ledger).
-planning_age = 95
 
 [market]
 paths = 1000

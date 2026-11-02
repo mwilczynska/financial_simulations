@@ -263,8 +263,8 @@ def normalize_plan(raw: dict) -> dict:
                        "transfer_all": c.flag(pension, "transfer_all", "pension", True),
                        "amount": c.number(pension, "amount", "pension", 0.0, low=0, high=1e9)}
     plan["assumptions"] = {"cpi_annual": c.number(assumptions, "cpi_annual", "assumptions", 0.025, low=-0.1, high=0.2),
-                           "wage_growth_annual": c.number(assumptions, "wage_growth_annual", "assumptions", 0.035, low=-0.1, high=0.2),
-                           "planning_age": c.number(assumptions, "planning_age", "assumptions", 95, low=60, high=110, integer=True)}
+                           "wage_growth_annual": c.number(assumptions, "wage_growth_annual", "assumptions", 0.035, low=-0.1, high=0.2)}
+    # planning_age set the portfolio-only withdrawal rates, removed in ADR 0041; older files may still carry it.
     plan["market"] = {"paths": c.number(market, "paths", "market", 1000, low=16, high=5000, integer=True),
                       "retirement_paths": c.number(market, "retirement_paths", "market", 100, low=1, high=2000, integer=True),
                       "seed": c.number(market, "seed", "market", 20261028, low=0, high=2147483647, integer=True),

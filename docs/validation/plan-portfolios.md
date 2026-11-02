@@ -300,3 +300,26 @@ then peaked at 2.06 GB, and the plan and ledger tests passed.
 median, the hovered path and the hover points are drawn by the browser.
 Each hover is then handled in about 12–30 ms, measured in a hidden browser
 pane. All 31 charts drew in 9 s on that plan.
+
+## Medians, mostly-zero measures and removed charts (2026-11-02)
+
+ADR 0040 and ADR 0041. The full test suite passed (242 tests) after the code
+changes. After the documentation edits and shorter tile labels, `tests/test_plan.py`
+was re-run.
+
+The in-app browser review ran the example plan with 200 portfolio paths and
+60 ledger paths and checked:
+
+- no "Below previous peak", "Calendar-year return" or "How much could each
+  portfolio pay out" content, no planning-age input, and no Streamlit
+  exceptions;
+- the short-horizon warning for a ledger ending at age 63;
+- the shortfall tile showed 3.3% of paths with a median shortfall of $67,031
+  among them, where the median over every path is $0; the Age Pension tile
+  showed "None" for a horizon ending before Age Pension age;
+- the worst 10% group (6 paths): median tiles, median account balances with
+  their caption, the averaged flow bars labelled as averages, and the median
+  year-by-year table with its shortfall share column.
+
+The new tile labels truncated at the review pane's narrow width, as the
+existing tiles do, so they were shortened.
