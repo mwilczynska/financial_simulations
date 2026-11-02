@@ -25,11 +25,12 @@ from financial_simulations.dates import as_date
 from financial_simulations.data.plan_markets import load_plan_markets, ticker_name
 from financial_simulations.markets.calendar import observation_calendar, observations_per_year
 from financial_simulations.markets.path import MarketPath
-from financial_simulations.retirement.ledger import (AssetIncome, Employment, LedgerScenario, Parcel, Pension, Person,
+from financial_simulations.retirement.ledger import (AssetIncome, Employment, LedgerScenario, OpeningYear, Parcel, Pension, Person,
                                                      SpendingRule)
 from financial_simulations.rules.au.parameters import financial_year_of, load_ruleset
 from financial_simulations.rules.au.projection import ProjectionAssumptions, project_rulesets
-from financial_simulations.rules.au.superannuation import access_date, birthday
+from financial_simulations.rules.au.age_pension import maximum_rate
+from financial_simulations.rules.au.superannuation import access_date, add_business_days, birthday
 
 
 SCHEMA_VERSION = 2
@@ -49,6 +50,13 @@ class PlanError(ValueError):
 
     def __reduce__(self):  # keep the problem list intact across worker processes
         return PlanError, (self.problems,)
+
+
+# Year-to-date amounts for the start's financial year, before the start date (ADR 0036). prior_year_tax is last
+# year's assessed tax still to settle (negative for a refund), due on 31 October or at the start if later.
+YEAR_TO_DATE = ("labour_income", "salary_sacrifice", "payg_withheld", "concessional_contributions",
+                "non_concessional_contributions", "other_taxable_income", "franked_dividends", "franking_credits",
+                "age_pension", "pending_employer_contributions", "prior_year_tax")
 
 
 def default_plan() -> dict:
@@ -130,7 +138,8 @@ def normalize_plan(raw: dict) -> dict:
     if not isinstance(raw, dict):
         raise PlanError(["plan: must be a table of sections"])
     c = _Checker()
-    known = {"schema_version", "plan", "person", "employment", "assets", "outside", "super", "spending", "pension", "assumptions", "market"}
+    known = {"schema_version", "plan", "person", "employment", "assets", "outside", "super", "spending", "pension", "assumptions",
+             "market", "year_to_date"}
     c.problems += [f"{k}: unknown section" for k in raw if k not in known]
     if raw.get("schema_version", SCHEMA_VERSION) != SCHEMA_VERSION:
         c.problems.append(f"schema_version: this tool reads version {SCHEMA_VERSION}; version 1 holdings need a reviewed conversion to portfolio balances and tax positions")
@@ -143,6 +152,7 @@ def normalize_plan(raw: dict) -> dict:
 
     meta, person, employment = section("plan"), section("person"), section("employment")
     outside, super_, spending, pension, assumptions, market = (section(n) for n in ("outside", "super", "spending", "pension", "assumptions", "market"))
+    year_to_date = section("year_to_date")
     allowed = {"plan": {"name", "start_date", "years"},
                "person": {"date_of_birth", "retirement_age", "private_hospital_cover", "homeowner", "other_assets"},
                "employment": {"annual_salary", "salary_sacrifice_per_year", "salary_sacrifice_percent", "salary_indexed",
@@ -155,10 +165,11 @@ def normalize_plan(raw: dict) -> dict:
                             "ceiling", "floor"},
                "pension": {"start_age", "transfer_all", "amount"},
                "assumptions": {"cpi_annual", "wage_growth_annual", "planning_age"},
-               "market": {"paths", "retirement_paths", "seed", "block_length"}}
+               "market": {"paths", "retirement_paths", "seed", "block_length"},
+               "year_to_date": {"entered", *YEAR_TO_DATE}}
     for name, table in (("plan", meta), ("person", person), ("employment", employment), ("outside", outside),
                         ("super", super_), ("spending", spending), ("pension", pension),
-                        ("assumptions", assumptions), ("market", market)):
+                        ("assumptions", assumptions), ("market", market), ("year_to_date", year_to_date)):
         c.problems.extend(f"{name}.{key}: unknown field in schema version {SCHEMA_VERSION}"
                           for key in table if key not in allowed[name])
     plan = {"schema_version": SCHEMA_VERSION,
@@ -264,6 +275,16 @@ def normalize_plan(raw: dict) -> dict:
         c.problems.append("super.weights: an inside-super portfolio is required for current and future contributions")
     if plan["market"]["retirement_paths"] > plan["market"]["paths"]:
         c.problems.append("market.retirement_paths: cannot exceed market.paths")
+    # Activity from 1 July to the day before the start (ADR 0036). A start after 1 July must confirm these amounts,
+    # even when they are all zero, so that a part year is never assessed as if it were the whole year.
+    plan["year_to_date"] = {"entered": c.flag(year_to_date, "entered", "year_to_date", False),
+                            **{name: c.number(year_to_date, name, "year_to_date", 0.0,
+                                              low=-1e8 if name == "prior_year_tax" else 0, high=1e8)
+                               for name in YEAR_TO_DATE}}
+    start = plan["plan"]["start_date"]
+    if start and as_date(start).timetuple()[1:3] != (7, 1) and not plan["year_to_date"]["entered"]:
+        c.problems.append("year_to_date.entered: a start after 1 July needs this financial year's income, withholding and "
+                          "contributions so far; enter them (zeros if there were none) and set entered = true")
     if c.problems:
         raise PlanError(c.problems)
     return plan
@@ -295,7 +316,8 @@ def plan_to_toml(plan: dict) -> str:
     plan = normalize_plan(plan)
     lines = [f"# Retirement plan file, schema version {SCHEMA_VERSION}. Edit here or in the browser app.",
              f"schema_version = {SCHEMA_VERSION}", f"assets = {_toml_value(plan['assets'])}", ""]
-    for section in ("plan", "person", "employment", "outside", "super", "spending", "pension", "assumptions", "market"):
+    for section in ("plan", "person", "employment", "outside", "super", "spending", "pension", "assumptions", "market",
+                    "year_to_date"):
         lines.append(f"[{section}]")
         for key, value in plan[section].items():
             if value is None:
@@ -374,6 +396,7 @@ def build_inputs(plan: dict, *, market=None, returns=None):
         employment = Employment(plan["employment"]["annual_salary"], first, sacrifice_per_year(plan) / 26, annual_growth=growth)
     years = project_rulesets(load_ruleset("2026-27"), financial_year_of(end),
                              ProjectionAssumptions(plan["assumptions"]["cpi_annual"], plan["assumptions"]["wage_growth_annual"]))
+    opening = opening_year(plan, start, years[financial_year_of(start)])
     pension = None
     if plan["pension"]["start_age"] > 0:
         requested = max(start, birthday(plan["person"]["date_of_birth"], int(plan["pension"]["start_age"])))
@@ -408,8 +431,34 @@ def build_inputs(plan: dict, *, market=None, returns=None):
                                          else None),
         outside_contribution_growth=plan["assumptions"]["cpi_annual"] if plan["outside"]["contribution_indexed"] else 0.0,
         cash_interest=plan["outside"]["cash_interest"], payg_withholding=True,
-        age_pension=True, super_realised_gains=plan["super"]["realised_gains"], end_date=end)
+        age_pension=True, super_realised_gains=plan["super"]["realised_gains"], end_date=end,
+        opening_year=opening)
     return path, scenario, years, notes
+
+
+def opening_year(plan: dict, start: date, rules) -> OpeningYear | None:
+    """The plan's year-to-date amounts as the ledger's opening position; None for a 1 July start with nothing entered."""
+    ytd = plan["year_to_date"]
+    if (start.month, start.day) == (7, 1) and not any(ytd[name] for name in YEAR_TO_DATE):
+        return None
+    rate = rules["age_pension_rate"]
+    taxable_share = (rate["basic"] + rate["supplement_taxable"]) / maximum_rate(rules)
+    year_start = rules.start.year
+    tax_due = ()
+    if ytd["prior_year_tax"]:
+        # Last year's return, due 31 October (or at the start, if that is later).
+        tax_due = ((max(start, date(year_start, 10, 31)), ytd["prior_year_tax"], f"{year_start - 1}-{str(year_start)[2:]}"),)
+    pending = ()
+    if ytd["pending_employer_contributions"]:
+        # Earned before the start; the fund receives it after the ledger's usual seven-business-day lag.
+        pending = ((add_business_days(start, 7), ytd["pending_employer_contributions"], 0.0),)
+    return OpeningYear(labour_income=ytd["labour_income"], salary_sacrifice=ytd["salary_sacrifice"],
+                       payg_withheld=ytd["payg_withheld"], concessional_contributions=ytd["concessional_contributions"],
+                       non_concessional_contributions=ytd["non_concessional_contributions"],
+                       other_assessable_income=ytd["other_taxable_income"], franked_dividends=ytd["franked_dividends"],
+                       franking_credits=ytd["franking_credits"], age_pension=ytd["age_pension"],
+                       age_pension_taxable=ytd["age_pension"] * taxable_share, pending_contributions=pending,
+                       tax_due=tax_due)
 
 
 def spending_growth(plan: dict) -> float:

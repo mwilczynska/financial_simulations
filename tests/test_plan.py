@@ -442,3 +442,33 @@ def test_planner_paths_use_the_history_density_and_the_requested_end(processed_f
     cagr = market.asset_summary.set_index("Ticker").loc[list(path.assets), "Full-sample CAGR"].to_numpy()
     growth = np.prod(1 + path.returns, axis=0)
     assert growth == pytest.approx((1 + cagr) ** ((path.dates[-1] - path.dates[0]).days / 365.25))
+
+
+def test_a_midyear_plan_start_requires_confirmed_year_to_date_amounts(processed_fixture):
+    plan = default_plan()
+    assert plan["year_to_date"]["entered"] is False and plan["year_to_date"]["labour_income"] == 0
+    plan["plan"]["start_date"] = "2027-01-01"
+    with pytest.raises(PlanError, match="year_to_date.entered"):
+        normalize_plan(plan)
+    plan["year_to_date"].update(entered=True, labour_income=52000, payg_withheld=11000, age_pension=0,
+                                pending_employer_contributions=1200, prior_year_tax=-500)
+    plan = normalize_plan(plan)
+    assert load_plan_text(plan_to_toml(plan), "plan.toml") == plan
+    market = load_plan_markets(plan["assets"], processed_fixture)
+    _, scenario, _, _ = build_inputs(plan, market=market)
+    opening = scenario.opening_year
+    assert opening.labour_income == 52000 and opening.payg_withheld == 11000
+    assert opening.pending_contributions == ((date(2027, 1, 12), 1200.0, 0.0),)  # seven business days after the start
+    assert opening.tax_due == ((date(2027, 1, 1), -500.0, "2025-26"),)  # 31 October has passed: due at the start
+
+
+def test_a_1_july_plan_start_passes_last_years_tax_and_age_pension_split(processed_fixture):
+    plan = default_plan()
+    market = load_plan_markets(plan["assets"], processed_fixture)
+    assert build_inputs(plan, market=market)[1].opening_year is None
+    plan["year_to_date"].update(prior_year_tax=2500, age_pension=1000)
+    _, scenario, years, _ = build_inputs(normalize_plan(plan), market=market)
+    opening = scenario.opening_year
+    assert opening.tax_due == ((date(2026, 10, 31), 2500.0, "2025-26"),)
+    rate = years["2026-27"]["age_pension_rate"]
+    assert opening.age_pension_taxable == pytest.approx(1000 * (rate["basic"] + rate["supplement_taxable"]) / 1237.70)

@@ -6,11 +6,11 @@ import pandas as pd
 import pytest
 
 from financial_simulations.markets.path import MarketPath
-from financial_simulations.retirement.ledger import (AssetIncome, Employment, LedgerScenario, Parcel, Pension, Person,
+from financial_simulations.retirement.ledger import (AssetIncome, Employment, LedgerScenario, OpeningYear, Parcel, Pension, Person,
                                                      run_ledger)
 from financial_simulations.rules.au.parameters import UnsupportedRule, load_ruleset
 from financial_simulations.rules.au.superannuation import add_business_days
-from financial_simulations.rules.au.tax import IncomeYear, assess
+from financial_simulations.rules.au.tax import CapitalGainEvent, IncomeYear, assess
 
 
 RULES = load_ruleset("2026-27")
@@ -203,7 +203,7 @@ def test_annual_rebalance_resets_weights_and_realises_outside_cgt():
     path = MarketPath(dates, ("AU", "GL"), returns, "AUD")
     opening = (Parcel("AU", 50000, 40000, "2019-01-01"), Parcel("GL", 50000, 50000, "2019-01-01"))
     kwargs = dict(outside_parcels=opening, outside_weights={"AU": 0.5, "GL": 0.5}, super_units={"AU": 50000, "GL": 50000},
-                  super_weights={"AU": 0.5, "GL": 0.5})
+                  super_weights={"AU": 0.5, "GL": 0.5}, opening_year=OpeningYear())
     held = run_ledger(path, scenario_with(Person("1985-01-01"), **kwargs), YEARS)
     rebalanced = run_ledger(path, scenario_with(Person("1985-01-01"), outside_rebalance=True, super_rebalance=True, **kwargs),
                             YEARS)
@@ -613,3 +613,44 @@ def test_an_unassessed_final_period_estimates_the_tax_already_incurred():
     expected = assess(IncomeYear(labour_income=salary, low_tax_contributions=partial["concessional_contributions"]),
                       RULES).net_tax
     assert partial["estimated_tax"] == pytest.approx(expected) and expected > 0
+
+
+def test_a_midyear_start_needs_its_opening_year_and_then_matches_the_full_year():
+    # Review finding 8: a continuing $104,000 salary, assessed over the whole year versus a run starting 1 January.
+    scenario = scenario_with(Person("1985-01-01"), super_units={"GL": 100000}, payg_withholding=True,
+                             employment=Employment(104000, "2026-07-02"))
+    full = run_ledger(market(), scenario, YEARS)
+    later = market(start="2027-01-01")
+    with pytest.raises(ValueError, match="opening_year"):
+        run_ledger(later, scenario, YEARS)
+    # Without the first half-year, the part year is taxed as a whole year and refunds most of the withholding.
+    blank = run_ledger(later, replace(scenario, opening_year=OpeningYear()), YEARS)
+    assert blank.outstanding["tax_liabilities"][0]["amount"] < -5000
+    events = full.events
+    before = events[events["date"] < date(2027, 1, 1)]
+    salary = before[before["event"] == "salary"]
+    arrived = before[before["event"] == "concessional_contribution"]["amount"].sum()
+    in_flight = [(add_business_days(d, 7), sg + s, s) for d, sg, s in
+                 zip(salary["date"], salary["super_guarantee"], salary["sacrifice"]) if add_business_days(d, 7) >= date(2027, 1, 1)]
+    opening = OpeningYear(labour_income=salary["amount"].sum(), salary_sacrifice=salary["sacrifice"].sum(),
+                          payg_withheld=before[before["event"] == "payg_withholding"]["amount"].sum(),
+                          concessional_contributions=arrived, pending_contributions=tuple(in_flight))
+    resumed = run_ledger(later, replace(scenario, opening_year=opening), YEARS)
+    whole, part = full.annual[0]["assessment"], resumed.annual[0]["assessment"]
+    assert part.taxable_income == whole.taxable_income and part.net_tax == pytest.approx(whole.net_tax)
+    assert resumed.outstanding["tax_liabilities"][0]["amount"] == pytest.approx(full.outstanding["tax_liabilities"][0]["amount"])
+    assert resumed.annual[0]["concessional_contributions"] == pytest.approx(full.annual[0]["concessional_contributions"])
+
+
+def test_opening_year_carries_last_years_tax_and_rejects_dates_outside_the_part_year():
+    scenario = scenario_with(Person("1985-01-01"), outside_cash=20000,
+                             opening_year=OpeningYear(tax_due=(("2026-10-31", 3000, "2025-26"),)))
+    result = run_ledger(market(), scenario, YEARS)
+    settled = result.events[result.events["event"] == "tax_settlement"]
+    assert settled.iloc[0]["financial_year"] == "2025-26" and settled.iloc[0]["amount"] == 3000
+    later = market(start="2027-01-01")
+    with pytest.raises(ValueError, match="between 1 July"):
+        run_ledger(later, replace(scenario, opening_year=OpeningYear(
+            capital_events=(CapitalGainEvent("2020-01-01", "2027-02-01", 100),))), YEARS)
+    with pytest.raises(ValueError, match="on or after the start"):
+        run_ledger(later, replace(scenario, opening_year=OpeningYear(pending_contributions=(("2026-12-20", 100, 0),))), YEARS)

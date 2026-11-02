@@ -28,6 +28,17 @@ touches must fall in a supplied rule year, or the run stops with
 
 ## State and the daily event order
 
+**Opening year.** `LedgerScenario.opening_year` (`OpeningYear`) seeds the
+first financial year's totals with activity before the start: salary,
+sacrifice, withholding, contributions, interest, dividends and credits,
+other income, CGT events and Age Pension. It also carries employer
+contributions in flight and assessed tax still due. A run starting after 1
+July without one raises `ValueError`; `OpeningYear()` states that nothing
+happened earlier in the year. Opening non-concessional contributions
+establish the bring-forward state. Opening concessional contributions above
+the cap stop the run, because excess contributions are not modelled
+([ADR 0036](../decisions/0036-opening-year-to-date-position.md)).
+
 Asset unit prices start at 1. On each day:
 
 0. **Interest.** With `cash_interest = r` (annual effective), outside cash at
@@ -284,4 +295,4 @@ Revision history: 2026-10-28, first implementation. 2026-10-30, surplus cash rei
 (ADR 0030) and parcels sold lowest taxable gain first (ADR 0031). 2026-11-02, Age Pension receipts exempt
 the minimum tax on capital gains (ADR 0033); accounting end separate from the last observation, and period closes
 only for complete periods (ADR 0034); fund tax accrued with each accumulation distribution and an estimated tax on
-an unassessed final period (ADR 0035).
+an unassessed final period (ADR 0035); opening year-to-date position required for a start after 1 July (ADR 0036).

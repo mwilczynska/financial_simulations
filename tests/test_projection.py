@@ -188,7 +188,7 @@ def test_ledger_exempts_minimum_tax_only_when_age_pension_is_received(born, othe
 
 def test_a_weekend_30_june_horizon_is_still_assessed():
     # 30 June 2029 is a Saturday: the last observation is Friday 29 June, the accounting end is the 30th.
-    dates = tuple(pd.bdate_range("2028-07-01", "2029-06-30").date)
+    dates = (date(2028, 7, 1), *pd.bdate_range("2028-07-01", "2029-06-30").date)  # Saturday opening mark
     path = MarketPath(dates, ("AU",), np.zeros((len(dates) - 1, 1)), "AUD")
     scenario = LedgerScenario(Person("1980-01-01"), super_units={"AU": 100000}, super_weights={"AU": 1.0},
                               income={"AU": AssetIncome(0.04)}, end_date="2029-06-30")

@@ -222,6 +222,44 @@ class SpendingRule:
 
 
 @dataclass(frozen=True)
+class OpeningYear:
+    """The opening position for the financial year a run starts in: activity from 1 July to the day before the
+    start, and amounts in flight. Amounts are AUD.
+
+    A run that starts after 1 July must supply one; ``OpeningYear()`` states that nothing relevant happened earlier
+    in the year. The fund's tax on earlier income is taken as already reflected in the opening super balance.
+    """
+
+    labour_income: float = 0.0  # salary received, after salary sacrifice
+    salary_sacrifice: float = 0.0
+    payg_withheld: float = 0.0
+    concessional_contributions: float = 0.0  # received by the fund this year (SG and sacrifice)
+    non_concessional_contributions: float = 0.0
+    interest: float = 0.0
+    unfranked_dividends: float = 0.0
+    franked_dividends: float = 0.0  # cash received
+    franking_credits: float = 0.0
+    other_assessable_income: float = 0.0
+    capital_events: tuple[CapitalGainEvent, ...] = ()
+    age_pension: float = 0.0
+    age_pension_taxable: float = 0.0
+    # Employer contributions earned before the start that the fund receives on or after it: (date, amount, sacrifice).
+    pending_contributions: tuple[tuple[date, float, float], ...] = ()
+    # Assessed tax not yet settled, such as last year's return: (due date, amount, financial year); negative is a refund.
+    tax_due: tuple[tuple[date, float, str], ...] = ()
+
+    def __post_init__(self):
+        for name in ("labour_income", "salary_sacrifice", "payg_withheld", "concessional_contributions",
+                     "non_concessional_contributions", "interest", "unfranked_dividends", "franked_dividends",
+                     "franking_credits", "other_assessable_income", "age_pension", "age_pension_taxable"):
+            _money(getattr(self, name), name.replace("_", " ").capitalize())
+        object.__setattr__(self, "capital_events", tuple(self.capital_events))
+        object.__setattr__(self, "pending_contributions", tuple((as_date(d), float(a), float(s))
+                                                                for d, a, s in self.pending_contributions))
+        object.__setattr__(self, "tax_due", tuple((as_date(d), float(a), str(fy)) for d, a, fy in self.tax_due))
+
+
+@dataclass(frozen=True)
 class LedgerScenario:
     person: Person
     outside_cash: float = 0.0
@@ -255,6 +293,7 @@ class LedgerScenario:
     # Last calendar day accounted for; None ends on the last market observation. Days after it carry the last
     # close (no return is invented), so a horizon ending on a weekend 30 June is still assessed.
     end_date: date | None = None
+    opening_year: OpeningYear | None = None  # required when the run starts after 1 July
 
 
 @dataclass
@@ -391,7 +430,7 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
                           franking_credits=fy["credits"], capital_events=tuple(fy["events"]),
                           capital_losses_brought_forward=losses_bf, reportable_employer_super=fy["sacrifice"],
                           low_tax_contributions=fy["concessional"],
-                          other_assessable_income=fy["age_pension_taxable"],
+                          other_assessable_income=fy["age_pension_taxable"] + fy["other"],
                           # s119-15: any Age Pension payment received in the year exempts the minimum tax;
                           # a means-tested nil rate does not.
                           minimum_tax_exempt=fy["age_pension"] > 0,
@@ -414,7 +453,7 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
                     "acc_income": 0.0, "acc_credits": 0.0, "acc_tax_accrued": 0.0, "pen_income": 0.0, "pen_credits": 0.0, "spending": 0.0,
                     "shortfall": 0.0,
                     "interest": 0.0, "withheld": 0.0, "withhold_per_pay": 0.0, "age_pension": 0.0,
-                    "age_pension_taxable": 0.0}
+                    "age_pension_taxable": 0.0, "other": 0.0}
         if scenario.payg_withholding and scenario.employment:
             # Estimated tax on a full year's salary, spread over 26 paydays. Like PAYG it ignores investment
             # income and part-year work; the 30 June assessment settles any difference.
@@ -682,6 +721,38 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
         record_rule(day, wealth, bound(day, action))
 
     start_year(rules_by_year[financial_year_of(start)])
+    opening_year = scenario.opening_year
+    if opening_year is None and (start.month, start.day) != (7, 1):
+        raise ValueError("A run starting after 1 July needs opening_year: this financial year's income, withholding and "
+                         "contributions before the start (OpeningYear() if there were none).")
+    if opening_year is not None:
+        open_rules = state.fy["rules"]
+        for event in opening_year.capital_events:
+            if not open_rules.start <= event.event < start:
+                raise ValueError("Opening capital gain events must fall between 1 July and the day before the start.")
+        for when, _, _ in opening_year.pending_contributions:
+            if when < start:
+                raise ValueError("Opening pending contributions must arrive on or after the start.")
+        for when, _, _ in opening_year.tax_due:
+            if when < start:
+                raise ValueError("Opening tax due must fall due on or after the start.")
+        state.fy.update({
+            "labour": opening_year.labour_income, "sacrifice": opening_year.salary_sacrifice,
+            "withheld": opening_year.payg_withheld, "concessional": opening_year.concessional_contributions,
+            "non_concessional": opening_year.non_concessional_contributions, "interest": opening_year.interest,
+            "unfranked": opening_year.unfranked_dividends, "franked": opening_year.franked_dividends,
+            "credits": opening_year.franking_credits, "events": list(opening_year.capital_events),
+            "age_pension": opening_year.age_pension, "age_pension_taxable": opening_year.age_pension_taxable,
+            "other": opening_year.other_assessable_income})
+        if state.fy["concessional"] > state.fy["cap"].available + TOLERANCE:
+            raise UnsupportedRule("Opening concessional contributions exceed the available cap; excess contributions "
+                                  "are not modelled.")
+        if opening_year.non_concessional_contributions > 0:
+            period = apply_non_concessional(opening_year.non_concessional_contributions, open_rules, tsb_prior,
+                                            _under_75(person.born, open_rules), period)
+        state.pending += [(when, amount, sacrifice) for when, amount, sacrifice in opening_year.pending_contributions]
+        state.liabilities += [{"due": when, "amount": amount, "financial_year": fy}
+                              for when, amount, fy in opening_year.tax_due]
     closing = None
     while day <= end:
         rules = rules_by_year[financial_year_of(day)]

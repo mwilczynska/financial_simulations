@@ -154,6 +154,26 @@ Pension age with the single Age Pension and SAPTO
 a longer requested horizon is shortened and reported. `person.homeowner`
 (default true) and `person.other_assets` (default 0) feed the assets test.
 
+`[year_to_date]` holds the opening position for the start's financial year
+([ADR 0036](../decisions/0036-opening-year-to-date-position.md)):
+
+- **Year-to-date amounts.** Salary received after sacrifice, salary
+  sacrificed, PAYG withheld, concessional contributions the fund has
+  received, non-concessional contributions, other taxable income (interest,
+  unfranked dividends and net capital gains, assessed as ordinary income),
+  franked dividends with their credits, and Age Pension received. Its
+  taxable part uses the year's basic plus taxable-supplement share.
+- **Amounts in flight.** `pending_employer_contributions` arrive seven
+  business days after the start. `prior_year_tax` is last year's tax still
+  to settle (negative for a refund), due 31 October or at the start if
+  later.
+- **Confirmation.** A start after 1 July is rejected unless `entered = true`,
+  so a part year is never silently assessed as a whole year with full-year
+  thresholds. Zeros are a valid confirmed answer.
+- **Not covered.** Fund income earlier in the year (its tax is taken as
+  reflected in the opening super balance), Division 296 earnings before the
+  start, and capital gains that would attract the minimum tax.
+
 The pension commences on the later of `pension.start_age` and the date super
 becomes accessible (retirement after preservation age, or 65). An earlier
 requested age is moved to that date with a run note, because a

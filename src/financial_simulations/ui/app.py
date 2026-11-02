@@ -501,6 +501,35 @@ def inputs_retirement(plan):
                "at least 10 years and claim on time.")
 
 
+def year_to_date_inputs(plan):
+    """This financial year before the start date: required for a start after 1 July (ADR 0036)."""
+    ytd = plan["year_to_date"]
+    start = date.fromisoformat(plan["plan"]["start_date"])
+    midyear = (start.month, start.day) != (7, 1)
+    with st.expander("This financial year before the start date", expanded=midyear and not ytd["entered"]):
+        st.caption("Tax is assessed on the whole financial year. A start after 1 July needs what already happened since "
+                   "1 July, or the part year would be taxed as if it were the whole year and could show a false refund. "
+                   "Last year's tax still to settle and employer super not yet received apply to any start.")
+        a, b = st.columns(2)
+        fields = (("labour_income", "Salary received (after sacrifice)"), ("salary_sacrifice", "Salary sacrificed"),
+                  ("payg_withheld", "Tax withheld from pay"), ("concessional_contributions", "Concessional super contributions received"),
+                  ("non_concessional_contributions", "Non-concessional contributions"),
+                  ("other_taxable_income", "Other taxable income (interest, unfranked dividends, net capital gains)"),
+                  ("franked_dividends", "Franked dividends (cash)"), ("franking_credits", "Franking credits"),
+                  ("age_pension", "Age Pension received"),
+                  ("pending_employer_contributions", "Employer super earned but not yet received"))
+        for i, (name, label) in enumerate(fields):
+            with (a if i % 2 == 0 else b):
+                ytd[name] = money(label, ytd[name], f"ytd_{name}")
+        ytd["prior_year_tax"] = float(st.number_input(
+            "Last year's tax still to settle (negative for a refund)", -1e8, 1e8, float(ytd["prior_year_tax"]), 100.0,
+            key=key("ytd_prior_year_tax"), format="%.0f", help="Due 31 October, or at the start date if that is later."))
+        ytd["entered"] = st.checkbox("These are my amounts for this financial year so far (zeros where none)", ytd["entered"],
+                                     key=key("ytd_entered"), disabled=not midyear and not ytd["entered"])
+        if midyear and not ytd["entered"]:
+            st.warning("The start date is after 1 July: confirm these amounts before running.")
+
+
 def inputs_assumptions(plan):
     st.subheader("Horizon")
     a, b = st.columns(2)
@@ -511,6 +540,7 @@ def inputs_assumptions(plan):
         plan["plan"]["years"] = int(st.number_input("Years to simulate", 1, 60, int(plan["plan"]["years"]), 1, key=key("years"),
                                                     help="Runs can go past Age Pension age; set this to reach your planning "
                                                          "age to see the whole retirement in the tax ledger."))
+    year_to_date_inputs(plan)
     st.subheader("Economic assumptions")
     a, b = st.columns(2)
     with a:
