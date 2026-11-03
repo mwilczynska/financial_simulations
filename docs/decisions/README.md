@@ -50,6 +50,7 @@ Decision records preserve why Financial Simulations makes a material modelling o
 | [0042](0042-faster-ledger-summaries-and-worker-priority.md) | 2026-11-02 | Accepted; implemented and tested | Identical-result speed-ups to path summaries and parcel ranking; up to hardware threads less 4 ledger workers at below-normal priority, with a memory check and a Calculation cores setting |
 | [0043](0043-compared-spending-strategies-in-the-plan.md) | 2026-11-02 | Accepted; implemented and tested | Schema version 3: `spending.compare` lists the strategies to compare, sharing one percentage start; version 2 `rule` files still load |
 | [0044](0044-run-every-strategy-on-shared-paths.md) | 2026-11-02 | Accepted; implemented and tested | Every compared strategy runs on every shared path inside each worker task; per-strategy results and `strategies/<rule>/` output folders |
+| [0045](0045-strategy-comparison-section.md) | 2026-11-02 | Accepted; implemented and tested | Spending strategies compared: statistics led by spending, median wealth over time and yearly flow medians per strategy, with matching PNGs |
 
 ## When to write a record
 

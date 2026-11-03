@@ -359,10 +359,18 @@ def test_every_compared_strategy_runs_on_the_same_draws_and_writes_its_own_folde
     assert (folder / "portfolio_future.png").exists() and not (folder / "daily.csv").exists()
     manifest = json.loads((folder / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["spending_strategies"]["percent"]["folder"] == "strategies/percent"
+    for name in ("comparison_summary.csv", "comparison_wealth.png", "comparison_spending.png"):
+        assert (folder / name).exists()
+    summary = pd.read_csv(folder / "comparison_summary.csv")
+    assert list(summary.columns) == ["Measure", "Kind", "Fixed", "Guyton–Klinger", "% of wealth"]
+    # The same starting spending for every strategy, by construction.
+    start = summary.loc[summary["Measure"] == "Starting retirement spending (median)"].iloc[0]
+    assert start["Fixed"] == pytest.approx(start["Guyton–Klinger"]) == pytest.approx(start["% of wealth"])
     # Back to one strategy: the original layout returns and the strategy folders go.
     plan["spending"]["compare"] = ["fixed"]
     run = run_plan(plan, tmp_path, market=market)
     assert (folder / "daily.csv").exists() and not (folder / "strategies").exists()
+    assert not (folder / "comparison_wealth.png").exists()
     assert list(run.strategies) == ["fixed"]
 
 
@@ -585,6 +593,43 @@ def test_app_compares_ticked_strategies_and_ignores_a_stale_cores_choice(tmp_pat
     assert not app.exception
     assert app.session_state.result.strategies["vanguard"].rule == "vanguard"
     assert app.selectbox(key="ledger_path_vanguard__0").value.startswith("Median ending wealth")
+    assert any(h.value == "Spending strategies compared" for h in app.header)
+    assert app.selectbox(key="compare_flow__0").value == "Spending"
+    app.selectbox(key="compare_flow__0").set_value("Income tax").run()
+    app.toggle(key="compare_p10__0").set_value(True).run()
+    assert not app.exception
     for rule in ("fixed", "guyton_klinger", "vanguard"):
         app.checkbox(key=f"compare_{rule}__0").uncheck().run()
     assert not app.exception and any(e.value == "Tick at least one strategy." for e in app.error)
+
+
+def test_strategy_comparison_measures_follow_their_definitions():
+    from types import SimpleNamespace
+    from financial_simulations.retirement.strategy_results import (comparison_table, retired_spending, wealth_lines,
+                                                                   yearly_medians)
+
+    def run(spending, ending, shortfall, below):
+        paths = pd.DataFrame({"Path": [0, 1, 2], "Status": ["funded"] * 3, "Starting retirement spending": [50.0] * 3,
+                              "Lowest retired-year spending": spending, "Spending shortfall": shortfall,
+                              "Years below start": below, "Ending wealth after tax owed": ending})
+        annual = pd.DataFrame({"Path": [0, 0, 1, 1, 2, 2], "FY ending": [2030, 2031] * 3,
+                               "Full retired year": [False, True] * 3, "Spending paid": [1.0, 10.0, 1.0, 20.0, 1.0, 30.0],
+                               "Flow: Spending": [-1.0, -10.0, -1.0, -20.0, -1.0, -30.0]})
+        wealth = pd.DataFrame({"Date": pd.to_datetime(["2030-06-30"] * 3), "Path": [0, 1, 2], "Total wealth": [1.0, 2.0, 9.0]})
+        return SimpleNamespace(retirement_paths=paths, retirement_annual=annual, wealth_paths=wealth)
+
+    strategies = {"fixed": run([40.0, 50.0, 60.0], [0.0, 5.0, 9.0], [0.0, 0.0, 3.0], [0, 1, 1]),
+                  "percent": run([10.0, 20.0, 30.0], [6.0, 7.0, 8.0], [0.0, 0.0, 0.0], [1, 1, 1])}
+    table = comparison_table(strategies).set_index("Measure")
+    assert retired_spending(strategies["fixed"]).tolist() == [10.0, 20.0, 30.0]  # full retired years only
+    assert table.loc["Spending over full retired years: median", "fixed"] == 20.0
+    assert table.loc["Lowest retired year's spending: median", "percent"] == 20.0
+    assert table.loc["Paths with any spending shortfall", "fixed"] == pytest.approx(1 / 3)
+    assert table.loc["Paths that ever spent below the start", "percent"] == 1.0
+    assert table.loc["Ending wealth after tax owed: median", "fixed"] == 5.0
+    bars = yearly_medians(strategies)  # spending is an outflow, shown as a positive amount paid
+    assert bars["FY ending"].tolist() == [2031, 2031] and bars["Value"].tolist() == [20.0, 20.0]
+    assert len(yearly_medians(strategies, retired_only=False)) == 4
+    lines = wealth_lines(strategies)
+    assert lines.loc[lines["Strategy"] == "fixed", "Median"].item() == 2.0
+

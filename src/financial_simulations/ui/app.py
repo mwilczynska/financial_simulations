@@ -21,6 +21,9 @@ from financial_simulations.retirement.flows import account_flows, household_flow
 from financial_simulations.retirement.paths import CPU_HEADROOM, automatic_workers, warm_pool
 from financial_simulations.retirement.real import real_daily, real_events, year_deflator
 from financial_simulations.retirement.run_plan import ledger_for_path, run_plan
+from financial_simulations.retirement.strategy_results import (DEFAULT_FLOW, OUTFLOWS, STRATEGY_COLOURS,
+                                                               STRATEGY_NAMES, available_flows, comparison_table,
+                                                               wealth_lines, yearly_medians)
 from financial_simulations.rules.au.parameters import UnsupportedRule, load_ruleset
 from financial_simulations.rules.au.superannuation import access_date, age_on, birthday
 from financial_simulations.rules.au.tax import IncomeYear, assess
@@ -1675,6 +1678,116 @@ def withdrawal_strategy(plan):
             "Change any of this on the Retirement tab.")
 
 
+def strategy_scale(rules):
+    """Each strategy's fixed colour, whatever is ticked: colour follows the strategy, not its position."""
+    import altair as alt
+
+    names = [STRATEGY_NAMES[r] for r in rules]
+    return alt.Scale(domain=names, range=[STRATEGY_COLOURS[r] for r in rules])
+
+
+def section_comparison(run):
+    """Headline comparison of the compared spending strategies on the same paths."""
+    import altair as alt
+
+    strategies = run.strategies
+    rules = list(strategies)
+    paths = len(run.retirement_paths)
+    st.header("Spending strategies compared")
+    st.markdown(f"All {len(rules)} strategies ran through the daily tax ledger on the **same {paths} market paths**, "
+                "with every other input unchanged and the same starting spending, so the differences below come from "
+                "the spending strategy alone. Amounts are in today's dollars.")
+    table = comparison_table(strategies)
+    shown = pd.DataFrame({"Measure": table["Measure"],
+                          **{STRATEGY_NAMES[r]: [share(v) if kind == "share" else compact(v)
+                                                 for v, kind in zip(table[r], table["Kind"])] for r in rules}})
+    st.dataframe(shown, width="stretch", hide_index=True, height=fit(shown),
+                 column_config={"Measure": st.column_config.TextColumn("Measure", pinned=True, width="large")})
+    st.caption("Read spending and wealth together: a strategy that spends less always ends with more. *Spending over "
+               "full retired years* is each path's total spending paid in the financial years after retirement inside "
+               "the horizon; the *10th percentile* is the level 90% of paths beat, so it describes bad markets. The "
+               "*lowest retired year* is each path's smallest year of spending paid (shortfalls lower it). Every "
+               "figure is a separate median or percentile across paths, so a column need not describe one path.")
+
+    st.subheader("Wealth over time")
+    marks = milestones(run.plan, run.result.daily.index[0].date(), run.result.daily.index[-1].date())
+    low = st.toggle("Add the 10th percentile (bad markets)", value=False, key=key("compare_p10"))
+    lines = wealth_lines(strategies)
+    lines["Strategy"] = lines["Strategy"].map(STRATEGY_NAMES)
+    measures = ["Median", "P10"] if low else ["Median"]
+    long = lines.melt(["Date", "Strategy"], value_vars=measures, var_name="Statistic", value_name="Wealth")
+    long["Statistic"] = long["Statistic"].map({"Median": "Median", "P10": "10th percentile"})
+    long = add_age(long)
+    colour = alt.Color("Strategy:N", scale=strategy_scale(rules), legend=alt.Legend(orient="bottom", title=None))
+    base = alt.Chart(long).encode(x=alt.X("Date:T", title=None, axis=year_axis(long)), color=colour)
+    drawn = base.mark_line(strokeWidth=2).encode(
+        y=alt.Y("Wealth:Q", title="Total wealth, today's dollars", axis=alt.Axis(format="$,.0f")),
+        strokeDash=alt.StrokeDash("Statistic:N", scale=alt.Scale(domain=["Median", "10th percentile"],
+                                                                 range=[[1, 0], [6, 3]]),
+                                  legend=alt.Legend(orient="bottom", title=None) if low else None))
+    hover = alt.selection_point(fields=["Date"], nearest=True, on="pointerover", empty=False, name="compare_hover")
+    targets = base.mark_point(size=80, opacity=0).encode(
+        y="Wealth:Q", tooltip=[alt.Tooltip("Date:T", format="%b %Y"), *age_tooltip(long), "Strategy:N", "Statistic:N",
+                               alt.Tooltip("Wealth:Q", format="$,.0f")]).add_params(hover)
+    rule = alt.Chart(long).mark_rule(color="#8a949a").encode(x="Date:T").transform_filter(hover)
+    ends = long.loc[long["Statistic"] == "Median"].sort_values("Date").groupby("Strategy").tail(1)
+    labels = alt.Chart(ends).mark_text(align="left", dx=6, fontSize=11, color="#3c474d").encode(
+        x="Date:T", y="Wealth:Q", text="Strategy:N")
+    # One flat layer: nesting a chart that owns a selection inside another layer duplicates its signals.
+    layers = [drawn, targets, rule, labels]
+    if marks is not None and not marks.empty:
+        layers += [alt.Chart(marks).mark_rule(strokeDash=[4, 3], color="#5f6b73", strokeWidth=1.3).encode(
+                       x="Date:T", tooltip=["Event:N", alt.Tooltip("Date:T", format="%d %b %Y")]),
+                   alt.Chart(marks).mark_text(align="left", dx=4, fontSize=11, color="#3c474d").encode(
+                       x="Date:T", y=alt.Y("Offset:Q", scale=None), text="Event:N")]
+    st.altair_chart(zoomable(alt.layer(*layers).properties(height=520)), width="stretch")
+    st.caption("The median of total wealth (cash, outside investments and super) across paths at each month end, one "
+               "line per strategy" + ("; dashed lines are the 10th percentile, which 90% of paths stay above" if low
+                                      else "") + ". Lines are pointwise: no single path follows them. The strategies "
+               "match until retirement and separate after it. Hover for values; drag to pan, Shift+scroll to zoom, "
+               "double-click to reset.")
+
+    st.subheader("Year by year")
+    flows = available_flows(strategies)
+    a, b = st.columns([2, 1])
+    with a:
+        flow = st.selectbox("Show", flows, index=flows.index(DEFAULT_FLOW) if DEFAULT_FLOW in flows else 0,
+                            key=key("compare_flow"),
+                            format_func=lambda f: f"{f} (withdrawals)" if f == "Spending" else f)
+    with b:
+        retired = st.toggle("Full retired years only", value=True, key=key("compare_retired"),
+                            help="Before retirement every strategy is the same, so those years add bars but no "
+                                 "difference.")
+    bars = yearly_medians(strategies, flow, retired)
+    if bars.empty:
+        st.info("No full retired financial year falls inside the horizon, so there is nothing to compare year by year. "
+                "Raise *Years to simulate* on the Assumptions tab.")
+        return
+    width = 0.84 / len(rules)
+    position = {r: i for i, r in enumerate(rules)}
+    bars["x0"] = bars["FY ending"] - 0.42 + bars["Strategy"].map(position) * width
+    bars["x1"] = bars["x0"] + width * 0.88  # a small gap between neighbouring bars
+    bars["Strategy"] = bars["Strategy"].map(STRATEGY_NAMES)
+    bars["Period"] = bars["FY ending"].map(period_label)
+    outflow = flow in OUTFLOWS
+    title = f"Median {flow.lower()}" + (" paid" if outflow else "") + " per year, today's dollars"
+    chart = alt.Chart(bars).mark_bar(cornerRadiusTopLeft=2, cornerRadiusTopRight=2).encode(
+        x=alt.X("x0:Q", axis=fy_axis(bars), scale=alt.Scale(domain=[int(bars["FY ending"].min()) - 0.6,
+                                                                    int(bars["FY ending"].max()) + 0.6], nice=False)),
+        x2="x1:Q", y=alt.Y("Value:Q", title=title, axis=alt.Axis(format="$,.0f")), y2=alt.datum(0), color=colour,
+        tooltip=[alt.Tooltip("Period:N", title="Year"), "Strategy:N", alt.Tooltip("Value:Q", title="Median", format="$,.0f")])
+    zero = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(color="#5f6b73").encode(y="y:Q")
+    first, last = int(bars["FY ending"].min()) - 0.6, int(bars["FY ending"].max()) + 0.6
+    # Markers outside the years shown (retirement falls before the first full retired year) would sit on the axis.
+    inside = marks.loc[marks["Position"].between(first, last)] if not marks.empty else marks
+    st.altair_chart(with_milestones(alt.layer(chart, zero).properties(height=480), inside, "Position:Q"), width="stretch")
+    st.caption(f"Each bar is the median across all {paths} paths of that year's {flow.lower()}"
+               + (", shown as a positive amount paid" if outflow else "") + ", for one strategy. The dropdown offers "
+               "every flow from *Money in and out in a typical year*. Medians are taken year by year, so a strategy's "
+               "bars need not come from one path. Fixed spending is the same every year on each path; its median "
+               "dips only where paths ran short and paid less.")
+
+
 def section_retirement(run):
     import altair as alt
 
@@ -2212,7 +2325,8 @@ def results(plan):
     section_future(run)
     shown = run
     if len(strategies) > 1:
-        st.header("Spending strategy shown below")
+        section_comparison(run)
+        st.header("Each strategy in detail")
         choice = st.radio("Spending strategy for sections 4 and 5", list(strategies), horizontal=True,
                           format_func=lambda rule: RULE_LABELS[rule].split(":")[0], key=key("shown_strategy"))
         shown = strategies[choice]
@@ -2229,8 +2343,9 @@ def results(plan):
                    f"`{run.folder}`" + (", with each strategy's own files in `strategies/`." if nested else "."))
         with st.expander("Static PNG review plots"):
             own = run.folder / "strategies" / shown.rule if nested else run.folder
-            for file in [run.folder / name for name in ("portfolio_history.png", "portfolio_future.png",
-                                                         "portfolio_distributions.png")] + \
+            shared = ("portfolio_history.png", "portfolio_future.png", "portfolio_distributions.png") + \
+                (("comparison_wealth.png", "comparison_spending.png") if nested else ())
+            for file in [run.folder / name for name in shared] + \
                         [own / name for name in ("retirement_range.png", "retirement_flows.png", "ledger.png")]:
                 if file.exists():
                     st.image(str(file), caption=file.name.replace("_", " ").replace(".png", ""))

@@ -381,3 +381,25 @@ each path (identical draws), that each strategy's files land in
 `strategies/<rule>/` and that a later one-strategy run restores the
 original layout. The app test runs three strategies and switches the
 strategy shown in sections 4 and 5.
+
+## Spending strategies compared (2026-11-02)
+
+ADR 0045. The comparison PNGs from a 60-path, 40-year, four-strategy run
+were inspected: medians and dashed 10th percentiles match until retirement
+and separate after it; the grouped spending bars stay legible with four
+strategies over about 37 retired years. Fixed spending's yearly median
+dipped slightly late in retirement; each path's fixed spending was flat, and
+the dip came from paths that ran short, which the caption now explains.
+
+In the in-app browser the example plan ran with all four strategies
+("Daily tax ledgers: … of 400 (100 paths × 4 strategies)"). The review found
+and fixed two faults the app test cannot see, because it does not render
+charts:
+
+- the wealth chart was blank: Vega reported a duplicate hover signal,
+  because the chart owning the selection was nested inside the milestone
+  layer. It is now one flat layer, as the all-paths chart already was, and
+  it draws its lines, the 10th-percentile toggle and the milestones;
+- the retirement marker sat on the year-by-year chart's axis, because
+  retirement falls before the first full retired year. Markers outside the
+  years shown are now left out.

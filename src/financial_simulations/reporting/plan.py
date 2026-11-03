@@ -192,3 +192,55 @@ def write_retirement_plots(output: Path, plan, retirement_paths, retirement_band
         fig.subplots_adjust(bottom=0.26)
         ax.legend(frameon=False, ncol=4, fontsize=8, loc="upper center", bbox_to_anchor=(0.5, -0.1))
         fig.savefig(output / "retirement_flows.png")
+
+
+def write_comparison_plots(output: Path, plan, strategies: dict):
+    """Write the compared strategies' wealth over time, yearly spending and summary table (ADR 0045)."""
+    from financial_simulations.retirement.strategy_results import (DEFAULT_FLOW, STRATEGY_COLOURS, STRATEGY_NAMES,
+                                                                   comparison_table, wealth_lines, yearly_medians)
+
+    output = Path(output)
+    table = comparison_table(strategies)
+    table.rename(columns={r: STRATEGY_NAMES[r] for r in strategies}).to_csv(output / "comparison_summary.csv", index=False,
+                                                                            lineterminator="\n")
+    paths = len(next(iter(strategies.values())).retirement_paths)
+    with matplotlib.rc_context({"font.family": "DejaVu Sans"}):
+        lines = wealth_lines(strategies)
+        fig, ax = _figure("Spending strategies: wealth over time",
+                          f"Median (solid) and 10th percentile (dashed) total wealth across the same {paths} paths; "
+                          "today's dollars")
+        for rule in strategies:
+            part = lines.loc[lines["Strategy"] == rule]
+            dates = pd.to_datetime(part["Date"])
+            ax.plot(dates, part["Median"], color=STRATEGY_COLOURS[rule], linewidth=1.8, label=STRATEGY_NAMES[rule])
+            ax.plot(dates, part["P10"], color=STRATEGY_COLOURS[rule], linewidth=1.2, linestyle="--")
+        ax.set_ylabel("Total wealth, today's dollars")
+        ax.yaxis.set_major_formatter(FuncFormatter(_money))
+        ax.set_ylim(bottom=0)
+        dates = pd.to_datetime(lines["Date"])
+        _years(ax, dates)
+        for _, mark in milestones(plan, dates.min().date(), dates.max().date()).iterrows():
+            ax.axvline(mark["Date"], color="#5f6b73", linestyle="--", linewidth=1)
+            ax.text(mark["Date"], ax.get_ylim()[1], " " + mark["Event"], fontsize=8, color="#3c474d", va="top")
+        fig.subplots_adjust(bottom=0.2)
+        ax.legend(frameon=False, ncol=len(strategies), fontsize=9, loc="upper center", bbox_to_anchor=(0.5, -0.08))
+        fig.savefig(output / "comparison_wealth.png")
+
+        bars = yearly_medians(strategies, DEFAULT_FLOW, retired_only=True)
+        fig, ax = _figure("Spending strategies: spending each retired year",
+                          f"Median spending paid across the same {paths} paths in each full retired financial year; "
+                          "today's dollars")
+        if not bars.empty:
+            width = 0.84 / len(strategies)
+            for i, rule in enumerate(strategies):
+                part = bars.loc[bars["Strategy"] == rule]
+                ax.bar(part["FY ending"] - 0.42 + (i + 0.5) * width, part["Value"], width=width * 0.88,
+                       color=STRATEGY_COLOURS[rule], label=STRATEGY_NAMES[rule])
+            years = sorted(bars["FY ending"].unique())
+            step = 5 if len(years) >= 25 else 2 if len(years) >= 12 else 1
+            ax.set_xticks([y for y in years if y % step == 0 or step == 1])
+        ax.set_ylabel("Spending paid, today's dollars (year ending 30 June)")
+        ax.yaxis.set_major_formatter(FuncFormatter(_money))
+        fig.subplots_adjust(bottom=0.2)
+        ax.legend(frameon=False, ncol=len(strategies), fontsize=9, loc="upper center", bbox_to_anchor=(0.5, -0.08))
+        fig.savefig(output / "comparison_spending.png")

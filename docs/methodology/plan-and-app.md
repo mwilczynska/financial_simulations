@@ -389,7 +389,18 @@ positions them.
      volatility, maximum drawdown), each overlaying outside super, inside
      super and the combined portfolio with dashed medians;
    - a percentile table;
-   When several strategies were compared, a **strategy selector** sits between sections 3 and 4 and chooses
+   When several strategies were compared, **Spending strategies compared**
+   ([ADR 0045](../decisions/0045-strategy-comparison-section.md)) follows section 3. Its statistics table has
+   one column per strategy: median starting retirement spending; total spending paid over full retired
+   financial years (median and 10th percentile); each path's lowest retired year (median and 10th
+   percentile); the shares of paths with any shortfall and that ever spent below the start; and ending wealth
+   after tax owed (median and 10th percentile). *Wealth over time* draws the median total wealth at each month
+   end per strategy, with optional dashed 10th percentiles. *Year by year* draws grouped bars of each financial
+   year's median of a chosen money in and out flow (default spending; outflows shown as positive amounts paid),
+   full retired years only by default. Strategy colours are fixed per strategy (`STRATEGY_COLOURS`). The same
+   functions (`retirement/strategy_results.py`) write `comparison_summary.csv`, `comparison_wealth.png` and
+   `comparison_spending.png`.
+   Below it, a **strategy selector** chooses
    whose results sections 4 and 5 show. Run notes that apply to every strategy are shown at the top; notes
    for one strategy appear under the selector. Section 4 and 5 widgets keep separate choices per strategy
    (`strategy_key`). Stages 5 and 6 of the strategy comparison plan replace this with a comparison section and
@@ -601,7 +612,9 @@ sample settings, notes and each strategy's folder and representative path. Each 
 `daily.csv`, `events.csv`, `annual.json` (with that strategy's manifest), `ledger.png`, `retirement_paths.csv`,
 `retirement_bands.csv` (by account), `retirement_annual.csv`, `retirement_range.png` and
 `retirement_flows.png`. With one strategy they sit in the plan folder itself, as before; with several, each
-strategy's are in `strategies/<rule>/`. A run removes the other layout's files, so a folder never mixes the two.
+strategy's are in `strategies/<rule>/` and the comparison files (`comparison_summary.csv`,
+`comparison_wealth.png`, `comparison_spending.png`) sit in the plan folder. A run removes the other layout's
+files, so a folder never mixes the two.
 None belongs in Git.
 
 ## Validation, limitations and references
