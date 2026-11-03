@@ -92,9 +92,16 @@ Schema version 3 uses the fields below. Version 2 files, which name one `rule`, 
 plan lists its compared strategies in `spending.compare` and has no single rule. `strategy_plan(plan, rule)`
 returns a copy with `spending.rule` set, and `build_inputs` uses that rule (a plan comparing one strategy needs
 no copy). Every strategy keeps its own parameters in the plan, so ticking one off and on again restores them.
-The app's Retirement tab has a tick box per strategy and shows the settings of each ticked one. Until every
-compared strategy is run on the same paths (stage 4 of the strategy comparison plan), a run uses the first
-compared strategy and adds a note saying so; `PlanRun.plan` is that strategy's plan.
+The app's Retirement tab has a tick box per strategy and shows the settings of each ticked one.
+
+**Running compared strategies** ([ADR 0044](../decisions/0044-run-every-strategy-on-shared-paths.md)). A run
+puts every compared strategy through the daily ledger on **every** retirement path; no strategy uses fewer
+paths. Each worker task takes a chunk of paths and, for each path, gathers its market draw once and runs every
+strategy's ledger on it. The strategies therefore see identical markets, and any difference between them on a
+path comes from the strategy alone. Before the retirement date their ledgers are identical, so every strategy
+reaches retirement with the same wealth on each path (a test checks this). `run_plan` returns the first
+compared strategy's `PlanRun`; its `strategies` field holds every strategy's `PlanRun`, by rule in the plan's
+order, each with its own representative path, bands, tables and notes, and all sharing one portfolio analysis.
 
 `outside.weights` and `super.weights` each sum to one. They represent the
 opening allocation and future purchases or contributions in that account.
@@ -382,6 +389,11 @@ positions them.
      volatility, maximum drawdown), each overlaying outside super, inside
      super and the combined portfolio with dashed medians;
    - a percentile table;
+   When several strategies were compared, a **strategy selector** sits between sections 3 and 4 and chooses
+   whose results sections 4 and 5 show. Run notes that apply to every strategy are shown at the top; notes
+   for one strategy appear under the selector. Section 4 and 5 widgets keep separate choices per strategy
+   (`strategy_key`). Stages 5 and 6 of the strategy comparison plan replace this with a comparison section and
+   tabs.
 4. **Retirement outcomes.** It opens with a **withdrawal strategy** box,
    built from the plan by `withdrawal_strategy`:
    - the rule;
@@ -583,11 +595,14 @@ choice affects display only, not path values or quantiles.
 The browser starts with `financial-simulations ui`; the command line uses
 `financial-simulations plan <plan-file>`. Both write an ignored
 `output/plans/<plan-name>/` folder. It contains the normalized `plan.toml`,
-`daily.csv`, `events.csv`, `annual.json`, `asset_summary.csv`,
-`portfolio_summary.csv`, `portfolio_history.csv`, `portfolio_bands.csv`, `portfolio_outcomes.csv`,
-`portfolio_annual.csv`, `retirement_paths.csv`, `retirement_bands.csv` (by account), `retirement_annual.csv`,
-`ledger.png`, five other PNGs and `manifest.json` with source hashes,
-code/rule manifests, sample settings and notes. None belongs in Git.
+`asset_summary.csv`, `portfolio_summary.csv`, `portfolio_history.csv`, `portfolio_bands.csv`,
+`portfolio_outcomes.csv`, three portfolio PNGs and `manifest.json` with source hashes, code/rule manifests,
+sample settings, notes and each strategy's folder and representative path. Each strategy's own files are
+`daily.csv`, `events.csv`, `annual.json` (with that strategy's manifest), `ledger.png`, `retirement_paths.csv`,
+`retirement_bands.csv` (by account), `retirement_annual.csv`, `retirement_range.png` and
+`retirement_flows.png`. With one strategy they sit in the plan folder itself, as before; with several, each
+strategy's are in `strategies/<rule>/`. A run removes the other layout's files, so a folder never mixes the two.
+None belongs in Git.
 
 ## Validation, limitations and references
 

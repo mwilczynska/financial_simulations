@@ -41,6 +41,11 @@ def key(name):
     return f"{name}__{st.session_state.version}"
 
 
+def strategy_key(run, name):
+    """A widget key for one strategy's results: each compared strategy keeps its own choices (its paths differ)."""
+    return key(name) if len(run.strategies or {}) <= 1 else key(f"{name}_{run.rule}")
+
+
 def load_into_session(plan, message):
     st.session_state.plan = plan
     st.session_state.version += 1
@@ -392,8 +397,8 @@ def spending_rule_inputs(plan):
         st.error("Tick at least one strategy.")
         return
     if len(compare) > 1:
-        st.info("Running every ticked strategy and comparing them side by side is still being built. For now a run "
-                f"shows the first ticked strategy only: {RULE_LABELS[compare[0]].split(':')[0].lower()}.")
+        st.caption(f"Each of the {len(compare)} ticked strategies runs on every daily ledger path, so a run takes "
+                   f"about {len(compare)} times as long as one strategy.")
     only_fixed = compare == ["fixed"]
     if only_fixed:
         spending["retirement"] = st.radio("Retirement spending starts at", list(START_LABELS),
@@ -1611,8 +1616,8 @@ def age_pension_section(plan, annual, calculated, marks):
 def wealth_bands(run, calculated, marks):
     """Wealth bands for the chosen account; a fragment so switching accounts redraws only this chart."""
     names = list(dict.fromkeys(run.account_bands["Series"]))
-    choice = st.radio("Show", names, horizontal=True, key=key("wealth_series"))
-    wide = st.toggle("Log scale", value=True, key=key("wealth_bands_log"))
+    choice = st.radio("Show", names, horizontal=True, key=strategy_key(run, "wealth_series"))
+    wide = st.toggle("Log scale", value=True, key=strategy_key(run, "wealth_bands_log"))
     bands = run.account_bands.loc[run.account_bands["Series"] == choice]
     st.altair_chart(band_chart(bands, f"{choice}, today's dollars" + (" · log scale" if wide else ""), symlog=wide, marks=marks),
                     width="stretch")
@@ -1734,7 +1739,7 @@ full, down to each payment. The project's methodology documents give every rule 
     if getattr(run, "wealth_paths", None) is not None:
         st.subheader("Wealth over time across many paths")
         ruin_statistics(run, calculated, marks)
-        log = st.toggle("Log scale", value=True, key=key("all_paths_log"))
+        log = st.toggle("Log scale", value=True, key=strategy_key(run, "all_paths_log"))
         chart, grey, red, clipped = all_paths_chart(run.wealth_paths, marks, calculated, cache_key=id(run), log=log)
         total = run.wealth_paths["Path"].nunique()
         st.markdown(f"<span style='color:{GREY}'>&#9644;</span> {grey} of {total - red} paths that never ran out "
@@ -1999,7 +2004,7 @@ def section_ledger(run):
         choices[choice], headings[choice] = members, heading
     for _, row in calculated.iterrows():  # sorted from the worst ending wealth
         choices[f"Path {int(row['Path'])} · {ordinal(ranks[row['Path']])} percentile"] = int(row["Path"])
-    picked = st.selectbox("Path to inspect", list(choices), key=key("ledger_path"))
+    picked = st.selectbox("Path to inspect", list(choices), key=strategy_key(run, "ledger_path"))
     st.caption(f"The default is path {run.representative_path}: of the calculated paths, its ending wealth is closest "
                "to the median. The number is simply its position in the draw sequence. A median *ending* does not "
                "make every year median; the path may have had a bad start and a strong finish. The **groups** "
@@ -2164,7 +2169,7 @@ def section_ledger(run):
         events = result.events
         kinds = sorted(events["event"].unique())
         chosen = st.multiselect("Event types", kinds, default=[k for k in kinds if k not in ("buy", "distribution")],
-                                key=key("event_types"))
+                                key=strategy_key(run, "event_types"))
         st.dataframe(events.loc[events["event"].isin(chosen)], width="stretch", hide_index=True,
                      column_config={"amount": money_column("amount")})
     name = slug(run.plan["plan"]["name"])
@@ -2188,7 +2193,7 @@ def results(plan):
         st.info("Press Run plan to see your portfolios, their history and simulated futures, retirement outcomes "
                 "across many market paths, and any single path's daily ledger.")
         return
-    if not hasattr(run, "wealth_paths"):  # the newest PlanRun field; an old server's modules lack it
+    if not hasattr(run, "strategies"):  # the newest PlanRun field; an old server's modules lack it
         # Streamlit reloads this page's code on change but not the simulation modules it imports.
         st.error("The planner code was updated while this app was running, so these results came from the old code. "
                  "Stop the app (Ctrl+C in its terminal) and start it again with `financial-simulations ui`, then "
@@ -2196,23 +2201,39 @@ def results(plan):
         return
     if plan_to_json(valid) != plan_to_json(run.plan):
         st.warning("Inputs have changed since this run. Press Run plan to refresh the results.")
-    for note in run.notes:
+    strategies = run.strategies or {run.rule: run}
+    common = [note for note in run.notes if all(note in other.notes for other in strategies.values())]
+    for note in common:
         st.warning(note)
     BORN["date"] = date.fromisoformat(run.plan["person"]["date_of_birth"])
     inflation_note(run.plan)
     section_portfolios(run)
     section_history(run)
     section_future(run)
-    section_retirement(run)
-    section_ledger(run)
+    shown = run
+    if len(strategies) > 1:
+        st.header("Spending strategy shown below")
+        choice = st.radio("Spending strategy for sections 4 and 5", list(strategies), horizontal=True,
+                          format_func=lambda rule: RULE_LABELS[rule].split(":")[0], key=key("shown_strategy"))
+        shown = strategies[choice]
+        st.caption(f"All {len(strategies)} strategies ran on the same {len(run.retirement_paths)} market paths with every "
+                   "other input unchanged, so the differences between them come from the spending strategy alone.")
+        for note in shown.notes:
+            if note not in common:
+                st.warning(note)
+    section_retirement(shown)
+    section_ledger(shown)
     if run.folder:
+        nested = len(strategies) > 1
         st.success(f"Saved the plan, path summaries, the median path's daily ledger, a manifest and PNG review plots to "
-                   f"`{run.folder}`.")
+                   f"`{run.folder}`" + (", with each strategy's own files in `strategies/`." if nested else "."))
         with st.expander("Static PNG review plots"):
-            for file in ("portfolio_history.png", "portfolio_future.png", "portfolio_distributions.png",
-                         "retirement_range.png", "retirement_flows.png", "ledger.png"):
-                if (run.folder / file).exists():
-                    st.image(str(run.folder / file), caption=file.replace("_", " ").replace(".png", ""))
+            own = run.folder / "strategies" / shown.rule if nested else run.folder
+            for file in [run.folder / name for name in ("portfolio_history.png", "portfolio_future.png",
+                                                         "portfolio_distributions.png")] + \
+                        [own / name for name in ("retirement_range.png", "retirement_flows.png", "ledger.png")]:
+                if file.exists():
+                    st.image(str(file), caption=file.name.replace("_", " ").replace(".png", ""))
     with st.expander("Assumptions behind the rules"):
         for year, manifest in run.rules_manifest.items():
             st.markdown(f"**{year}**: " + "; ".join(f"`{name}`" for name in manifest["assumptions"]))

@@ -167,17 +167,24 @@ def _retirement_spending(result, nominal, rows, retire, first, cpi):
             "Years below start": int(sum(v < 0.99 * start for v in retired))}
 
 
-def _run_chunk(plan, market, indices, paths, retire, cpi):
-    """Worker: run ledgers for several shared draws and keep only their summaries."""
+def _run_chunk(plans, market, indices, paths, retire, cpi):
+    """Worker: run every strategy's ledger on several shared draws and keep only their summaries.
+
+    ``plans`` are one plan per compared strategy (``strategy_plan``); each path's draw is used by all of them, so the
+    strategies are compared on identical markets. Returns ``(rule, summary)`` pairs.
+    """
     out = []
     for path, rows in zip(paths, indices):
-        inputs, scenario, years, _ = build_inputs(plan, market=market, returns=market.path.returns[rows])
-        try:
-            result = run_ledger(inputs, scenario, years)
-        except UnsupportedRule as exc:
-            out.append(({"Path": path, "Status": "unsupported", "Reason": str(exc)}, None, []))
-            continue
-        out.append(_summarise(path, result, retire, cpi))
+        returns = market.path.returns[rows]
+        for plan in plans:
+            rule = plan["spending"]["rule"]
+            inputs, scenario, years, _ = build_inputs(plan, market=market, returns=returns)
+            try:
+                result = run_ledger(inputs, scenario, years)
+            except UnsupportedRule as exc:
+                out.append((rule, ({"Path": path, "Status": "unsupported", "Reason": str(exc)}, None, [])))
+                continue
+            out.append((rule, _summarise(path, result, retire, cpi)))
     return out
 
 
@@ -235,32 +242,40 @@ def automatic_workers(tasks: int = 1000) -> int:
     return worker_count(tasks)[0]
 
 
-def run_ledgers(plan, market, portfolios, cpi, progress=None, workers=None):
-    """Run the first ``retirement_paths`` draws, in ``workers`` processes (``worker_count`` when ``None``)."""
-    count = plan["market"]["retirement_paths"]
+def run_ledgers(plans, market, portfolios, cpi, progress=None, workers=None) -> dict:
+    """Run the first ``retirement_paths`` draws for every strategy plan, in ``workers`` processes.
+
+    ``plans`` holds one plan per compared strategy. Returns each strategy's path summaries, by rule, in path order.
+    ``progress(done, total)`` counts ledgers (paths times strategies); ``workers=None`` uses ``worker_count``.
+    """
+    count = plans[0]["market"]["retirement_paths"]
+    total = count * len(plans)
     if workers is None:
-        workers = worker_count(count)[0]
+        workers = worker_count(total)[0]
     chunks = [c for c in np.array_split(np.arange(count), min(count, max(1, workers * 3))) if len(c)]
     out = []
     if workers == 1:
         for chunk in chunks:
-            out += _run_chunk(plan, market, portfolios.indices[chunk], chunk.tolist(), portfolios.retirement_start, cpi)
+            out += _run_chunk(plans, market, portfolios.indices[chunk], chunk.tolist(), portfolios.retirement_start, cpi)
             if progress:
-                progress(len(out), count)
-        return out
-    pool = _pool(workers)
-    with _without_main_module():  # workers start lazily inside submit
-        futures = [pool.submit(_run_chunk, plan, market, portfolios.indices[chunk], chunk.tolist(),
-                               portfolios.retirement_start, cpi) for chunk in chunks]
-    try:
-        for future in as_completed(futures):
-            out += future.result()
-            if progress:
-                progress(len(out), count)
-    except BrokenProcessPool:
-        _POOL.clear()
-        raise
-    return out
+                progress(len(out), total)
+    else:
+        pool = _pool(workers)
+        with _without_main_module():  # workers start lazily inside submit
+            futures = [pool.submit(_run_chunk, plans, market, portfolios.indices[chunk], chunk.tolist(),
+                                   portfolios.retirement_start, cpi) for chunk in chunks]
+        try:
+            for future in as_completed(futures):
+                out += future.result()
+                if progress:
+                    progress(len(out), total)
+        except BrokenProcessPool:
+            _POOL.clear()
+            raise
+    by_rule = {plan["spending"]["rule"]: [] for plan in plans}
+    for rule, summary in out:
+        by_rule[rule].append(summary)
+    return {rule: sorted(summaries, key=lambda item: item[0]["Path"]) for rule, summaries in by_rule.items()}
 
 
 _POOL: dict = {}

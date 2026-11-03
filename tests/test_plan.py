@@ -336,9 +336,34 @@ def test_compared_strategies_share_one_start_and_old_single_rules_still_load(pro
     # A version 2 file with one rule loads as a one-strategy comparison.
     old = {**plan, "schema_version": 2, "spending": {"annual": 80000.0, "rule": "vanguard", "retirement": "percent"}}
     assert normalize_plan(old)["spending"]["compare"] == ["vanguard"]
-    # Until strategies are run side by side, a run uses the first and says so.
-    run = run_plan({**plan, "market": {**plan["market"], "paths": 16, "retirement_paths": 2}}, None, market=market)
-    assert run.plan["spending"]["rule"] == "fixed" and any("first ticked strategy" in note for note in run.notes)
+
+
+def test_every_compared_strategy_runs_on_the_same_draws_and_writes_its_own_folder(tmp_path, processed_fixture):
+    plan = default_plan()
+    plan["spending"].update(compare=["fixed", "guyton_klinger", "percent"], retirement="percent")
+    plan["market"].update(paths=16, retirement_paths=4)
+    market = load_plan_markets(plan["assets"], processed_fixture)
+    run = run_plan(plan, tmp_path, market=market)
+    assert list(run.strategies) == ["fixed", "guyton_klinger", "percent"] and run.strategies["fixed"] is run
+    for rule, strategy in run.strategies.items():
+        assert strategy.rule == rule and strategy.portfolios is run.portfolios and len(strategy.retirement_paths) == 4
+    # Paired draws: spending is the same until retirement, so every strategy reaches it with the same wealth.
+    reached = {rule: s.retirement_paths.set_index("Path")["Wealth at retirement"] for rule, s in run.strategies.items()}
+    assert (reached["guyton_klinger"] == reached["fixed"]).all() and (reached["percent"] == reached["fixed"]).all()
+    assert not run.strategies["fixed"].retirement_paths["Spending paid"].equals(
+        run.strategies["percent"].retirement_paths["Spending paid"])
+    folder = run.folder
+    for rule in run.strategies:
+        assert (folder / "strategies" / rule / "retirement_paths.csv").exists()
+        assert (folder / "strategies" / rule / "retirement_range.png").exists()
+    assert (folder / "portfolio_future.png").exists() and not (folder / "daily.csv").exists()
+    manifest = json.loads((folder / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["spending_strategies"]["percent"]["folder"] == "strategies/percent"
+    # Back to one strategy: the original layout returns and the strategy folders go.
+    plan["spending"]["compare"] = ["fixed"]
+    run = run_plan(plan, tmp_path, market=market)
+    assert (folder / "daily.csv").exists() and not (folder / "strategies").exists()
+    assert list(run.strategies) == ["fixed"]
 
 
 def test_spending_rises_with_cpi_and_old_nominal_growth_becomes_a_real_change():
@@ -549,7 +574,17 @@ def test_app_compares_ticked_strategies_and_ignores_a_stale_cores_choice(tmp_pat
     assert not app.exception
     assert app.session_state.plan["spending"]["compare"] == ["fixed", "guyton_klinger", "vanguard"]
     assert app.session_state.plan["spending"]["retirement"] == "percent"
-    assert any("first ticked strategy only" in i.value for i in app.info)
+    assert any("about 3 times as long" in c.value for c in app.caption)
+    app.number_input(key="paths__0").set_value(16)
+    app.number_input(key="retirement_paths__0").set_value(3).run()
+    app.button(key="run_sidebar").click().run()
+    assert not app.exception and not app.error
+    shown = app.radio(key="shown_strategy__0")
+    assert shown.options == ["Fixed", "Guyton–Klinger guardrails", "Vanguard ceiling and floor"]
+    shown.set_value("vanguard").run()
+    assert not app.exception
+    assert app.session_state.result.strategies["vanguard"].rule == "vanguard"
+    assert app.selectbox(key="ledger_path_vanguard__0").value.startswith("Median ending wealth")
     for rule in ("fixed", "guyton_klinger", "vanguard"):
         app.checkbox(key=f"compare_{rule}__0").uncheck().run()
     assert not app.exception and any(e.value == "Tick at least one strategy." for e in app.error)

@@ -60,8 +60,8 @@ def wide_wealth_range(bands: pd.DataFrame) -> bool:
     return float(bands["P95"].max()) > 20 * max(1000.0, float(bands["P50"].max()))
 
 
-def write_plan_plots(output: Path, plan, market, portfolios, retirement_paths, retirement_bands, representative):
-    """Write portfolio calibration, forward paths and retirement diagnostics."""
+def write_portfolio_plots(output: Path, plan, portfolios):
+    """Write portfolio calibration and forward paths, shared by every compared spending strategy."""
     output = Path(output)
     with matplotlib.rc_context({"font.family": "DejaVu Sans"}):
         fig, ax = _figure("Historical portfolio growth", "Full shared sample; USD total returns; each account's rebalancing policy; reconstructed periods included")
@@ -123,6 +123,11 @@ def write_plan_plots(output: Path, plan, market, portfolios, retirement_paths, r
         axes[0, 0].legend(frameon=False, fontsize=8)
         fig.savefig(output / "portfolio_distributions.png")
 
+
+def write_retirement_plots(output: Path, plan, retirement_paths, retirement_bands, representative):
+    """Write one spending strategy's retirement wealth range and its representative path's money in and out."""
+    output = Path(output)
+    with matplotlib.rc_context({"font.family": "DejaVu Sans"}):
         complete = int((retirement_paths["Status"] != "unsupported").sum())
         total = len(retirement_paths)
         wide = wide_wealth_range(retirement_bands)

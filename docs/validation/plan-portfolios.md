@@ -365,3 +365,19 @@ now fixed ("Automatic", with the current count in a caption), and anything
 but a positive whole number is read as automatic.
 `tests/test_plan.py::test_app_compares_ticked_strategies_and_ignores_a_stale_cores_choice`
 covers both.
+
+## Every compared strategy on shared paths (2026-11-02)
+
+ADR 0044. The default plan extended to 50 years, with 1,000 ledger paths and
+all four strategies, ran 4,000 daily ledgers in 469 s on the automatic
+worker count (484 s for the whole run, including 8 s of portfolio analysis
+and 7 s of summarising). Its results held about 60 MB per strategy: 27.5 MB
+of monthly account series, 21.8 MB of monthly total wealth for the
+all-paths chart, 10.7 MB of financial-year rows and under 1 MB of path
+summaries and bands.
+
+Tests check that every strategy reaches retirement with the same wealth on
+each path (identical draws), that each strategy's files land in
+`strategies/<rule>/` and that a later one-strategy run restores the
+original layout. The app test runs three strategies and switches the
+strategy shown in sections 4 and 5.
