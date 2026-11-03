@@ -400,11 +400,12 @@ positions them.
    full retired years only by default. Strategy colours are fixed per strategy (`STRATEGY_COLOURS`). The same
    functions (`retirement/strategy_results.py`) write `comparison_summary.csv`, `comparison_wealth.png` and
    `comparison_spending.png`.
-   Below it, a **strategy selector** chooses
-   whose results sections 4 and 5 show. Run notes that apply to every strategy are shown at the top; notes
-   for one strategy appear under the selector. Section 4 and 5 widgets keep separate choices per strategy
-   (`strategy_key`). Stages 5 and 6 of the strategy comparison plan replace this with a comparison section and
-   tabs.
+   Below it, *Each strategy in detail* has **one tab per strategy**
+   ([ADR 0046](../decisions/0046-one-tab-per-strategy.md)) holding that strategy's sections 4 and 5. The tabs are
+   tracked, so only the open tab is drawn and switching tabs reruns the page; with four strategies a full rerun
+   took 5.7 s against 14.6 s when every tab was drawn. Run notes that apply to every strategy are shown at the
+   top; notes for one strategy appear in its tab. Each tab's widgets have per-strategy keys (`strategy_key`), and
+   `keep_strategy_choices` keeps a closed tab's choices, which Streamlit would otherwise forget.
 4. **Retirement outcomes.** It opens with a **withdrawal strategy** box,
    built from the plan by `withdrawal_strategy`:
    - the rule;

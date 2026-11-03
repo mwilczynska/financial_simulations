@@ -587,12 +587,22 @@ def test_app_compares_ticked_strategies_and_ignores_a_stale_cores_choice(tmp_pat
     app.number_input(key="retirement_paths__0").set_value(3).run()
     app.button(key="run_sidebar").click().run()
     assert not app.exception and not app.error
-    shown = app.radio(key="shown_strategy__0")
-    assert shown.options == ["Fixed", "Guyton–Klinger guardrails", "Vanguard ceiling and floor"]
-    shown.set_value("vanguard").run()
-    assert not app.exception
+    labels = [tab.label for tab in app.tabs]
+    assert labels[-3:] == ["Fixed", "Guyton–Klinger", "Vanguard"]  # one tab per strategy, after the main tabs
     assert app.session_state.result.strategies["vanguard"].rule == "vanguard"
+    # Only the open tab is drawn (ADR 0046): the first, until another is chosen.
+    keys = {box.key for box in app.selectbox}
+    assert "ledger_path_fixed__0" in keys and "ledger_path_vanguard__0" not in keys
+    picker = app.selectbox(key="ledger_path_fixed__0")
+    picker.set_value(picker.options[2]).run()
+    app.session_state["strategy_tabs__0"] = "Vanguard"
+    app.run()
+    assert not app.exception
     assert app.selectbox(key="ledger_path_vanguard__0").value.startswith("Median ending wealth")
+    app.session_state["strategy_tabs__0"] = "Fixed"
+    app.run()
+    assert app.selectbox(key="ledger_path_fixed__0").value == picker.options[2]  # each strategy keeps its choice
+    assert not any("Session State API" in w.value for w in app.warning)
     assert any(h.value == "Spending strategies compared" for h in app.header)
     assert app.selectbox(key="compare_flow__0").value == "Spending"
     app.selectbox(key="compare_flow__0").set_value("Income tax").run()

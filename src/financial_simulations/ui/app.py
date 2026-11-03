@@ -49,6 +49,27 @@ def strategy_key(run, name):
     return key(name) if len(run.strategies or {}) <= 1 else key(f"{name}_{run.rule}")
 
 
+def first_value(widget, **value):
+    """A widget's starting value, given only until it has one: passing it again after keep_strategy_choices saved the
+    value makes Streamlit warn that the value was set twice."""
+    return {} if widget in st.session_state else value
+
+
+# Widgets drawn inside a strategy's tab (strategy_key names).
+STRATEGY_WIDGETS = ("wealth_series", "wealth_bands_log", "all_paths_log", "ledger_path", "event_types", "download_daily",
+                    "download_events")
+
+
+def keep_strategy_choices(strategies):
+    """Keep each closed strategy tab's choices: Streamlit forgets a widget's value on any run that does not draw it,
+    and only the open tab is drawn. Re-assigning the value makes it ordinary session state that survives."""
+    for rule in strategies:
+        for name in STRATEGY_WIDGETS[:5]:  # download buttons hold no choice
+            widget = key(f"{name}_{rule}")
+            if widget in st.session_state:
+                st.session_state[widget] = st.session_state[widget]
+
+
 def load_into_session(plan, message):
     st.session_state.plan = plan
     st.session_state.version += 1
@@ -1620,7 +1641,8 @@ def wealth_bands(run, calculated, marks):
     """Wealth bands for the chosen account; a fragment so switching accounts redraws only this chart."""
     names = list(dict.fromkeys(run.account_bands["Series"]))
     choice = st.radio("Show", names, horizontal=True, key=strategy_key(run, "wealth_series"))
-    wide = st.toggle("Log scale", value=True, key=strategy_key(run, "wealth_bands_log"))
+    widget = strategy_key(run, "wealth_bands_log")
+    wide = st.toggle("Log scale", key=widget, **first_value(widget, value=True))
     bands = run.account_bands.loc[run.account_bands["Series"] == choice]
     st.altair_chart(band_chart(bands, f"{choice}, today's dollars" + (" · log scale" if wide else ""), symlog=wide, marks=marks),
                     width="stretch")
@@ -1852,7 +1874,8 @@ full, down to each payment. The project's methodology documents give every rule 
     if getattr(run, "wealth_paths", None) is not None:
         st.subheader("Wealth over time across many paths")
         ruin_statistics(run, calculated, marks)
-        log = st.toggle("Log scale", value=True, key=strategy_key(run, "all_paths_log"))
+        widget = strategy_key(run, "all_paths_log")
+        log = st.toggle("Log scale", key=widget, **first_value(widget, value=True))
         chart, grey, red, clipped = all_paths_chart(run.wealth_paths, marks, calculated, cache_key=id(run), log=log)
         total = run.wealth_paths["Path"].nunique()
         st.markdown(f"<span style='color:{GREY}'>&#9644;</span> {grey} of {total - red} paths that never ran out "
@@ -2281,15 +2304,18 @@ def section_ledger(run):
     with st.expander("Event log for this path (nominal dollars, as the ledger records them)"):
         events = result.events
         kinds = sorted(events["event"].unique())
-        chosen = st.multiselect("Event types", kinds, default=[k for k in kinds if k not in ("buy", "distribution")],
-                                key=strategy_key(run, "event_types"))
+        widget = strategy_key(run, "event_types")
+        chosen = st.multiselect("Event types", kinds, key=widget,
+                                **first_value(widget, default=[k for k in kinds if k not in ("buy", "distribution")]))
         st.dataframe(events.loc[events["event"].isin(chosen)], width="stretch", hide_index=True,
                      column_config={"amount": money_column("amount")})
-    name = slug(run.plan["plan"]["name"])
+    name = slug(run.plan["plan"]["name"]) + (f"-{run.rule}" if len(run.strategies or {}) > 1 else "")
     a, b = st.columns(2)
-    a.download_button("Download this path's daily ledger (CSV, nominal)", result.daily.to_csv(), f"{name}-path{path}-daily.csv", "text/csv")
+    # Keyed per strategy: each strategy's tab draws its own buttons, and unkeyed identical buttons would clash.
+    a.download_button("Download this path's daily ledger (CSV, nominal)", result.daily.to_csv(), f"{name}-path{path}-daily.csv",
+                      "text/csv", key=strategy_key(run, "download_daily"))
     b.download_button("Download this path's events (CSV, nominal)", result.events.to_csv(index=False), f"{name}-path{path}-events.csv",
-                      "text/csv")
+                      "text/csv", key=strategy_key(run, "download_events"))
 
 
 def results(plan):
@@ -2323,32 +2349,43 @@ def results(plan):
     section_portfolios(run)
     section_history(run)
     section_future(run)
-    shown = run
     if len(strategies) > 1:
         section_comparison(run)
         st.header("Each strategy in detail")
-        choice = st.radio("Spending strategy for sections 4 and 5", list(strategies), horizontal=True,
-                          format_func=lambda rule: RULE_LABELS[rule].split(":")[0], key=key("shown_strategy"))
-        shown = strategies[choice]
-        st.caption(f"All {len(strategies)} strategies ran on the same {len(run.retirement_paths)} market paths with every "
-                   "other input unchanged, so the differences between them come from the spending strategy alone.")
-        for note in shown.notes:
-            if note not in common:
-                st.warning(note)
-    section_retirement(shown)
-    section_ledger(shown)
+        st.caption(f"One tab per strategy, each with the full results for that strategy on the same "
+                   f"{len(run.retirement_paths)} market paths. Choices inside a tab (accounts, scales, the path to "
+                   "inspect) are kept separately for each strategy.")
+        # Tracked tabs run only the open tab's code: drawing every strategy's results on each rerun made a page
+        # change take about three times as long with four strategies (ADR 0046).
+        keep_strategy_choices(strategies)
+        tabs = st.tabs([STRATEGY_NAMES[rule] for rule in strategies], key=key("strategy_tabs"), on_change="rerun")
+        for tab, strategy in zip(tabs, strategies.values()):
+            if not tab.open:
+                continue
+            with tab:
+                for note in strategy.notes:
+                    if note not in common:
+                        st.warning(note)
+                section_retirement(strategy)
+                section_ledger(strategy)
+    else:
+        section_retirement(run)
+        section_ledger(run)
     if run.folder:
         nested = len(strategies) > 1
         st.success(f"Saved the plan, path summaries, the median path's daily ledger, a manifest and PNG review plots to "
                    f"`{run.folder}`" + (", with each strategy's own files in `strategies/`." if nested else "."))
         with st.expander("Static PNG review plots"):
-            own = run.folder / "strategies" / shown.rule if nested else run.folder
             shared = ("portfolio_history.png", "portfolio_future.png", "portfolio_distributions.png") + \
                 (("comparison_wealth.png", "comparison_spending.png") if nested else ())
-            for file in [run.folder / name for name in shared] + \
-                        [own / name for name in ("retirement_range.png", "retirement_flows.png", "ledger.png")]:
+            files = [(run.folder / name, "") for name in shared]
+            for rule in strategies:
+                own = run.folder / "strategies" / rule if nested else run.folder
+                files += [(own / name, f"{STRATEGY_NAMES[rule]}: " if nested else "")
+                          for name in ("retirement_range.png", "retirement_flows.png", "ledger.png")]
+            for file, prefix in files:
                 if file.exists():
-                    st.image(str(file), caption=file.name.replace("_", " ").replace(".png", ""))
+                    st.image(str(file), caption=prefix + file.name.replace("_", " ").replace(".png", ""))
     with st.expander("Assumptions behind the rules"):
         for year, manifest in run.rules_manifest.items():
             st.markdown(f"**{year}**: " + "; ".join(f"`{name}`" for name in manifest["assumptions"]))

@@ -403,3 +403,18 @@ charts:
 - the retirement marker sat on the year-by-year chart's axis, because
   retirement falls before the first full retired year. Markers outside the
   years shown are now left out.
+
+## One tab per strategy (2026-11-02)
+
+ADR 0046. In Streamlit's test harness, with the default plan and 100
+ledger paths, a full page rerun took 4.7 s with one strategy, 14.6 s with
+four strategies in plain tabs and 5.7 s with tracked tabs that draw only the
+open tab. The first tabbed version failed in the app test because unkeyed
+download buttons repeated across tabs; they now have per-strategy keys.
+
+In the in-app browser four strategy tabs appeared after the comparison
+section. A log-scale choice made in the Fixed tab survived a visit to
+another tab, which kept its own setting, with no page warnings or
+exceptions. The server log showed Streamlit's warning about a value set
+twice for a toggle with an explicit starting value; after `first_value` the
+same sequence logged nothing.

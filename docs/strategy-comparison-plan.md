@@ -1,7 +1,8 @@
 # Plan: comparing retirement spending strategies
 
 Status: stages 0 and 1 implemented on 2 November 2026 (ADR 0040 and ADR 0041); stage 2 implemented (ADR 0042: a default
-run about 2.6 times faster); stage 3 implemented (ADR 0043); stage 4 implemented (ADR 0044); stage 5 implemented (ADR 0045); stages 6–7 proposed.
+run about 2.6 times faster); stage 3 implemented (ADR 0043); stage 4 implemented (ADR 0044); stage 5 implemented (ADR 0045); stage 6 implemented (ADR 0046); stage 7 (documentation and validation) has
+been done with each stage.
 Written 2 November 2026.
 
 ## Requirements (from the user)
