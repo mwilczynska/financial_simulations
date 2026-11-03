@@ -513,6 +513,7 @@ def test_legacy_planning_age_still_loads_and_is_dropped():
 
 
 def test_mostly_zero_measures_report_share_and_median_among_affected():
+    pytest.importorskip("streamlit")
     from financial_simulations.ui.app import affected
 
     assert affected([0, 0, 10, 30]) == "50.0% · $20"
