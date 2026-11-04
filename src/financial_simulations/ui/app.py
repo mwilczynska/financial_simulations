@@ -59,7 +59,8 @@ def first_value(widget, **value):
 
 
 # Widgets drawn inside a strategy's tab (strategy_key names).
-STRATEGY_WIDGETS = ("wealth_series", "wealth_bands_log", "all_paths_log", "ledger_path", "event_types", "detail_view")
+STRATEGY_WIDGETS = ("wealth_series", "wealth_bands_log", "all_paths_log", "ledger_path", "ledger_mode",
+                    "ledger_number", "event_types", "detail_view", "cash_flow_view")
 
 
 def keep_strategy_choices(strategies):
@@ -1227,7 +1228,8 @@ def section_portfolios(run):
                "rebalancing as the simulations. Rebalancing matters: an annually rebalanced mix of volatile, weakly "
                "correlated assets can grow faster than any of its parts, because each January it sells what rose and "
                "buys what fell.")
-    with st.expander("Ticker-level source statistics"):
+    with st.container():
+        st.subheader("Ticker-level source statistics")
         asset_table = run.market.asset_summary.copy()
         for field in ("Full-sample CAGR", "Daily volatility, annualised", "Maximum drawdown", "Cash contribution proxy"):
             asset_table[field] *= 100
@@ -1817,7 +1819,7 @@ def section_comparison(run):
     flows = available_flows(strategies)
     a, b = st.columns([2, 1])
     with a:
-        flow = st.selectbox("Show", flows, index=flows.index(DEFAULT_FLOW) if DEFAULT_FLOW in flows else 0,
+        flow = st.radio("Show", flows, index=flows.index(DEFAULT_FLOW) if DEFAULT_FLOW in flows else 0, horizontal=True,
                             key=key("compare_flow"),
                             format_func=lambda f: f"{f} (withdrawals)" if f == "Spending" else f)
     with b:
@@ -1848,7 +1850,7 @@ def section_comparison(run):
     inside = marks.loc[marks["Position"].between(first, last)] if not marks.empty else marks
     show_chart(with_milestones(alt.layer(chart, zero).properties(height=360), inside, "Position:Q"), width="stretch")
     st.caption(f"Each bar is the median across all {paths} paths of that year's {flow.lower()}"
-               + (", shown as a positive amount paid" if outflow else "") + ", for one strategy. The dropdown offers "
+               + (", shown as a positive amount paid" if outflow else "") + ", for one strategy. The choices include "
                "every flow from *Money in and out in a typical year*. Medians are taken year by year, so a strategy's "
                "bars need not come from one path. Fixed spending is the same every year on each path; its median "
                "dips only where paths ran short and paid less.")
@@ -1963,14 +1965,16 @@ def section_retirement(run):
         st.subheader("Wealth over time")
         wealth_bands(run, len(calculated), marks)
         spending_averages(adequacy)
-        with st.expander("Spending ranges and cuts"):
-            spending_section(plan, annual, calculated, marks)
         calculation_details(run)
         return
     if view == "Cash flow":
-        typical_flows_section(annual, marks, calculated, float(run.result.daily["total"].iloc[0]))
-        spending_section(plan, annual, calculated, marks)
-        with st.expander("Age Pension payments"):
+        cash_view = st.radio("Cash flow view", ["Income & outgoings", "Spending ranges & cuts", "Age Pension payments"],
+                             horizontal=True, key=strategy_key(run, "cash_flow_view"))
+        if cash_view == "Income & outgoings":
+            typical_flows_section(annual, marks, calculated, float(run.result.daily["total"].iloc[0]))
+        elif cash_view == "Spending ranges & cuts":
+            spending_section(plan, annual, calculated, marks)
+        else:
             age_pension_section(plan, annual, calculated, marks)
         return
     ruin_statistics(run, calculated, marks)
@@ -2086,7 +2090,8 @@ total wealth; spending rises with inflation{"" if not plan['spending']['real_cha
     st.dataframe(ranges, width="stretch", hide_index=True, height=fit(ranges))
     st.caption("Percentiles across calculated paths, in today's dollars. Each column is a separate ranking, so a row's 5th percentile "
                "and another row's 5th percentile usually come from different paths.")
-    with st.expander(f"Every path ({len(paths)})"):
+    with st.container():
+        st.subheader(f"Every path ({len(paths)})")
         table = paths.drop(columns=["Ending wealth, nominal"], errors="ignore")
         ranks = ending_percentiles(calculated)
         table.insert(2, "Ending wealth percentile", table["Path"].map(ranks))
@@ -2247,7 +2252,10 @@ def section_ledger(run):
     st.subheader("Path explorer")
     st.caption("Inspect a single future or a group, from annual spending down to each payment.")
     ranks = ending_percentiles(calculated)
-    choices = {f"Median ending wealth · path {run.representative_path}": run.representative_path}
+    if calculated.empty:
+        st.info("No supported paths are available to inspect.")
+        return
+    choices = {}
     headings = {}  # group choices: their members and view heading
     everyone = calculated["Path"].astype(int).tolist()
     adequacy = path_adequacy(paths, run.retirement_annual, run.plan["plan"]["start_date"])
@@ -2262,16 +2270,28 @@ def section_ledger(run):
             for name, low, high in PATH_GROUPS]:
         choice = f"{label} · {len(members)} path{'s' if len(members) != 1 else ''}"
         choices[choice], headings[choice] = members, heading
-    for _, row in calculated.iterrows():  # sorted from the worst ending wealth
-        choices[f"Path {int(row['Path'])} · {ordinal(ranks[row['Path']])} percentile"] = int(row["Path"])
-    picked = st.selectbox("Path to inspect", list(choices), key=strategy_key(run, "ledger_path"))
+    mode = st.radio("Inspect", ["Median path", "Path group", "Individual path"], horizontal=True,
+                    key=strategy_key(run, "ledger_mode"))
     st.caption(f"Path {run.representative_path} ends nearest the median; its journey can still be uneven. "
                "Choose a pension or shortfall group, a wealth-ranked group, or an individual path. "
                "Final-year pension groups include any payment in the last reported year, which may be partial.")
-    if isinstance(choices[picked], list):
+    if mode == "Path group":
+        widget = strategy_key(run, "ledger_path")
+        if widget in st.session_state and st.session_state[widget] not in choices:
+            del st.session_state[widget]
+        picked = st.radio("Path group", list(choices), horizontal=True, key=widget)
         group_paths(run, choices[picked], headings[picked])
         return
-    path = choices[picked]
+    path = run.representative_path
+    if mode == "Individual path":
+        widget = strategy_key(run, "ledger_number")
+        path = int(st.number_input("Path number", min_value=int(paths["Path"].min()),
+                                   max_value=int(paths["Path"].max()), step=1, key=widget,
+                                   **first_value(widget, value=int(run.representative_path))))
+        if path not in everyone:
+            st.info("This path is unsupported and has no calculated ledger. Choose another path number.")
+            return
+    st.caption(f"Path {path} · {ordinal(ranks[path])} percentile by ending wealth")
     summary = adequacy.set_index("Path").loc[path]
     st.metric("Average annual retirement spending", compact(summary["Average annual retirement spending"]),
               help="Spending actually paid, averaged over complete retired financial years in today's dollars. "
@@ -2439,11 +2459,13 @@ def section_ledger(run):
         st.caption(f"At the horizon: tax not yet due {[l['financial_year'] for l in outstanding['tax_liabilities']]}; "
                    f"unpaid tax {[u['financial_year'] for u in outstanding['unpaid_tax']]}; partial year not yet assessed "
                    f"{(outstanding['unassessed_year'] or {}).get('financial_year')}.")
-    with st.expander("Event log for this path (nominal dollars, as the ledger records them)"):
+    with st.container():
+        st.subheader("Event log")
+        st.caption("Nominal dollars, as recorded by the ledger.")
         events = result.events
         kinds = sorted(events["event"].unique())
         widget = strategy_key(run, "event_types")
-        chosen = st.multiselect("Event types", kinds, key=widget,
+        chosen = st.pills("Event types", kinds, selection_mode="multi", key=widget,
                                 **first_value(widget, default=[k for k in kinds if k not in ("buy", "distribution")]))
         st.dataframe(events.loc[events["event"].isin(chosen)], width="stretch", hide_index=True,
                      column_config={"amount": money_column("amount")})
@@ -2491,10 +2513,13 @@ def results(plan):
                 st.write(note)
     BORN["date"] = date.fromisoformat(run.plan["person"]["date_of_birth"])
     if view == "Portfolios":
-        section_portfolios(run)
-        with st.expander("Historical performance", expanded=True):
+        portfolio_view = st.radio("Portfolio view", ["Statistics", "Historical performance", "Simulated growth"],
+                                  horizontal=True, key=key("portfolio_view"))
+        if portfolio_view == "Statistics":
+            section_portfolios(run)
+        elif portfolio_view == "Historical performance":
             section_history(run)
-        with st.expander("Simulated portfolio growth and distributions"):
+        else:
             section_future(run)
         return
     if view == "Compare strategies":
@@ -2532,7 +2557,8 @@ def result_downloads(run, strategies):
         nested = len(strategies) > 1
         st.success(f"Saved the plan, path summaries, the median path's daily ledger, a manifest and PNG review plots to "
                    f"`{run.folder}`" + (", with each strategy's own files in `strategies/`." if nested else "."))
-        with st.expander("Static PNG review plots"):
+        with st.container():
+            st.subheader("Static PNG review plots")
             shared = ("portfolio_history.png", "portfolio_future.png", "portfolio_distributions.png") + \
                 (("comparison_wealth.png", "comparison_spending.png") if nested else ())
             files = [(run.folder / name, "") for name in shared]
@@ -2541,9 +2567,11 @@ def result_downloads(run, strategies):
                 files += [(own / name, f"{STRATEGY_NAMES[rule]}: " if nested else "")
                           for name in ("retirement_adequacy.png", "retirement_spending_groups.png",
                                        "retirement_range.png", "retirement_flows.png", "ledger.png")]
-            for file, prefix in files:
-                if file.exists():
-                    st.image(str(file), caption=prefix + file.name.replace("_", " ").replace(".png", ""))
+            plots = {prefix + file.name.replace("_", " ").replace(".png", ""): file
+                     for file, prefix in files if file.exists()}
+            if plots:
+                selected = st.radio("Review plot", list(plots), horizontal=True, key=key("review_plot"))
+                st.image(str(plots[selected]), caption=selected)
     with st.expander("Assumptions behind the rules"):
         for year, manifest in run.rules_manifest.items():
             st.markdown(f"**{year}**: " + "; ".join(f"`{name}`" for name in manifest["assumptions"]))

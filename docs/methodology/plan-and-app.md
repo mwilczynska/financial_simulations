@@ -28,6 +28,16 @@ views. Compared strategies retain separate tabs and choices. Historical numbered
 section references below describe the underlying analyses; the current UI groups
 them by task instead of presenting one long page.
 
+Results use visible radio choices for views, chart measures, path groups and
+static plot previews. Collapsible sections are reserved for explanations and
+methodology; charts, tables and event logs are not hidden inside them. Cash flow
+offers income/outgoings, spending ranges/cuts and Age Pension payments. Portfolios
+offers statistics, historical performance and simulated growth. The path explorer
+separates median path, group and individual path modes; an individual path is
+selected by its numeric ID, with its ending-wealth percentile shown alongside.
+Multiple event types are selected using visible pills. These controls only select
+existing results and do not change model calculations.
+
 ### Purpose, inputs and conventions
 
 The user requested that a funded path receiving Age Pension be visibly distinct
@@ -122,6 +132,12 @@ avoid Streamlit fading the already-muted text colour a second time.
 The final desktop and 390-pixel layouts were inspected again, including the
 outcome bars and wealth chart. Narrow-screen top padding clears the fixed
 Streamlit toolbar; the viewport was restored after review.
+
+The subsequent visible-choice navigation refinement passed all 35 tests in
+`tests/test_plan.py`, including individual path selection, cash-flow and portfolio
+view switching, PNG selection, and independent strategy choices. Browser review
+confirmed pension view selection and path-group controls at desktop and 390-pixel
+widths, with no page-wide horizontal overflow.
 
 ## Dataset inputs and provenance
 

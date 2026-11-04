@@ -63,6 +63,20 @@ existing explorer's floor/ceiling rank selection and may overlap outcome groups.
 
 ## Reasons and consequences
 
+### Results navigation refinement, 4 November 2026
+
+The user requested that dropdown disclosure be reserved for explanations and
+methodology. Results therefore use visible radio choices for chart/view
+selection, including cash-flow details, historical versus simulated portfolios,
+strategy-comparison measures and PNG previews. Data tables and event logs are
+ordinary sections. Expanders in Results contain explanatory material only.
+The path explorer separates median path, path group and individual path modes;
+groups use visible radio choices, individual paths use a numeric path ID, and
+event filters use multiple-selection pills. This avoids replacing a long path
+dropdown with hundreds of radio buttons. Each strategy retains its own choices.
+This refines presentation only; the ledger, cohorts and spending formulas stay
+unchanged.
+
 - **User requirements:** compact setup, no permanent sidebar, clear ruin and
   Age Pension outcomes, and average spending for paths and groups.
 - **Engineering judgement:** progressive disclosure, chart sizing, colours and
