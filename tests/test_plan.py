@@ -165,7 +165,7 @@ def test_browser_app_runs_with_tickers_and_interactive_results(tmp_path, monkeyp
                             default_timeout=120)
     app.run()
     assert not app.exception
-    assert [t.label for t in app.tabs] == ["You", "Investments", "Retirement", "Assumptions", "Results"]
+    assert [t.label for t in app.tabs] == ["Plan", "Results"]
     app.number_input(key="retire__0").set_value(57)
     app.number_input(key="paths__0").set_value(16)
     app.number_input(key="retirement_paths__0").set_value(3).run()
@@ -174,8 +174,10 @@ def test_browser_app_runs_with_tickers_and_interactive_results(tmp_path, monkeyp
     assert len(app.session_state.result.portfolios.outcomes) == 48  # two portfolios and their combination
     assert app.session_state.plan["person"]["retirement_age"] == 57
     assert (tmp_path / "output" / "plans" / "example-early-retirement" / "portfolio_future.png").exists()
-    assert len(app.get("vega_lite_chart")) >= 15
+    assert len(app.get("vega_lite_chart")) <= 4  # overview, not every diagnostic plot
     assert app.session_state.plan["outside"]["rebalance"] == "annual"
+    assert any(m.label == "Risk of ruin" for m in app.metric)
+    app.radio(key="detail_view__0").set_value("Path explorer").run()
     picker = app.selectbox(key="ledger_path__0")
     everyone = next(option for option in picker.options if option.startswith("Group: all paths"))
     assert picker.options.index(everyone) == 1  # straight after the median path
@@ -591,6 +593,7 @@ def test_app_compares_ticked_strategies_and_ignores_a_stale_cores_choice(tmp_pat
     labels = [tab.label for tab in app.tabs]
     assert labels[-3:] == ["Fixed", "Guyton–Klinger", "Vanguard"]  # one tab per strategy, after the main tabs
     assert app.session_state.result.strategies["vanguard"].rule == "vanguard"
+    app.radio(key="detail_view_fixed__0").set_value("Path explorer").run()
     # Only the open tab is drawn (ADR 0046): the first, until another is chosen.
     keys = {box.key for box in app.selectbox}
     assert "ledger_path_fixed__0" in keys and "ledger_path_vanguard__0" not in keys
@@ -599,11 +602,13 @@ def test_app_compares_ticked_strategies_and_ignores_a_stale_cores_choice(tmp_pat
     app.session_state["strategy_tabs__0"] = "Vanguard"
     app.run()
     assert not app.exception
+    app.radio(key="detail_view_vanguard__0").set_value("Path explorer").run()
     assert app.selectbox(key="ledger_path_vanguard__0").value.startswith("Median ending wealth")
     app.session_state["strategy_tabs__0"] = "Fixed"
     app.run()
     assert app.selectbox(key="ledger_path_fixed__0").value == picker.options[2]  # each strategy keeps its choice
     assert not any("Session State API" in w.value for w in app.warning)
+    app.radio(key="results_view__0").set_value("Compare strategies").run()
     assert any(h.value == "Spending strategies compared" for h in app.header)
     assert app.selectbox(key="compare_flow__0").value == "Spending"
     app.selectbox(key="compare_flow__0").set_value("Income tax").run()

@@ -14,6 +14,7 @@ import pandas as pd
 
 from financial_simulations.retirement.flows import account_flows, household_flows, milestones
 from financial_simulations.retirement.real import real_daily, real_events
+from financial_simulations.retirement.adequacy import OUTCOME_COLOURS, path_adequacy, spending_by_group
 
 
 COLORS = {"Outside super": "#126a63", "Inside super": "#386a98", "Combined": "#b76a42"}
@@ -23,14 +24,16 @@ FLOW_COLOURS = {"Take-home salary": "#126a63", "Super contributions": "#386a98",
                 "Inflation": "#9aa3a8"}
 
 
-def _figure(title, subtitle, *, height=5.5):
-    fig = Figure(figsize=(11, height), dpi=150, facecolor="#fafaf7")
+def _figure(title, subtitle, *, height=4.8):
+    fig = Figure(figsize=(11, height), dpi=150, facecolor="#fcfcfa")
     ax = fig.add_subplot(111)
     fig.subplots_adjust(left=0.10, right=0.97, top=0.76, bottom=0.15)
     fig.text(0.10, 0.94, title, fontsize=16, fontweight="bold", color="#19353a")
     fig.text(0.10, 0.865, subtitle, fontsize=9, color="#536369")
-    ax.set_facecolor("#fafaf7")
+    ax.set_facecolor("#fcfcfa")
     ax.spines[["top", "right"]].set_visible(False)
+    ax.spines[["bottom", "left"]].set_color("#dce3dd")
+    ax.tick_params(colors="#61716b", labelsize=9, length=0)
     ax.grid(axis="y", alpha=0.22)
     ax.set_axisbelow(True)
     return fig, ax
@@ -192,6 +195,45 @@ def write_retirement_plots(output: Path, plan, retirement_paths, retirement_band
         fig.subplots_adjust(bottom=0.26)
         ax.legend(frameon=False, ncol=4, fontsize=8, loc="upper center", bbox_to_anchor=(0.5, -0.1))
         fig.savefig(output / "retirement_flows.png")
+
+
+def write_adequacy_plots(output: Path, paths, annual, start_date):
+    """Export the overview's identical cohorts and retirement spending averages."""
+    output = Path(output)
+    adequacy = path_adequacy(paths, annual, start_date)
+    groups = spending_by_group(adequacy)
+    adequacy.to_csv(output / "path_adequacy.csv", index=False, lineterminator="\n")
+    groups.to_csv(output / "spending_by_group.csv", index=False, lineterminator="\n")
+    with matplotlib.rc_context({"font.family": "DejaVu Sans"}):
+        fig, ax = _figure("Shortfall risk & Age Pension support",
+                          "Disjoint groups; any pension receipt during the run; unsupported paths excluded", height=4)
+        counts = adequacy["Outcome"].value_counts().reindex(OUTCOME_COLOURS, fill_value=0)
+        shares = counts / len(adequacy) if len(adequacy) else counts * np.nan
+        ax.barh(list(counts.index), shares, color=list(OUTCOME_COLOURS.values()), height=.45)
+        for y, (count, share) in enumerate(zip(counts, shares)):
+            if np.isfinite(share):
+                ax.text(share + .025, y, f"{share:.1%} · {count:,} paths", va="center", color="#405650", fontsize=10)
+        ax.invert_yaxis()
+        ax.set_xlim(0, 1.35)
+        ax.xaxis.set_visible(False)
+        ax.grid(False)
+        ax.spines[["bottom", "left"]].set_visible(False)
+        fig.subplots_adjust(left=.30)
+        fig.savefig(output / "retirement_adequacy.png")
+
+        fig, ax = _figure("Average annual retirement spending",
+                          "Today's dollars; complete retired years only; equal-weight mean of path averages", height=5.4)
+        shown = groups.loc[groups["Average per year"].notna()]
+        labels = [f"{row['Path group']} (n={row['Paths']})" for _, row in shown.iterrows()]
+        ax.barh(labels, shown["Average per year"], color="#126a63", height=.45)
+        ax.invert_yaxis()
+        ax.xaxis.set_major_formatter(FuncFormatter(_money))
+        ax.grid(axis="x", alpha=.22)
+        ax.yaxis.grid(False)
+        if shown.empty:
+            ax.text(.5, .5, "No complete retired financial years", transform=ax.transAxes, ha="center")
+        fig.subplots_adjust(left=.36)
+        fig.savefig(output / "retirement_spending_groups.png")
 
 
 def write_comparison_plots(output: Path, plan, strategies: dict):

@@ -55,6 +55,10 @@ Decision records preserve why Financial Simulations makes a material modelling o
 
 ## When to write a record
 
+Latest: [0047 — Retirement workspace and adequacy](0047-retirement-workspace-and-adequacy.md)
+(4 November 2026): compact Plan/Results navigation, no permanent sidebar,
+disjoint shortfall/pension cohorts and annual spending averages for paths and groups.
+
 Record choices that materially affect interpretation, accounting, data selection, model structure, calibration, calendar handling, sampling, Australian rules or reproducibility. Routine edits do not need their own record.
 
 Each record should identify the context and constraints, alternatives, the decision, why it was made, consequences, references and implementation/validation status. Distinguish a user requirement from a research finding or engineering judgement.

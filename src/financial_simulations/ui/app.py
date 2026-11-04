@@ -14,6 +14,9 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
+from financial_simulations.ui.design import install_design, show_chart
+from financial_simulations.retirement.adequacy import OUTCOME_COLOURS, path_adequacy, spending_by_group
+
 from financial_simulations.data.plan_markets import CUSTOM_TICKERS, TICKERS, load_plan_markets
 from financial_simulations.retirement.plan import (PlanError, default_plan, load_plan_text, normalize_plan, plan_to_json,
                                                    plan_to_toml, sacrifice_per_year, slug)
@@ -56,16 +59,15 @@ def first_value(widget, **value):
 
 
 # Widgets drawn inside a strategy's tab (strategy_key names).
-STRATEGY_WIDGETS = ("wealth_series", "wealth_bands_log", "all_paths_log", "ledger_path", "event_types", "download_daily",
-                    "download_events")
+STRATEGY_WIDGETS = ("wealth_series", "wealth_bands_log", "all_paths_log", "ledger_path", "event_types", "detail_view")
 
 
 def keep_strategy_choices(strategies):
     """Keep each closed strategy tab's choices: Streamlit forgets a widget's value on any run that does not draw it,
     and only the open tab is drawn. Re-assigning the value makes it ordinary session state that survives."""
     for rule in strategies:
-        for name in STRATEGY_WIDGETS[:5]:  # download buttons hold no choice
-            widget = key(f"{name}_{rule}")
+        for name in STRATEGY_WIDGETS:
+            widget = key(f"{name}_{rule}") if len(strategies) > 1 else key(name)
             if widget in st.session_state:
                 st.session_state[widget] = st.session_state[widget]
 
@@ -138,7 +140,8 @@ def run_requested_plan():
     try:
         st.session_state.result = run_with_progress(valid)
         st.session_state.ledger_cache = {}
-        st.success("Run complete. Open the Results tab.")
+        st.session_state.main_tabs = "Results"
+        st.toast("Your results are ready.", icon=":material/check_circle:")
     except (UnsupportedRule, PlanError, ValueError, ArithmeticError) as exc:
         st.session_state.result = None
         st.error(f"The plan cannot run as specified: {exc}")
@@ -151,25 +154,22 @@ def save_plan(valid, path):
     st.session_state.flash = f"Saved {path}."
 
 
-def sidebar():
-    """Run, then the plan's name and file (save, rename, open), then import/export and reset."""
-    st.sidebar.button("Run plan", type="primary", width="stretch", key="run_sidebar", on_click=request_run)
-    st.sidebar.caption("Results appear on the Results tab.")
-    st.sidebar.header("Your plan")
+def plan_files():
+    """Plan management lives in a header popover, leaving the canvas full width."""
     plan = st.session_state.plan
-    plan["plan"]["name"] = st.sidebar.text_input("Plan name", plan["plan"]["name"], key=key("name"),
+    plan["plan"]["name"] = st.text_input("Plan name", plan["plan"]["name"], key=key("name"),
                                                  help="Also the file name: saving writes plans/<plan-name>.toml.")
     current = st.session_state.get("plan_file")
     try:
         valid = normalize_plan(plan)
     except PlanError:
         valid = None
-        st.sidebar.info("Fix the highlighted problems before saving.")
+        st.info("Fix the highlighted problems before saving.")
     if valid is not None:
         target = PLANS_DIR / f"{slug(valid['plan']['name'])}.toml"
-        st.sidebar.caption(f"Working on `{PLANS_DIR}/{current}`" if current else "Not saved yet.")
+        st.caption(f"Working on `{PLANS_DIR}/{current}`" if current else "Not saved yet.")
         renaming = current is not None and current != target.name and (PLANS_DIR / current).exists()
-        a, b = st.sidebar.columns(2)
+        a, b = st.columns(2)
         if a.button("Save", width="stretch", key="save_plan",
                     help=f"Write {target}" + (", replacing it" if target.exists() else "")):
             save_plan(valid, target)
@@ -181,23 +181,23 @@ def sidebar():
             st.session_state.flash = f"Renamed {current} to {target.name}."
             st.rerun()
         if renaming:
-            st.sidebar.caption(f"**Save** keeps `{current}` and writes `{target.name}` as a copy; **Rename** replaces it.")
+            st.caption(f"**Save** keeps `{current}` and writes `{target.name}` as a copy; **Rename** replaces it.")
         elif target.exists() and current != target.name:
-            st.sidebar.warning(f"`{target.name}` already exists; Save will overwrite it.")
+            st.warning(f"`{target.name}` already exists; Save will overwrite it.")
     saved = sorted(PLANS_DIR.glob("*.toml")) + sorted(PLANS_DIR.glob("*.json")) if PLANS_DIR.exists() else []
     if saved:
         names = [f.name for f in saved]
-        choice = st.sidebar.selectbox("Open a saved plan", names, key=key(f"saved_{current}"),
+        choice = st.selectbox("Open a saved plan", names, key=key(f"saved_{current}"),
                                       index=names.index(current) if current in names else 0)
-        if st.sidebar.button("Open", width="stretch", key="open_plan"):
+        if st.button("Open", width="stretch", key="open_plan"):
             chosen = PLANS_DIR / choice
             try:
                 load_into_session(load_plan_text(chosen.read_text(encoding="utf-8"), chosen.name), f"Opened {chosen}.")
                 st.session_state.plan_file = chosen.name
                 st.rerun()
             except PlanError as exc:
-                st.sidebar.error(str(exc))
-    with st.sidebar.expander("Import or download a plan file"):
+                st.error(str(exc))
+    with st.expander("Import or download a plan file"):
         upload = st.file_uploader("Import a plan (.toml or .json)", type=["toml", "json"], key=key("upload"))
         if upload is not None:
             try:
@@ -211,11 +211,13 @@ def sidebar():
             st.download_button("Download as TOML", plan_to_toml(valid), f"{name}.toml", "application/toml", width="stretch")
             st.download_button("Download as JSON", plan_to_json(valid), f"{name}.json", "application/json", width="stretch")
         st.caption("Downloads go to your browser's download folder, for sharing or backup. Save keeps plans in this app.")
-    if st.sidebar.button("Start again from the example plan", width="stretch"):
+    if st.button("Reset to example", width="stretch"):
         load_into_session(default_plan(), "Loaded the example plan.")
         st.session_state.plan_file = None
         st.rerun()
-    st.sidebar.caption(f"Saved plans live in `{PLANS_DIR}/` (git-ignored). Runs write `output/plans/<plan-name>/`.")
+    with st.expander("About this workspace"):
+        st.caption("One Australian resident. A planning model, not financial advice.")
+        st.caption(f"Saved plans: `{PLANS_DIR}/`. Reports: `output/plans/<plan-name>/`. Both stay local.")
 
 
 MONTHS = ("January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
@@ -240,39 +242,56 @@ def birth_date_input(current):
     return date_fields("Date of birth", current, "born", 1930, 2010)
 
 
-def inputs_you(plan):
+def inputs_essentials(plan):
+    """The inputs most people need, together on one screen."""
     person, employment = plan["person"], plan["employment"]
-    st.subheader("About you")
-    a, b = st.columns(2)
+    st.subheader("Your timeline")
+    a, b, c = st.columns([1.5, 1, 1])
     with a:
         person["date_of_birth"] = birth_date_input(date.fromisoformat(person["date_of_birth"]))
     with b:
-        person["retirement_age"] = int(st.number_input("Planned retirement age", 18, 80, int(person["retirement_age"]), 1,
+        person["retirement_age"] = int(st.number_input("Retirement age", 18, 80, int(person["retirement_age"]), 1,
                                                        key=key("retire"), help="Salary stops on this birthday."))
-        person["private_hospital_cover"] = st.checkbox("Private hospital cover (avoids Medicare levy surcharge)",
-                                                       person["private_hospital_cover"], key=key("cover"))
-    st.subheader("Work")
+    with c:
+        plan["plan"]["years"] = int(st.number_input("Years to simulate", 1, 60, int(plan["plan"]["years"]), 1,
+                                                    key=key("years"), help="Use a horizon reaching age 90 or beyond to examine later retirement."))
+    start = date.fromisoformat(plan["plan"]["start_date"])
+    st.caption(f"Starts {start:%d %b %Y} · Ends around age {age_on(person['date_of_birth'], start) + plan['plan']['years']} · One Australian resident")
+    st.subheader("Income & spending")
     a, b = st.columns(2)
     with a:
-        employment["annual_salary"] = money("Gross annual salary (AUD, excluding super)", employment["annual_salary"], "salary",
-                                            help="Paid fortnightly until retirement. This is this year's salary.")
-        employment["salary_indexed"] = st.checkbox(
-            f"Salary rises each year with wage growth ({plan['assumptions']['wage_growth_annual']:.1%}, set on the Assumptions tab)",
-            employment.get("salary_indexed", True), key=key("salary_indexed"),
-            help="Each 1 July salary and salary sacrifice rise by the wage-growth assumption. Untick to keep salary "
-                 "the same dollar amount every year, which means a real pay cut each year.")
+        employment["annual_salary"] = money("Annual salary before tax", employment["annual_salary"], "salary",
+                                            help="AUD, excluding employer super. Paid until retirement.")
     with b:
-        mode = st.radio("Salary sacrifice to super, on top of the 12% super guarantee", ["% of salary", "Dollars per year"],
-                        index=0 if employment["salary_sacrifice_per_year"] == 0 else 1, horizontal=True, key=key("sacrifice_mode"))
-        if mode == "% of salary":
-            employment["salary_sacrifice_percent"] = percent("Salary sacrifice % of salary", employment["salary_sacrifice_percent"],
-                                                             "sacrifice_pct", low=0, high=100, step=0.5)
-            employment["salary_sacrifice_per_year"] = 0.0
-        else:
-            employment["salary_sacrifice_per_year"] = money("Salary sacrifice per year", employment["salary_sacrifice_per_year"],
-                                                            "sacrifice")
-            employment["salary_sacrifice_percent"] = 0.0
-    work_summary(plan)
+        plan["spending"]["annual"] = money("Annual spending today", plan["spending"]["annual"], "spend",
+                                            help="Today's dollars, including all living costs. Paid monthly.")
+    st.subheader("What you have today")
+    a, b, c = st.columns(3)
+    with a:
+        plan["outside"]["cash"] = money("Cash", plan["outside"]["cash"], "cash")
+    with b:
+        plan["outside"]["investment_balance"] = money("Investments outside super", plan["outside"]["investment_balance"], "outside_value")
+    with c:
+        plan["super"]["balance"] = money("Super balance", plan["super"]["balance"], "super")
+    st.caption("All amounts in AUD. Review the opening tax position under Portfolios & saving when changing investments.")
+
+
+def inputs_you(plan):
+    """Employment details; core amounts and dates live in the essentials."""
+    person, employment = plan["person"], plan["employment"]
+    person["private_hospital_cover"] = st.checkbox("Private hospital cover (avoids Medicare levy surcharge)",
+                                                   person["private_hospital_cover"], key=key("cover"))
+    employment["salary_indexed"] = st.checkbox("Salary rises with wage growth",
+                                               employment.get("salary_indexed", True), key=key("salary_indexed"))
+    mode = st.radio("Salary sacrifice to super, on top of the 12% super guarantee", ["% of salary", "Dollars per year"],
+                    index=0 if employment["salary_sacrifice_per_year"] == 0 else 1, horizontal=True, key=key("sacrifice_mode"))
+    if mode == "% of salary":
+        employment["salary_sacrifice_percent"] = percent("Salary sacrifice % of salary", employment["salary_sacrifice_percent"],
+                                                         "sacrifice_pct", low=0, high=100, step=0.5)
+        employment["salary_sacrifice_per_year"] = 0.0
+    else:
+        employment["salary_sacrifice_per_year"] = money("Salary sacrifice per year", employment["salary_sacrifice_per_year"], "sacrifice")
+        employment["salary_sacrifice_percent"] = 0.0
 
 
 def work_summary(plan):
@@ -292,8 +311,9 @@ def work_summary(plan):
     surplus = salary - sacrifice - tax.net_tax - tax.division_293_tax - plan["spending"]["annual"]
     fixed = plan["outside"]["saving"] == "fixed"
     invested = min(plan["outside"]["contribution_per_year"], max(surplus, 0)) if fixed else max(surplus, 0)
-    a, b = st.columns(2)
-    c, d = st.columns(2)
+    st.divider()
+    st.subheader("Your first year at a glance")
+    a, b, c, d = st.columns(4)
     a.metric("Into super per year", f"${concessional:,.0f}",
              help=f"Super guarantee ${sg:,.0f} (12%) plus salary sacrifice ${sacrifice:,.0f}, before 15% contributions tax.")
     b.metric("Concessional cap 2026-27", f"${rules['concessional_cap']:,.0f}",
@@ -302,7 +322,7 @@ def work_summary(plan):
              help="Estimated on salary less sacrifice, before investment income and capital gains.")
     d.metric("Added to outside investments", f"${invested:,.0f}/yr",
              help=("Your fixed contribution, limited to what is left after tax and spending." if fixed else
-                   "Take-home pay less tax and spending, all invested.") + " Set this on the Investments tab; contributions from pay "
+                   "Take-home pay less tax and spending, all invested.") + " Set this on Portfolios & saving; contributions from pay "
                    "stop at retirement, after which spare cash above the buffer is reinvested.")
     if fixed and surplus > invested + 1:
         st.caption(f"About ${surplus - invested:,.0f} a year of leftover pay stays in cash, earning the cash interest rate.")
@@ -314,7 +334,7 @@ def work_summary(plan):
                    "concessional cap. Unless you have carried-forward unused cap, the run will stop with an excess-contributions message.")
     st.caption("How saving outside super works: each fortnight your salary after sacrifice goes into cash. Spending (monthly) "
                "and tax (each 31 October) are paid from it. Then either everything above the cash buffer, or your fixed "
-               "contribution, buys the outside portfolio (choose on the Investments tab). From retirement, all cash "
+               "contribution, buys the outside portfolio (choose on Portfolios & saving). From retirement, all cash "
                "above the buffer is reinvested instead. The figures are first-year estimates before investment income; "
                + ("salary rises with wage growth after that." if employment.get("salary_indexed", True)
                   else "salary stays the same dollar amount after that."))
@@ -355,16 +375,11 @@ def inputs_investments(plan):
             plan["outside"]["contribution_indexed"], key=key("contribution_indexed"))
     st.caption("Contributions come out of your pay each fortnight and stop at your retirement date. After retirement all cash "
                "above the buffer is reinvested in this portfolio, such as pension payments, distributions and interest you "
-               "do not spend. See the estimate on the You tab.")
-    a, b = st.columns(2)
-    with a:
-        plan["outside"]["cash"] = money("Cash today", plan["outside"]["cash"], "cash")
-    with b:
-        plan["outside"]["cash_buffer"] = money("Cash buffer kept uninvested", plan["outside"]["cash_buffer"], "buffer")
+               "do not spend. See the estimate on the first-year estimate.")
+    plan["outside"]["cash_buffer"] = money("Cash buffer kept uninvested", plan["outside"]["cash_buffer"], "buffer")
     plan["outside"]["cash_interest"] = percent("Interest on cash %/yr", plan["outside"]["cash_interest"], "cash_interest",
                                                low=-5, high=20, step=0.25,
                                                help="Assumed nominal rate on all outside cash, credited daily and taxed as income.")
-    plan["outside"]["investment_balance"] = money("Investments today", plan["outside"]["investment_balance"], "outside_value")
     with st.expander("Opening tax position for outside investments"):
         st.caption("One aggregate cost base and acquisition date are allocated across the portfolio. This is an approximation if you bought at different times or prices.")
         plan["outside"]["opening_cost_base"] = money("Total cost base", plan["outside"]["opening_cost_base"], "outside_basis")
@@ -375,10 +390,7 @@ def inputs_investments(plan):
     plan["outside"]["rebalance"] = rebalance_choice(plan["outside"]["rebalance"], "outside_rebalance",
                                                     "Outside super each rebalance sells overweight holdings, which realises capital gains tax.")
     st.subheader("Portfolio inside super")
-    a, b = st.columns(2)
-    with a:
-        plan["super"]["balance"] = money("Super balance today", plan["super"]["balance"], "super")
-    with b:
+    with st.container():
         same = st.checkbox("Balance at last 30 June was the same", plan["super"]["total_super_balance_prior_30_june"]
                            == plan["super"]["balance"], key=key("tsb_same"),
                            help="The total super balance on the previous 30 June sets this year's contribution caps "
@@ -440,7 +452,7 @@ def spending_rule_inputs(plan):
             help="Total wealth is cash, outside investments and super. Each simulated path reaches retirement with "
                  "different wealth, so each gets its own dollar amount; the results show the range in today's dollars.")
         st.caption("Each path's starting amount is this percentage of its own wealth on your retirement date, so it is "
-                   "only known after the simulation runs. Section 4 of the results shows the range it produced. For "
+                   "only known after the simulation runs. Retirement results of the results shows the range it produced. For "
                    "reference, Guyton and Klinger tested starting rates of about 5–5.5% with their guardrails; 4% is a "
                    "common rule of thumb for fixed spending over 30 years."
                    + (" Every compared strategy starts from this same rate, so they begin with the same spending on "
@@ -503,16 +515,14 @@ def spending_rule_inputs(plan):
                                              "well. Applies to every market-responsive strategy.")
         st.caption("Market-responsive strategies review spending once a year on 1 July after your retirement date, using "
                    "total wealth (cash, outside investments and super). Fixed spending ignores the minimum and maximum. "
-                   "Each review and its reason are in the event log in section 5.")
+                   "Each review and its reason are in the event log in the Path explorer.")
 
 
 def inputs_retirement(plan):
     st.subheader("Spending")
     spending, cpi = plan["spending"], plan["assumptions"]["cpi_annual"]
-    spending["annual"] = money("Spending now (today's dollars a year)", spending["annual"], "spend",
-                               help="Everything you spend in a year, paid monthly from cash.")
     st.caption(f"All spending amounts are in **today's dollars**. Each 1 July they rise with inflation ({cpi:.1%} CPI, set "
-               "on the Assumptions tab), so they buy the same every year.")
+               "on Simulation & tax assumptions), so they buy the same every year.")
     spending_rule_inputs(plan)
     with st.expander("Spend more or less over time", expanded=spending["real_change"] != 0):
         spending["real_change"] = percent(
@@ -583,16 +593,8 @@ def year_to_date_inputs(plan):
 
 
 def inputs_assumptions(plan):
-    st.subheader("Horizon")
-    a, b = st.columns(2)
-    with a:
-        plan["plan"]["start_date"] = st.date_input("Start date", date.fromisoformat(plan["plan"]["start_date"]), date(2026, 7, 1),
-                                                   date(2040, 6, 30), key=key("start"), format="YYYY-MM-DD").isoformat()
-    with b:
-        plan["plan"]["years"] = int(st.number_input("Years to simulate", 1, 60, int(plan["plan"]["years"]), 1, key=key("years"),
-                                                    help="Runs can go past Age Pension age. Results only cover the years "
-                                                         "simulated, so run to an advanced age (90 or more) to see the "
-                                                         "whole retirement in the tax ledger."))
+    plan["plan"]["start_date"] = st.date_input("Start date", date.fromisoformat(plan["plan"]["start_date"]), date(2026, 7, 1),
+                                               date(2040, 6, 30), key=key("start"), format="YYYY-MM-DD").isoformat()
     year_to_date_inputs(plan)
     st.subheader("Economic assumptions")
     a, b = st.columns(2)
@@ -601,7 +603,7 @@ def inputs_assumptions(plan):
                                                     help="Indexes CGT cost bases from 1 July 2027 and CPI-linked thresholds.")
     with b:
         plan["assumptions"]["wage_growth_annual"] = percent("Wage growth %/yr", plan["assumptions"]["wage_growth_annual"], "wages",
-                                                            low=-10, high=20, help="Raises salary each year (if ticked on the You tab) and indexes "
+                                                            low=-10, high=20, help="Raises salary each year (if ticked on the first-year estimate) and indexes "
                                                                                      "contribution caps and MLS thresholds.")
     st.caption("Tax and super rules are sourced for 2026-27; later years apply enacted changes and project indexed "
                "thresholds with these assumptions (see docs/rules/au-projection.md).")
@@ -715,8 +717,8 @@ def affected(values):
 
 
 def fit(frame):
-    """A table height that shows every row without an inner scroll bar."""
-    return 38 + 35 * len(frame)
+    """Small tables fit their rows; large audit tables scroll within the workspace."""
+    return min(440, 38 + 35 * len(frame))
 
 
 def percentile_table(frame, measures):
@@ -821,7 +823,7 @@ def balances_chart(daily):
         tooltip=[alt.Tooltip("Date:T", format="%b %Y"), *age_tooltip(long), "Account:N",
                  alt.Tooltip("balance:Q", title="Balance", format="$,.0f"), alt.Tooltip("Share:Q", title="Share of wealth", format=".0%"),
                  alt.Tooltip("Total:Q", title="Total wealth", format="$,.0f")],
-    ).properties(height=530))
+    ).properties(height=350))
 
 
 def symlog_axis(upper):
@@ -835,7 +837,7 @@ def symlog_axis(upper):
     return alt.Axis(values=ticks, labelExpr=labels, labelOverlap=False)
 
 
-def band_chart(frame, title, *, log=False, symlog=False, color="#126a63", percent=False, x="Date:T", marks=None, height=520):
+def band_chart(frame, title, *, log=False, symlog=False, color="#126a63", percent=False, x="Date:T", marks=None, height=350):
     """Hoverable percentile bands with zoom, a sparse long-horizon year axis and optional life-event lines."""
     import altair as alt
 
@@ -1042,7 +1044,7 @@ def all_paths_chart(paths, marks, outcomes=None, cache_key=None, log=True):
                        x="Date:T", tooltip=["Event:N", alt.Tooltip("Date:T", format="%d %b %Y")]),
                    alt.Chart(marks).mark_text(align="left", dx=4, fontSize=11, color="#3c474d").encode(
                        x="Date:T", y=alt.Y("Offset:Q", scale=None), text="Event:N")]
-    chart = alt.layer(*layers).properties(height=620, usermeta={"embedOptions": {"renderer": "canvas"}})
+    chart = alt.layer(*layers).properties(height=420, usermeta={"embedOptions": {"renderer": "canvas"}})
     return chart, len(funded), len(depleted), clipped
 
 
@@ -1073,7 +1075,7 @@ def ending_wealth_chart(calculated, marks_text=True):
     rules = alt.Chart(points).mark_rule(strokeDash=[4, 3], color="#5f6b73").encode(y="Ending wealth:Q")
     labels = alt.Chart(points).mark_text(align="left", x=8, dy=-8, fontSize=12, fontWeight="bold", color="#19353a").encode(
         y="Ending wealth:Q", text="Label:N")
-    return zoomable(alt.layer(dots, rules, labels).properties(height=550))
+    return zoomable(alt.layer(dots, rules, labels).properties(height=350))
 
 
 def overlay_histogram(frame, field, title, *, series=("Outside super", "Inside super"), log=False, percent=True, money=False):
@@ -1101,7 +1103,7 @@ def overlay_histogram(frame, field, title, *, series=("Outside super", "Inside s
         x=f"median({value}):Q", color=alt.Color("Portfolio:N", scale=scale_for(series), legend=None),
         tooltip=["Portfolio:N", alt.Tooltip(f"median({field}):Q", title="Median",
                                             format="$,.0f" if (money or log) else ".1%" if percent else ",.2f")])
-    return zoomable(alt.layer(bars, rules).properties(height=410))
+    return zoomable(alt.layer(bars, rules).properties(height=280))
 
 
 def inflation_note(plan):
@@ -1126,7 +1128,7 @@ and you can compare any two years directly. (A nominal \\$1,000,000 in 20 years 
 | Salary | {"Rises each 1 July by wage growth (" + format(plan['assumptions']['wage_growth_annual'], '.1%') + "), so in today's dollars it grows by about the gap between wage growth and CPI" if plan['employment'].get('salary_indexed', True) else "Not indexed, so it falls each year in today's dollars"} |
 
 The tax ledger itself runs in nominal dollars, because tax brackets, caps and the CGT discount are set in nominal
-dollars. Only the reporting is converted. The event log and the CSV downloads in section 5 are the ledger's
+dollars. Only the reporting is converted. The event log and the CSV downloads in the Path explorer are the ledger's
 nominal records.
 """)
 
@@ -1184,7 +1186,7 @@ def allocation_legend(weights, tickers):
 def section_portfolios(run):
     import altair as alt
 
-    st.header("1 · Your portfolios")
+    st.header("Your portfolios")
     plan = run.plan
     tickers = list(plan["assets"])
     cols = st.columns(2)
@@ -1195,7 +1197,7 @@ def section_portfolios(run):
             st.caption("Rebalanced every January" if plan[section]["rebalance"] == "annual" else "Buy and hold")
             weights = pd.DataFrame([{"Ticker": t, "Weight": w, "Label": f"{t} {w:.0%}", "Amount": w * balance}
                                     for t, w in plan[section]["weights"].items()])
-            st.altair_chart(allocation_pie(weights, tickers), width="stretch")
+            show_chart(allocation_pie(weights, tickers), width="stretch")
             st.markdown(allocation_legend(weights, tickers), unsafe_allow_html=True)
             stats = run.portfolios.summary.set_index("Portfolio").loc[title]
             st.markdown(f"Historical CAGR (nominal) **{share(stats['CAGR'])}** · volatility **{share(stats['Volatility'])}** · "
@@ -1243,7 +1245,7 @@ def section_history(run):
     import altair as alt
 
     st.header("2 · Historical portfolio behaviour")
-    st.caption("Historical returns are **nominal**: the source data have no inflation history. Everything from section 3 "
+    st.caption("Historical returns are **nominal**: the source data have no inflation history. Everything from Portfolios "
                "on is in today's dollars.")
     history = run.portfolios.historical
     names = list(dict.fromkeys(history["Portfolio"]))
@@ -1252,8 +1254,8 @@ def section_history(run):
         y=alt.Y("Growth of 100:Q", scale=alt.Scale(type="log"), title="Growth of $100 · log scale", axis=alt.Axis(format="$,.0f")),
         color=alt.Color("Portfolio:N", scale=scale_for(names), legend=alt.Legend(orient="bottom", title=None)),
         tooltip=[alt.Tooltip("Date:T", format="%b %Y"), "Portfolio:N", alt.Tooltip("Growth of 100:Q", format="$,.0f")]
-    ).properties(height=550))
-    st.altair_chart(growth, width="stretch")
+    ).properties(height=350))
+    show_chart(growth, width="stretch")
     st.caption("$100 invested at the start of the shared history, valued at each month end. On a log scale equal "
                "vertical distances are equal percentage changes, so a straight line means steady compound growth "
                "and early decades stay visible. Reconstructed pre-fund history is a model, not observed fund performance.")
@@ -1268,7 +1270,7 @@ def portfolio_detail(run, names):
     marks = milestones(plan, portfolios.dates[0], portfolios.dates[-1])
     selected = st.radio("Portfolio", names, horizontal=True, key=key("portfolio_result"))
     fan = portfolios.paths.loc[portfolios.paths["Portfolio"] == selected]
-    st.altair_chart(band_chart(fan, "Growth of $100 in today's dollars · log scale", log=True, color=PALETTE[selected],
+    show_chart(band_chart(fan, "Growth of $100 in today's dollars · log scale", log=True, color=PALETTE[selected],
                                marks=marks),
                     width="stretch")
     st.caption("Dark band: middle half of paths (25th–75th percentile). Light band: 90% of paths (5th–95th). Line: "
@@ -1320,7 +1322,7 @@ contain longer or deeper losses than history did. They treat every era as equall
     names = [p for p in ("Outside super", "Inside super", "Combined") if p in set(portfolios.paths["Portfolio"])]
     portfolio_detail(run, names)
     medians = portfolios.paths[["Date", "Portfolio", "P50"]]
-    st.altair_chart(zoomable(alt.Chart(medians).mark_line(strokeWidth=2).encode(
+    show_chart(zoomable(alt.Chart(medians).mark_line(strokeWidth=2).encode(
         x=alt.X("Date:T", title=None, axis=year_axis(medians)),
         y=alt.Y("P50:Q", title="Median growth of $100, today's dollars", scale=alt.Scale(type="log", nice=False,
                 domain=[float(medians["P50"].min()) * 0.95, float(medians["P50"].max()) * 1.05]), axis=alt.Axis(format="$,.0f")),
@@ -1333,16 +1335,16 @@ contain longer or deeper losses than history did. They treat every era as equall
     outcomes = portfolios.outcomes
     a, b = st.columns(2)
     with a:
-        st.altair_chart(overlay_histogram(outcomes, "Terminal growth of 100", "Ending value of $100, today's dollars (log scale)", log=True,
+        show_chart(overlay_histogram(outcomes, "Terminal growth of 100", "Ending value of $100, today's dollars (log scale)", log=True,
                                         series=tuple(names)),
                         width="stretch")
         st.caption("Where $100 ends up at the horizon, in today's dollars. Dashed lines are medians.")
-        st.altair_chart(overlay_histogram(outcomes, "Annualised volatility", "Annualised volatility", series=tuple(names)), width="stretch")
+        show_chart(overlay_histogram(outcomes, "Annualised volatility", "Annualised volatility", series=tuple(names)), width="stretch")
         st.caption("Day-to-day variability of each path, annualised. Higher volatility means wider swings in wealth.")
     with b:
-        st.altair_chart(overlay_histogram(outcomes, "Annualised growth", "Annualised growth after inflation", series=tuple(names)), width="stretch")
+        show_chart(overlay_histogram(outcomes, "Annualised growth", "Annualised growth after inflation", series=tuple(names)), width="stretch")
         st.caption("Compound growth per year over the whole horizon on each path, after inflation.")
-        st.altair_chart(overlay_histogram(outcomes, "Maximum drawdown", "Maximum drawdown", series=tuple(names)), width="stretch")
+        show_chart(overlay_histogram(outcomes, "Maximum drawdown", "Maximum drawdown", series=tuple(names)), width="stretch")
         st.caption("Deepest peak-to-trough fall on each path. −50% means the portfolio halved at some point.")
     table = []
     for title in names:
@@ -1444,7 +1446,7 @@ def typical_flows_section(annual, marks, calculated, start_wealth):
     def median(column):
         return float(calculated[column].median()) if column in calculated and calculated[column].notna().any() else np.nan
 
-    # The same figures as section 5's single path, as medians across paths (each median is taken on its own).
+    # The same figures as the Path explorer's single path, as medians across paths (each median is taken on its own).
     w = st.columns(4)
     w[0].metric("Wealth at start", compact(start_wealth), help="The same on every path: your wealth today.")
     w[1].metric("Median wealth at retirement", compact(median("Wealth at retirement")),
@@ -1510,7 +1512,7 @@ def typical_flows_section(annual, marks, calculated, start_wealth):
     zero = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(color="#5f6b73").encode(y="y:Q")
     added = additions_layer(additions, x)
     layers = [bars, zero, spread, line] + ([added] if added is not None else [])
-    st.altair_chart(with_milestones(alt.layer(*layers).properties(height=670), marks, "Position:Q"), width="stretch")
+    show_chart(with_milestones(alt.layer(*layers).properties(height=400), marks, "Position:Q"), width="stretch")
     st.caption(f"Each bar is the **median across all {paths} calculated paths** of that flow in that year: take-home "
                "salary, super contributions and investment returns above zero; spending, income tax, contributions tax "
                "and super fund tax below. **Inflation** (grey) is the buying power your wealth lost that year: in "
@@ -1518,7 +1520,7 @@ def typical_flows_section(annual, marks, calculated, start_wealth):
                "change in total wealth, with whiskers "
                "showing the middle half of paths (25th to 75th percentile); hover it for the median wealth at the start "
                "and end of each year. Hover a bar for its 25th and 75th percentiles. The figures above the chart are "
-               "medians across paths of section 5's single-path figures; each is a separate median, so they need not "
+               "medians across paths of the Path explorer's single-path figures; each is a separate median, so they need not "
                "come from the same path. The dashed teal line with squares is the median amount **added to outside investments** from your "
                "pay each year, and after retirement from unspent pension payments and other spare cash; it moves money "
                "from cash into the portfolio, so it is not a bar and does not change total wealth. Medians do not add up, so the bars do not sum exactly to the median net change; "
@@ -1553,7 +1555,7 @@ def ruin_statistics(run, calculated, marks):
                   "have been available).")
     if age_on(born, end) < SHORT_HORIZON_AGE:
         st.warning(f"The tax ledger stops on {end}, at age {age_on(born, end)}. The risk of ruin above covers only those "
-                   "years: money can still run out later. Raise *Years to simulate* on the Assumptions tab to run to "
+                   "years: money can still run out later. Raise *Years to simulate* on Simulation & tax assumptions to run to "
                    f"age {SHORT_HORIZON_AGE} or beyond.")
 
 
@@ -1631,7 +1633,7 @@ def spending_section(plan, annual, calculated, marks):
                    f"{share(float(cuts.quantile(0.05)))} or worse on one path in twenty.")
     rows = annual.loc[annual["Full retired year"] & (annual["Spending paid"] > 0)]
     if not rows.empty:
-        st.altair_chart(band_chart(quantile_bands(rows, "FY ending", "Spending paid"), "Spending paid per year, today's dollars",
+        show_chart(band_chart(quantile_bands(rows, "FY ending", "Spending paid"), "Spending paid per year, today's dollars",
                                    color="#b76a42", x="FY ending:Q", marks=marks), width="stretch")
     st.caption(f"Spending actually paid in each full retired year across paths, in today's dollars. Rule: **{rule}**. "
                "With fixed spending the band is flat until money runs short, and then it drops. With a rule the band "
@@ -1669,7 +1671,7 @@ def age_pension_section(plan, annual, calculated, marks):
              help="Each path's Age Pension over the horizon, in today's dollars; the median among the paths that "
                   "receive any. Paths that receive none are counted in the share on the left.")
     if len(years):
-        st.altair_chart(band_chart(quantile_bands(years, "FY ending", "Age Pension"), "Age Pension per year, today's dollars",
+        show_chart(band_chart(quantile_bands(years, "FY ending", "Age Pension"), "Age Pension per year, today's dollars",
                                    color="#d08c2f", x="FY ending:Q", marks=marks), width="stretch")
     st.caption("Age Pension paid each financial year from Age Pension age, across paths, in today's dollars (zero where the "
                "means test paid nothing). It rises as your own wealth falls: on paths where markets did badly it pays more, "
@@ -1686,7 +1688,7 @@ def wealth_bands(run, calculated, marks):
     widget = strategy_key(run, "wealth_bands_log")
     wide = st.toggle("Log scale", key=widget, **first_value(widget, value=True))
     bands = run.account_bands.loc[run.account_bands["Series"] == choice]
-    st.altair_chart(band_chart(bands, f"{choice}, today's dollars" + (" · log scale" if wide else ""), symlog=wide, marks=marks),
+    show_chart(band_chart(bands, f"{choice}, today's dollars" + (" · log scale" if wide else ""), symlog=wide, marks=marks),
                     width="stretch")
     st.caption(f"Month-end {choice.lower()} across the {calculated} calculated paths, in today's dollars: dark band the "
                "middle half, light band 90% of paths, line the median. Dashed vertical lines mark retirement, when super "
@@ -1739,7 +1741,7 @@ def withdrawal_strategy(plan):
                f"{max(birthday(born.isoformat(), pension), access):%d %B %Y} paying at least the legal minimum"
                if pension else "")
             + ". From 67 the means-tested Age Pension adds income when your assets and income are low enough. "
-            "Change any of this on the Retirement tab.")
+            "Change any of this on Spending strategy & pensions.")
 
 
 def strategy_scale(rules):
@@ -1804,7 +1806,7 @@ def section_comparison(run):
                        x="Date:T", tooltip=["Event:N", alt.Tooltip("Date:T", format="%d %b %Y")]),
                    alt.Chart(marks).mark_text(align="left", dx=4, fontSize=11, color="#3c474d").encode(
                        x="Date:T", y=alt.Y("Offset:Q", scale=None), text="Event:N")]
-    st.altair_chart(zoomable(alt.layer(*layers).properties(height=520)), width="stretch")
+    show_chart(zoomable(alt.layer(*layers).properties(height=350)), width="stretch")
     st.caption("The median of total wealth (cash, outside investments and super) across paths at each month end, one "
                "line per strategy" + ("; dashed lines are the 10th percentile, which 90% of paths stay above" if low
                                       else "") + ". Lines are pointwise: no single path follows them. The strategies "
@@ -1825,7 +1827,7 @@ def section_comparison(run):
     bars = yearly_medians(strategies, flow, retired)
     if bars.empty:
         st.info("No full retired financial year falls inside the horizon, so there is nothing to compare year by year. "
-                "Raise *Years to simulate* on the Assumptions tab.")
+                "Raise *Years to simulate* on Simulation & tax assumptions.")
         return
     width = 0.84 / len(rules)
     position = {r: i for i, r in enumerate(rules)}
@@ -1844,7 +1846,7 @@ def section_comparison(run):
     first, last = int(bars["FY ending"].min()) - 0.6, int(bars["FY ending"].max()) + 0.6
     # Markers outside the years shown (retirement falls before the first full retired year) would sit on the axis.
     inside = marks.loc[marks["Position"].between(first, last)] if not marks.empty else marks
-    st.altair_chart(with_milestones(alt.layer(chart, zero).properties(height=480), inside, "Position:Q"), width="stretch")
+    show_chart(with_milestones(alt.layer(chart, zero).properties(height=360), inside, "Position:Q"), width="stretch")
     st.caption(f"Each bar is the median across all {paths} paths of that year's {flow.lower()}"
                + (", shown as a positive amount paid" if outflow else "") + ", for one strategy. The dropdown offers "
                "every flow from *Money in and out in a typical year*. Medians are taken year by year, so a strategy's "
@@ -1852,17 +1854,65 @@ def section_comparison(run):
                "dips only where paths ran short and paid less.")
 
 
-def section_retirement(run):
+def adequacy_overview(run, adequacy, calculated, marks):
+    """Separate shortfall from pension-supported funding in the primary view."""
     import altair as alt
 
+    n = len(adequacy)
+    depleted = adequacy["Status"].eq("depleted")
+    supported = adequacy["Outcome"].eq("Funded with Age Pension")
+    a, b, c, d = st.columns(4)
+    a.metric("Risk of ruin", share(depleted.mean()),
+             help="Any unpaid spending or tax, including an unpayable tax liability at the horizon. "
+                  "Super can still have value when accessible money runs short.")
+    b.metric("Funded with Age Pension", share(supported.mean()),
+             help="No shortfall, but received at least one Age Pension payment during the simulation.")
+    c.metric("Age Pension in final year", share(adequacy["Age Pension in final year"].gt(0).mean()),
+             help="Any Age Pension received in the last reported financial year, which may be partial. "
+                  "Includes paths with shortfalls; not necessarily receiving it on the final day.")
+    d.metric("Median ending wealth", compact(calculated["Ending wealth after tax owed"].median()),
+             help="Today's dollars, after subtracting tax incurred but not yet paid.")
+    counts = adequacy["Outcome"].value_counts().reindex(OUTCOME_COLOURS, fill_value=0)
+    frame = counts.rename_axis("Outcome").reset_index(name="Paths")
+    frame["Share"] = frame["Paths"] / n
+    frame["Label"] = frame.apply(lambda row: f"{row['Share']:.1%}  ·  {row['Paths']:,} paths", axis=1)
+    bars = alt.Chart(frame).mark_bar(size=16, cornerRadiusEnd=3).encode(
+        y=alt.Y("Outcome:N", sort=list(OUTCOME_COLOURS), title=None, axis=alt.Axis(labelLimit=230)),
+        x=alt.X("Share:Q", scale=alt.Scale(domain=[0, 1.25]), axis=None, title=None),
+        color=alt.Color("Outcome:N", scale=alt.Scale(domain=list(OUTCOME_COLOURS),
+                                                    range=list(OUTCOME_COLOURS.values())), legend=None),
+        tooltip=["Outcome:N", "Paths:Q", alt.Tooltip("Share:Q", format=".1%")])
+    labels = bars.mark_text(align="left", dx=8, color="#405650", fontSize=12).encode(text="Label:N", color=alt.value("#405650"))
+    show_chart((bars + labels).properties(height=110), width="stretch")
+    st.caption("Each path appears once: shortfall takes priority, then any Age Pension receipt. "
+               "Pension support is a separate warning signal, not proof the path would fail without it. "
+               "Even a small part-pension counts; the Path explorer shows the amounts.")
+    end = run.result.daily.index[-1].date()
+    born = date.fromisoformat(run.plan["person"]["date_of_birth"])
+    if age_on(born, end) < SHORT_HORIZON_AGE:
+        st.warning(f"This run ends at age {age_on(born, end)}. Risk is measured only to that point; "
+                   f"extend the horizon to age {SHORT_HORIZON_AGE} or beyond to examine later retirement.")
+
+
+def spending_averages(adequacy):
+    st.subheader("Average retirement spending by path group")
+    st.caption("Today's dollars per year. Average each path's spending over its complete retired financial years, "
+               "then give each path equal weight. Zero-spending years count; partial years do not.")
+    table = spending_by_group(adequacy)
+    st.dataframe(table, width="stretch", hide_index=True, height=fit(table), column_config={
+        name: money_column(name) for name in ("Average per year", "Median path average", "10th percentile path average")})
+    st.caption("The three outcome groups are separate. Wealth-ranked groups overlap them. "
+               "A dash means no complete retired years; small groups may contain only one path.")
+
+
+def calculation_details(run):
     plan, paths = run.plan, run.retirement_paths
-    st.header("4 · Retirement outcomes")
-    calculated = paths.loc[paths["Status"] != "unsupported"]
-    withdrawal_strategy(plan)
+    with st.expander("Your spending strategy"):
+        withdrawal_strategy(plan)
     with st.expander("How these results were calculated (the broad strokes)", expanded=False):
         st.markdown(f"""
 1. **Markets.** {plan['market']['paths']:,} possible futures are built by stitching together random stretches of
-   real daily market history (section 3). The first **{len(paths)}** of them are used here. Each future applies the
+   real daily market history (Portfolios). The first **{len(paths)}** of them are used here. Each future applies the
    same market days to your outside-super and super portfolios.
 2. **Your money, day by day.** For each future, a ledger follows every dollar from
    {run.result.daily.index[0].date()} to {run.result.daily.index[-1].date()}: pay comes in, spending goes out, what
@@ -1881,17 +1931,51 @@ def section_retirement(run):
 These are resamples of the past, not forecasts. Section 5 shows a single future (or a group of them averaged) in
 full, down to each payment. The project's methodology documents give every rule and its source.
 """)
+
+
+def section_retirement(run):
+    import altair as alt
+
+    plan, paths = run.plan, run.retirement_paths
+    st.header("Retirement outcomes")
+    calculated = paths.loc[paths["Status"] != "unsupported"]
+    view = st.radio("Explore these results", ["Overview", "Cash flow", "Risk & tax", "Path explorer"],
+                    horizontal=True, key=strategy_key(run, "detail_view"), label_visibility="collapsed")
+    if view == "Path explorer":
+        section_ledger(run)
+        return
     funded = int((paths["Status"] == "funded").sum())
     depleted = int((paths["Status"] == "depleted").sum())
     unsupported = int((paths["Status"] == "unsupported").sum())
-    a, b, c, d = st.columns(4)
-    a.metric("Paths calculated", f"{len(calculated)} / {len(paths)}", help=f"{unsupported} unsupported")
-    b.metric("Funded all spending", share(funded / len(calculated)) if len(calculated) else "–",
-             help=f"{funded} funded, {depleted} depleted")
-    c.metric("Median ending wealth after tax owed", compact(calculated["Ending wealth after tax owed"].median()),
-             help=f"In today's dollars (deflated at the assumed {plan['assumptions']['cpi_annual']:.1%} CPI), at the horizon, "
-                  "less tax already incurred but not yet paid.")
-    d.metric("Median wealth at retirement", compact(calculated["Wealth at retirement"].median()), help="Today's dollars.")
+    st.caption(f"{len(calculated):,} calculated paths · {unsupported:,} unsupported · "
+               f"Through {run.result.daily.index[-1]:%d %b %Y} · Today's dollars")
+    if unsupported:
+        reasons = paths.loc[paths["Status"] == "unsupported", "Reason"].value_counts()
+        st.warning("Unsupported paths are excluded from every share and summary: "
+                   + "; ".join(f"{count} × {reason}" for reason, count in reasons.items()))
+    if calculated.empty:
+        st.info("No supported paths are available for these results.")
+        return
+    marks = milestones(plan, run.result.daily.index[0].date(), run.result.daily.index[-1].date())
+    annual = run.retirement_annual.copy()
+    annual["Period"] = annual["FY ending"].map(period_label)
+    adequacy = path_adequacy(paths, annual, plan["plan"]["start_date"])
+    if view == "Overview":
+        adequacy_overview(run, adequacy, calculated, marks)
+        st.subheader("Wealth over time")
+        wealth_bands(run, len(calculated), marks)
+        spending_averages(adequacy)
+        with st.expander("Spending ranges and cuts"):
+            spending_section(plan, annual, calculated, marks)
+        calculation_details(run)
+        return
+    if view == "Cash flow":
+        typical_flows_section(annual, marks, calculated, float(run.result.daily["total"].iloc[0]))
+        spending_section(plan, annual, calculated, marks)
+        with st.expander("Age Pension payments"):
+            age_pension_section(plan, annual, calculated, marks)
+        return
+    ruin_statistics(run, calculated, marks)
     a, b, c, d = st.columns(4)
     a.metric("Median first retired-year withdrawal", share(calculated["First retired-year withdrawal rate"].median()),
              help="Spending plus tax paid in the first full retired financial year, over wealth at its 1 July.")
@@ -1905,17 +1989,9 @@ full, down to each payment. The project's methodology documents give every rule 
         d.metric("Paths paying Division 296", share(float((calculated["Division 296 tax"] > 0).mean())),
                  help="Share of paths whose total super balance passed the large balance threshold (3 million "
                       "dollars, CPI-indexed) in a year with super earnings. Earnings include the realised gains "
-                      f"assumed on the Investments tab ({plan['super']['realised_gains']:.0%} a year).")
-    if unsupported:
-        reasons = paths.loc[paths["Status"] == "unsupported", "Reason"].value_counts()
-        st.warning("Unsupported paths are excluded, so the shares above are conditional on the others: "
-                   + "; ".join(f"{count} × {reason}" for reason, count in reasons.items()))
-    marks = milestones(plan, run.result.daily.index[0].date(), run.result.daily.index[-1].date())
-    st.subheader("Wealth over time")
-    wealth_bands(run, len(calculated), marks)
+                      f"assumed on Portfolios & saving ({plan['super']['realised_gains']:.0%} a year).")
     if getattr(run, "wealth_paths", None) is not None:
         st.subheader("Wealth over time across many paths")
-        ruin_statistics(run, calculated, marks)
         widget = strategy_key(run, "all_paths_log")
         log = st.toggle("Log scale", key=widget, **first_value(widget, value=True))
         chart, grey, red, clipped = all_paths_chart(run.wealth_paths, marks, calculated, cache_key=id(run), log=log)
@@ -1924,7 +2000,7 @@ full, down to each payment. The project's methodology documents give every rule 
                     f"&nbsp; <span style='color:{RED}'>&#9644; &#10010;</span> all {red} paths that ran out, and where "
                     f"they first ran short &nbsp; <span style='color:{MEDIAN}'>&#9644;</span> median of all {total} paths",
                     unsafe_allow_html=True)
-        st.altair_chart(chart, width="stretch")
+        show_chart(chart, width="stretch")
         st.caption(("Every calculated path is drawn. " if grey + red == total else
                     f"{grey} of the {total - red} paths that never ran out are drawn, spread evenly from the lowest to "
                     "the highest ending wealth so they show the same spread as all of them; every path that ran out is "
@@ -1940,29 +2016,24 @@ full, down to each payment. The project's methodology documents give every rule 
                    "accessible: those paths ran out of outside money while waiting for super. The teal "
                    "line is the median of all paths at each month. Point at a line to highlight that path and see its "
                    "value, your age, its ending wealth, shortfall and first retired-year withdrawal rate; the path "
-                   "number can be opened in section 5.")
+                   "number can be opened in the Path explorer.")
     st.subheader("Ending wealth on every path")
     ending_statistics(run, calculated)
-    st.altair_chart(ending_wealth_chart(calculated), width="stretch")
+    show_chart(ending_wealth_chart(calculated), width="stretch")
     st.caption(f"Each dot is one path's total wealth on {run.result.daily.index[-1].date()}, sorted from lowest (left) to "
                "highest (right); the horizontal position is the share of paths that ended lower. Hover a dot for its "
                "exact ending wealth in today's dollars, the split between outside super and super, and any "
                "spending shortfall. Red dots are depleted paths. Dashed lines label the 10th percentile, median and 90th "
                "percentile.")
-    annual = run.retirement_annual.copy()
-    annual["Period"] = annual["FY ending"].map(period_label)
-    typical_flows_section(annual, marks, calculated, float(run.result.daily["total"].iloc[0]))
-    spending_section(plan, annual, calculated, marks)
-    age_pension_section(plan, annual, calculated, marks)
     st.subheader("Withdrawal rate in each retired year")
     retired = annual.loc[annual["Full retired year"] & annual["Withdrawal rate"].notna()]
     if retired.empty:
         st.info("No full financial year after retirement falls inside the horizon, so there are no withdrawal rates.")
     else:
         rate_chart = band_chart(quantile_bands(retired, "FY ending", "Withdrawal rate"), "Withdrawal rate", percent=True,
-                                color="#b76a42", x="FY ending:Q", marks=marks, height=600)
-        st.altair_chart(rate_chart, width="stretch")
-        with st.expander("How to read the withdrawal rate", expanded=True):
+                                color="#b76a42", x="FY ending:Q", marks=marks, height=360)
+        show_chart(rate_chart, width="stretch")
+        with st.expander("How to read the withdrawal rate"):
             st.markdown(f"""
 **What it is.** For each financial year (1 July to 30 June) that starts after you retire, the money taken out of your
 wealth that year (spending paid plus personal and Division 296 tax paid, less any Age Pension received) divided by your **total** wealth on that 1 July, outside and
@@ -1991,7 +2062,7 @@ total wealth; spending rises with inflation{"" if not plan['spending']['real_cha
             y=alt.Y("Paths with a shortfall:Q", axis=alt.Axis(format=".0%"),
                     scale=alt.Scale(domain=[0, max(0.1, float(stress["Paths with a shortfall"].max()) * 1.2)])),
             tooltip=[alt.Tooltip("Period:N", title="Year"), alt.Tooltip("Paths with a shortfall:Q", format=".1%")])
-        st.altair_chart(with_milestones(bars.properties(height=430), marks, "Position:Q"), width="stretch")
+        show_chart(with_milestones(bars.properties(height=300), marks, "Position:Q"), width="stretch")
         st.caption("Share of paths that could not pay all spending in each year. Shortfalls often cluster just before "
                    "super becomes accessible, when only outside money can pay.")
     with b:
@@ -1999,7 +2070,7 @@ total wealth; spending rises with inflation{"" if not plan['spending']['real_cha
         if pensions.empty:
             st.info("No account-based pension is paid in this plan (pension start age 0, or after the horizon).")
         else:
-            st.altair_chart(band_chart(quantile_bands(pensions, "FY ending", "Pension payments"), "Pension payments per year",
+            show_chart(band_chart(quantile_bands(pensions, "FY ending", "Pension payments"), "Pension payments per year",
                                        color="#8363a0", x="FY ending:Q", marks=marks), width="stretch")
             st.caption("Pension paid each year across paths: at least the age-based minimum, more when spending needs it "
                        "once outside money is used up.")
@@ -2075,9 +2146,16 @@ def group_paths(run, members, label):
     plan, paths = run.plan, run.retirement_paths
     group = paths.loc[paths["Path"].isin(members)]
     st.subheader(f"{label} ({len(members)} path{'s' if len(members) != 1 else ''})")
+    averages = path_adequacy(paths, run.retirement_annual, plan["plan"]["start_date"])
+    averages = averages.loc[averages["Path"].isin(members), "Average annual retirement spending"].dropna()
+    a, b = st.columns(2)
+    a.metric("Average annual retirement spending", compact(averages.mean()),
+             help="Mean of each path's average spending paid over complete retired financial years, today's dollars.")
+    b.metric("Median path's average spending", compact(averages.median()),
+             help="Median of those per-path annual averages. Zero-spending years count; partial years are excluded.")
     if len(members) < 5:
         st.caption(f"Only {len(members)} path{'s' if len(members) != 1 else ''} in this group, so its figures rest on very "
-                   "few market sequences. Raise *Daily retirement-ledger paths* on the Assumptions tab (500 gives 5 paths "
+                   "few market sequences. Raise *Daily retirement-ledger paths* on Simulation & tax assumptions (500 gives 5 paths "
                    "in the worst 1%) for a steadier picture.")
     a, b, c, d = st.columns(4)
     a.metric("Wealth at start", compact(float(run.result.daily["total"].iloc[0])))
@@ -2102,7 +2180,7 @@ def group_paths(run, members, label):
         frame = pd.DataFrame({"cash": 0.0, "outside_investments": middle["Outside super"],
                               "accumulation": middle["Accumulation"], "pension": middle["Pension account"]},
                              index=pd.DatetimeIndex(middle.index, name="Date"))
-        st.altair_chart(with_milestones(balances_chart(frame), marks), width="stretch")
+        show_chart(with_milestones(balances_chart(frame), marks), width="stretch")
         st.caption("Median month-end balance of each account across the group's paths, today's dollars (outside super "
                    "combines cash and investments). Each account's median is taken on its own, so the stacked total "
                    "need not equal any one path's wealth. Medians are used because one extreme path can pull an "
@@ -2133,7 +2211,7 @@ def group_paths(run, members, label):
         added = additions_layer(yearly.rename(columns={"Added to outside investments": "AUD"}), x)
         layers = [bars, zero, line] + ([added] if added is not None else [])
         st.subheader("Money in and out, averaged across the group")
-        st.altair_chart(with_milestones(alt.layer(*layers).properties(height=600), marks, "Position:Q"), width="stretch")
+        show_chart(with_milestones(alt.layer(*layers).properties(height=360), marks, "Position:Q"), width="stretch")
         st.caption("Each bar is the **average** of that flow across the group's paths in that year, unlike the medians "
                    "elsewhere in this group: averages add up, so the bars sum to the average net change in wealth "
                    "(black line). The dashed teal line is the average added to outside investments from pay.")
@@ -2168,14 +2246,17 @@ def section_ledger(run):
 
     paths = run.retirement_paths
     calculated = paths.loc[paths["Status"] != "unsupported"].sort_values("Ending wealth")
-    st.header("5 · One path in full: the daily ledger")
-    st.markdown("Everything above summarises many paths. Here one path's daily ledger is shown in full, so you can "
-                "see each salary payment, sale, tax bill and pension payment that produced its result.")
+    st.subheader("Path explorer")
+    st.caption("Inspect a single future or a group, from annual spending down to each payment.")
     ranks = ending_percentiles(calculated)
     choices = {f"Median ending wealth · path {run.representative_path}": run.representative_path}
     headings = {}  # group choices: their members and view heading
     everyone = calculated["Path"].astype(int).tolist()
-    for label, heading, members in [("Group: all paths", "All paths", everyone)] + [
+    adequacy = path_adequacy(paths, run.retirement_annual, run.plan["plan"]["start_date"])
+    risk_groups = [(f"Group: {label.lower()}", label,
+                    adequacy.loc[adequacy["Outcome"] == label, "Path"].astype(int).tolist())
+                   for label in OUTCOME_COLOURS if (adequacy["Outcome"] == label).any()]
+    for label, heading, members in [("Group: all paths", "All paths", everyone)] + risk_groups + [
             (f"Group: the {name.lower()}", f"The {name.lower()} of paths", group_members(calculated, low, high))
             for name, low, high in PATH_GROUPS]:
         choice = f"{label} · {len(members)} path{'s' if len(members) != 1 else ''}"
@@ -2194,6 +2275,11 @@ def section_ledger(run):
         group_paths(run, choices[picked], headings[picked])
         return
     path = choices[picked]
+    summary = adequacy.set_index("Path").loc[path]
+    st.metric("Average annual retirement spending", compact(summary["Average annual retirement spending"]),
+              help="Spending actually paid, averaged over complete retired financial years in today's dollars. "
+                   "Includes zero-spending years; excludes partial years.")
+    st.caption(f"{int(summary['Full retired years'])} complete retired years · {summary['Outcome']}")
     with st.spinner(f"Running the daily ledger for path {path}..."):
         result = selected_ledger(run, path)
     cpi = run.plan["assumptions"]["cpi_annual"]
@@ -2221,7 +2307,7 @@ def section_ledger(run):
     e.metric("Largest fall in wealth", share(drawdown),
              help="Deepest fall of total wealth below its previous high on this path. Unlike a portfolio drawdown it "
                   "includes spending, so it keeps falling in retirement even in flat markets.")
-    st.altair_chart(with_milestones(balances_chart(daily), marks), width="stretch")
+    show_chart(with_milestones(balances_chart(daily), marks), width="stretch")
     st.caption("Month-end balances by account in today's dollars, stacked. Watch outside money fund spending until super becomes "
                "accessible, then the move from accumulation into the pension. Dashed lines mark the life events.")
 
@@ -2259,7 +2345,7 @@ def section_ledger(run):
     zero = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(color="#5f6b73").encode(y="y:Q")
     added = additions_layer(additions, x, color=flow_colour)
     layers = [bars, zero, line] + ([added.transform_filter(visible)] if added is not None else [])
-    st.altair_chart(with_milestones(alt.layer(*layers).properties(height=670), marks, "Position:Q"), width="stretch")
+    show_chart(with_milestones(alt.layer(*layers).properties(height=400), marks, "Position:Q"), width="stretch")
     st.caption("Every dollar that changed your total wealth in each year, for this path. The dashed teal line with squares "
                "is what was **added to outside investments** that year, from your pay or, after retirement, from unspent "
                "pension payments and other spare cash: it moves money from cash into the portfolio, so it is drawn as a "
@@ -2291,7 +2377,7 @@ def section_ledger(run):
                                 legend=alt.Legend(orient="right", title=None, labelLimit=220)),
                 tooltip=[alt.Tooltip("Period:N", title="Year"), "Flow:N", alt.Tooltip("AUD:Q", format="$,.0f")]),
                 "Flow", flows, state, key)
-            st.altair_chart(with_milestones(alt.layer(chart, zero).properties(height=340), marks, "Position:Q"),
+            show_chart(with_milestones(alt.layer(chart, zero).properties(height=340), marks, "Position:Q"),
                             width="stretch")
         st.caption("Transfers only, excluding investment growth. Outside investments receive your leftover pay and are "
                    "sold to pay spending and tax; super receives contributions (after the 15% tax), pays fund tax and "
@@ -2337,18 +2423,18 @@ def section_ledger(run):
                     int(part["FY ending"].min()) - 0.5, int(part["FY ending"].max()) + 0.5])),
                 y=alt.Y("AUD:Q", axis=alt.Axis(format="$,.0f")),
                 color=alt.Color("Measure:N", legend=alt.Legend(orient="bottom", title=None)),
-                tooltip=["Year:N", "Measure:N", alt.Tooltip("AUD:Q", format="$,.0f")]).properties(height=430))
-            st.altair_chart(with_milestones(chart, marks, "Position:Q"), width="stretch")
+                tooltip=["Year:N", "Measure:N", alt.Tooltip("AUD:Q", format="$,.0f")]).properties(height=300))
+            show_chart(with_milestones(chart, marks, "Position:Q"), width="stretch")
     st.caption("Left: income, realised gains and tax assessed each year. Right: concessional contributions against the "
                "cap available, which includes carried-forward unused cap when your balance allows it.")
     if (frame["Pension paid"] > 0).any():
         pension = frame.loc[frame["Pension paid"] > 0].melt(["FY ending", "Year"], value_vars=["Pension minimum", "Pension paid"],
                                                             var_name="Measure", value_name="AUD")
         st.markdown("**Account-based pension**")
-        st.altair_chart(alt.Chart(pension).mark_bar().encode(
+        show_chart(alt.Chart(pension).mark_bar().encode(
             x=alt.X("FY ending:O", title=YEAR_TITLE), xOffset="Measure:N", y=alt.Y("AUD:Q", axis=alt.Axis(format="$,.0f")),
             color=alt.Color("Measure:N", scale=alt.Scale(range=["#c9b8da", "#8363a0"]), legend=alt.Legend(orient="bottom", title=None)),
-            tooltip=["Year:N", "Measure:N", alt.Tooltip("AUD:Q", format="$,.0f")]).properties(height=410), width="stretch")
+            tooltip=["Year:N", "Measure:N", alt.Tooltip("AUD:Q", format="$,.0f")]).properties(height=280), width="stretch")
         st.caption("The legislated minimum (a percentage of the 1 July balance that rises with age) against what was "
                    "paid. Payments above the minimum happen when spending needs them.")
     outstanding = result.outstanding
@@ -2381,11 +2467,12 @@ def results(plan):
         for problem in exc.problems:
             st.markdown(f"- `{problem}`")
         return
-    st.button("Run plan", type="primary", on_click=request_run, key="run_results")
     run = st.session_state.result
     if run is None:
-        st.info("Press Run plan to see your portfolios, their history and simulated futures, retirement outcomes "
-                "across many market paths, and any single path's daily ledger.")
+        st.subheader("See how your retirement plan holds up")
+        st.write("Run your plan to explore shortfall risk, Age Pension support and spending across possible futures.")
+        st.button("Run plan", type="primary", on_click=request_run, key="run_results", icon=":material/play_arrow:")
+        st.caption("Review the essentials on Plan. Expand the settings there only when you need more control.")
         return
     if not hasattr(run, "strategies"):  # the newest PlanRun field; an old server's modules lack it
         # Streamlit reloads this page's code on change but not the simulation modules it imports.
@@ -2396,23 +2483,33 @@ def results(plan):
     if plan_to_json(valid) != plan_to_json(run.plan):
         st.warning("Inputs have changed since this run. Press Run plan to refresh the results.")
     strategies = run.strategies or {run.rule: run}
+    keep_strategy_choices(strategies)
+    views = ["Retirement"] + (["Compare strategies"] if len(strategies) > 1 else []) + ["Portfolios", "Downloads"]
+    view = st.radio("Results view", views, horizontal=True, key=key("results_view"), label_visibility="collapsed")
     common = [note for note in run.notes if all(note in other.notes for other in strategies.values())]
-    for note in common:
-        st.warning(note)
+    if common:
+        st.caption("Market basis: sampled USD returns used as an AUD proxy; FX is not modelled.")
+        with st.expander("Model & run notes"):
+            for note in common:
+                st.write(note)
     BORN["date"] = date.fromisoformat(run.plan["person"]["date_of_birth"])
-    inflation_note(run.plan)
-    section_portfolios(run)
-    section_history(run)
-    section_future(run)
-    if len(strategies) > 1:
+    if view == "Portfolios":
+        section_portfolios(run)
+        with st.expander("Historical performance", expanded=True):
+            section_history(run)
+        with st.expander("Simulated portfolio growth and distributions"):
+            section_future(run)
+        return
+    if view == "Compare strategies":
         section_comparison(run)
-        st.header("Each strategy in detail")
-        st.caption(f"One tab per strategy, each with the full results for that strategy on the same "
-                   f"{len(run.retirement_paths)} market paths. Choices inside a tab (accounts, scales, the path to "
-                   "inspect) are kept separately for each strategy.")
+        return
+    if view == "Downloads":
+        result_downloads(run, strategies)
+        return
+    if len(strategies) > 1:
+        st.caption(f"Strategies use the same {len(run.retirement_paths):,} market paths. Select one to explore.")
         # Tracked tabs run only the open tab's code: drawing every strategy's results on each rerun made a page
         # change take about three times as long with four strategies (ADR 0046).
-        keep_strategy_choices(strategies)
         tabs = st.tabs([STRATEGY_NAMES[rule] for rule in strategies], key=key("strategy_tabs"), on_change="rerun")
         for tab, strategy in zip(tabs, strategies.values()):
             if not tab.open:
@@ -2422,10 +2519,18 @@ def results(plan):
                     if note not in common:
                         st.warning(note)
                 section_retirement(strategy)
-                section_ledger(strategy)
     else:
         section_retirement(run)
-        section_ledger(run)
+
+
+def result_downloads(run, strategies):
+    st.header("Reports & downloads")
+    for rule, strategy in strategies.items():
+        summary = path_adequacy(strategy.retirement_paths, strategy.retirement_annual, strategy.plan["plan"]["start_date"])
+        st.download_button(f"{STRATEGY_NAMES[rule]} · path outcomes and spending (CSV)",
+                           summary.to_csv(index=False), f"{rule}-path-outcomes.csv", "text/csv",
+                           key=key(f"adequacy_download_{rule}"))
+    inflation_note(run.plan)
     if run.folder:
         nested = len(strategies) > 1
         st.success(f"Saved the plan, path summaries, the median path's daily ledger, a manifest and PNG review plots to "
@@ -2437,7 +2542,8 @@ def results(plan):
             for rule in strategies:
                 own = run.folder / "strategies" / rule if nested else run.folder
                 files += [(own / name, f"{STRATEGY_NAMES[rule]}: " if nested else "")
-                          for name in ("retirement_range.png", "retirement_flows.png", "ledger.png")]
+                          for name in ("retirement_adequacy.png", "retirement_spending_groups.png",
+                                       "retirement_range.png", "retirement_flows.png", "ledger.png")]
             for file, prefix in files:
                 if file.exists():
                     st.image(str(file), caption=prefix + file.name.replace("_", " ").replace(".png", ""))
@@ -2448,28 +2554,43 @@ def results(plan):
 
 def main():
     st.set_page_config(page_title="Retirement planner", page_icon=":material/savings:", layout="wide")
+    install_design()
     if "plan" not in st.session_state:
         st.session_state.plan, st.session_state.version, st.session_state.result = default_plan(), 0, None
-    st.title("Retirement planner")
-    st.caption("Australian resident, single person. A planning model, not financial advice.")
+    title, action, files = st.columns([5, 1.2, 1.2], vertical_alignment="center")
+    with title:
+        st.title("Retirement planner")
+        st.caption("Explore retirement spending, shortfall risk and Age Pension support.")
+    with action:
+        st.button("Run plan", type="primary", width="stretch", key="run_sidebar", on_click=request_run,
+                  icon=":material/play_arrow:")
+    with files:
+        with st.popover("Plan files", icon=":material/folder_open:", width="stretch"):
+            plan_files()
     message = st.session_state.pop("flash", None)
     if message:
         st.toast(message)
-    sidebar()
     start_ledger_workers(st.session_state.plan["market"]["retirement_paths"], calculation_cores())
     run_requested_plan()
     plan = st.session_state.plan
     # A keyed, tracked tab set keeps the open tab when a widget on it reruns the app.
-    tabs = st.tabs(["You", "Investments", "Retirement", "Assumptions", "Results"], key="main_tabs", on_change="rerun")
+    tabs = st.tabs(["Plan", "Results"], key="main_tabs", on_change="rerun")
     with tabs[0]:
-        inputs_you(plan)
+        inputs_essentials(plan)
+        st.divider()
+        st.subheader("Fine-tune your plan")
+        st.caption("Review your spending strategy, allocations and assumptions when you need more control.")
+        with st.expander("Spending strategy & pensions"):
+            inputs_retirement(plan)
+        with st.expander("Portfolios & saving"):
+            inputs_investments(plan)
+        with st.expander("Employment & salary sacrifice"):
+            inputs_you(plan)
+        with st.expander("Simulation & tax assumptions"):
+            inputs_assumptions(plan)
+        with st.expander("First-year income & saving estimate"):
+            work_summary(plan)
     with tabs[1]:
-        inputs_investments(plan)
-    with tabs[2]:
-        inputs_retirement(plan)
-    with tabs[3]:
-        inputs_assumptions(plan)
-    with tabs[4]:
         results(plan)
 
 

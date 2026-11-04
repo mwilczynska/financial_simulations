@@ -17,7 +17,100 @@ their historical behaviour and simulated risk before retirement findings;
 and make plots interactive and readable over 30 or more years. The local
 browser app, command line and TOML/JSON file share one validated plan.
 
-## Inputs and provenance
+## Retirement workspace and adequacy summaries (4 November 2026)
+
+Implemented under [ADR 0047](../decisions/0047-retirement-workspace-and-adequacy.md).
+The primary navigation is **Plan / Results**. Plan shows the most common inputs
+together; expanders retain detailed portfolio, spending, employment and tax
+settings. File operations live in a header popover. Results start with retirement
+adequacy, with separate cash-flow, risk, path-explorer, portfolio and download
+views. Compared strategies retain separate tabs and choices. Historical numbered
+section references below describe the underlying analyses; the current UI groups
+them by task instead of presenting one long page.
+
+### Purpose, inputs and conventions
+
+The user requested that a funded path receiving Age Pension be visibly distinct
+from one funded without it, and that average retirement spending be available
+for individual paths and groups. These summaries consume `retirement_paths`
+and `retirement_annual`, derived from the existing daily ledger. They introduce
+no tax, pension, return or withdrawal-policy changes.
+
+Supported paths are partitioned by existing outcome status. A depleted path
+always belongs to **Spending or tax shortfall**, even if it also receives Age
+Pension. Other paths receiving a positive lifetime payment belong to **Funded
+with Age Pension**; the rest belong to **Funded without Age Pension**. Shares
+use all calculated paths as the denominator; unsupported paths are excluded
+and reported separately. The additional final-year pension share includes any
+positive payment in each path's last reported financial year, including a
+partial year. It includes depleted paths and therefore overlaps the disjoint
+groups. Neither measure asserts pension receipt on the last simulated day.
+
+### Equations and algorithm
+
+Let `S[p,y]` be spending actually paid in financial year `y` on path `p`, already
+in today's dollars under the existing annual report convention. Let `Y[p]`
+include only years that start on or after retirement and the simulation start,
+and end on or before the last simulated date. The implementation uses the
+existing `Full retired year` flag and explicitly checks that the year's 1 July
+does not precede the simulation start, because the flag alone does not exclude
+a partial first year for a person already retired.
+
+`A[p] = sum(S[p,y] for y in Y[p]) / len(Y[p])`.
+
+Zero-spending years remain in the denominator. An empty set of eligible years
+produces a missing value. For a group `G`, the average is the arithmetic mean
+of available `A[p]`, with one equal vote per path. The table also reports the
+median and 10th percentile of `A[p]`, the total group count, and the number
+having complete retired years. It is not the mean of annual medians or a pooled
+mean that weights paths with more observed years more heavily.
+
+For example, path A spending 60 then 40 has a per-path average of 50; path B
+with one eligible year of 30 averages 30; path C spending 20 then zero averages
+10. Their equal-weight group average is 30, not the pooled-year average of 32.
+A partial first year or a partial final year is excluded even if its spending
+is large. A path without complete retired years shows a dash, not zero.
+
+Outcome groups are disjoint. Worst, middle and best 10% groups rank existing
+ending wealth with the explorer's floor/ceiling boundaries and at least one
+member for nonempty samples. Those groups overlap outcome groups and may overlap
+each other in very small samples; they are not additional probability buckets.
+
+### Outputs and limitations
+
+`retirement/adequacy.py` is shared by the UI, CSV exports and Python PNG plots:
+`path_adequacy.csv`, `spending_by_group.csv`, `retirement_adequacy.png` and
+`retirement_spending_groups.png`. Per-strategy folders follow ADR 0044.
+The Path explorer offers pension-funded, independently funded and shortfall
+groups as well as existing wealth-ranked groups; it shows the individual path
+average or group mean and median of path averages.
+
+Pension receipt is a warning signal chosen by the user, not an enacted-law
+definition of near ruin or a counterfactual no-pension simulation. A modest
+part-pension counts. Final-year receipt does not necessarily indicate continuous
+receipt or payment on the final date. The existing annual pension view and
+ledgers show amounts and timing. Averages do not establish spending adequacy:
+poor individual years, cuts, shortfalls and horizon length still matter.
+Tiny groups and short simulations provide limited evidence. The core remains
+daily; annual figures are reporting summaries only.
+
+### Validation
+
+The targeted reporting and plan suite passed 39 tests on 4 November 2026,
+including UI navigation and persistence, classification priority, unsupported
+paths, zero-spending years, unequal path-year counts, partial first/final years,
+empty groups and CSV/PNG generation. Visual review and broader regression
+results are recorded with the final checkpoint below.
+
+Checkpoint evidence: the full suite passed **253 tests** on 4 November 2026.
+The in-app browser completed the example over 40 years with 1,000 portfolio
+draws and 100 ledger paths, opened Results automatically, and displayed the
+three outcome groups, individual average spending and the pension-funded
+group's averages. A 390-pixel viewport showed no page-wide horizontal
+overflow. The new adequacy and spending PNGs and the wealth-range PNG were
+generated directly by Python and inspected visually.
+
+## Dataset inputs and provenance
 
 `assets` is a list of ticker codes available to **both** portfolios. It is a
 universe selection, not a third account. The supported local catalogue is:
