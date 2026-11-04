@@ -1,8 +1,8 @@
 """Browser app for editing, importing, exporting and running a retirement plan.
 
 Launch with ``financial-simulations ui`` (or ``streamlit run`` on this file).
-The plan dictionary in session state is the single source of truth: every
-tab edits it, the sidebar imports and exports it, and Run writes one folder,
+The plan dictionary in session state is the single source of truth: the Plan
+screen edits it, the header imports and exports it, and Run writes one folder,
 output/plans/<plan-name>/.
 """
 
@@ -1244,7 +1244,7 @@ def section_portfolios(run):
 def section_history(run):
     import altair as alt
 
-    st.header("2 · Historical portfolio behaviour")
+    st.header("Historical portfolio behaviour")
     st.caption("Historical returns are **nominal**: the source data have no inflation history. Everything from Portfolios "
                "on is in today's dollars.")
     history = run.portfolios.historical
@@ -1282,7 +1282,7 @@ def section_future(run):
     import altair as alt
 
     plan, portfolios, market = run.plan, run.portfolios, run.market
-    st.header("3 · Future portfolio simulations")
+    st.header("Future portfolio simulations")
     st.info("This section shows **investment returns only**: $100 put in each portfolio at the start and left alone. "
             "There are no yearly additions, salary contributions, withdrawals or tax here, so you can compare how the "
             "portfolios themselves behave. Your contributions, spending, tax and super rules are applied to these same "
@@ -1901,7 +1901,7 @@ def spending_averages(adequacy):
     table = spending_by_group(adequacy)
     st.dataframe(table, width="stretch", hide_index=True, height=fit(table), column_config={
         name: money_column(name) for name in ("Average per year", "Median path average", "10th percentile path average")})
-    st.caption("The three outcome groups are separate. Wealth-ranked groups overlap them. "
+    st.caption("The three outcome groups are separate. Final-year pension and wealth-ranked groups overlap them. "
                "A dash means no complete retired years; small groups may contain only one path.")
 
 
@@ -1928,7 +1928,7 @@ def calculation_details(run):
 6. **Results.** Everything is shown in today's dollars. A future **ran out** if any spending or tax could not be
    paid. The figures below summarise all the futures: medians, and the bad and good ends of the range.
 
-These are resamples of the past, not forecasts. Section 5 shows a single future (or a group of them averaged) in
+These are resamples of the past, not forecasts. The Path explorer shows a single future (or a group of them averaged) in
 full, down to each payment. The project's methodology documents give every rule and its source.
 """)
 
@@ -1944,8 +1944,6 @@ def section_retirement(run):
     if view == "Path explorer":
         section_ledger(run)
         return
-    funded = int((paths["Status"] == "funded").sum())
-    depleted = int((paths["Status"] == "depleted").sum())
     unsupported = int((paths["Status"] == "unsupported").sum())
     st.caption(f"{len(calculated):,} calculated paths · {unsupported:,} unsupported · "
                f"Through {run.result.daily.index[-1]:%d %b %Y} · Today's dollars")
@@ -2256,6 +2254,9 @@ def section_ledger(run):
     risk_groups = [(f"Group: {label.lower()}", label,
                     adequacy.loc[adequacy["Outcome"] == label, "Path"].astype(int).tolist())
                    for label in OUTCOME_COLOURS if (adequacy["Outcome"] == label).any()]
+    final_pension = adequacy.loc[adequacy["Age Pension in final year"].gt(0), "Path"].astype(int).tolist()
+    if final_pension:
+        risk_groups.append(("Group: Age Pension in final year", "Age Pension in final year", final_pension))
     for label, heading, members in [("Group: all paths", "All paths", everyone)] + risk_groups + [
             (f"Group: the {name.lower()}", f"The {name.lower()} of paths", group_members(calculated, low, high))
             for name, low, high in PATH_GROUPS]:
@@ -2264,13 +2265,9 @@ def section_ledger(run):
     for _, row in calculated.iterrows():  # sorted from the worst ending wealth
         choices[f"Path {int(row['Path'])} · {ordinal(ranks[row['Path']])} percentile"] = int(row["Path"])
     picked = st.selectbox("Path to inspect", list(choices), key=strategy_key(run, "ledger_path"))
-    st.caption(f"The default is path {run.representative_path}: of the calculated paths, its ending wealth is closest "
-               "to the median. The number is simply its position in the draw sequence. A median *ending* does not "
-               "make every year median; the path may have had a bad start and a strong finish. The **groups** "
-               "summarise several paths month by month and year by year, mostly by medians: *all paths* uses every "
-               "calculated path, and the other groups are ranked by ending wealth, so the worst 5% "
-               "is what the bad outcomes typically look like, not one unlucky path. Single paths follow, from the "
-               "worst to the best, tagged with their ending-wealth percentile.")
+    st.caption(f"Path {run.representative_path} ends nearest the median; its journey can still be uneven. "
+               "Choose a pension or shortfall group, a wealth-ranked group, or an individual path. "
+               "Final-year pension groups include any payment in the last reported year, which may be partial.")
     if isinstance(choices[picked], list):
         group_paths(run, choices[picked], headings[picked])
         return
@@ -2560,7 +2557,7 @@ def main():
     title, action, files = st.columns([5, 1.2, 1.2], vertical_alignment="center")
     with title:
         st.title("Retirement planner")
-        st.caption("Explore retirement spending, shortfall risk and Age Pension support.")
+        st.caption(st.session_state.plan["plan"]["name"] + " · Single Australian resident")
     with action:
         st.button("Run plan", type="primary", width="stretch", key="run_sidebar", on_click=request_run,
                   icon=":material/play_arrow:")

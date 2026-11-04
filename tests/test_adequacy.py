@@ -38,6 +38,8 @@ def test_group_mean_weights_paths_equally_and_counts_missing_years():
     assert table.loc["All calculated paths", "10th percentile path average"] == pytest.approx(14)
     assert table.loc["Worst 10% by ending wealth", "Average per year"] == 10
     assert table.loc["Best 10% by ending wealth", "Average per year"] == 50
+    assert table.loc["Age Pension in final year", "Average per year"] == 10
+    assert table.loc["Age Pension in final year", "Paths"] == 1
 
 
 def test_no_full_retired_years_is_missing_not_zero_and_partial_start_is_excluded():

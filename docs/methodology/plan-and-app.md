@@ -71,7 +71,9 @@ with one eligible year of 30 averages 30; path C spending 20 then zero averages
 A partial first year or a partial final year is excluded even if its spending
 is large. A path without complete retired years shows a dash, not zero.
 
-Outcome groups are disjoint. Worst, middle and best 10% groups rank existing
+Outcome groups are disjoint. The final-year pension group overlaps them and
+contains paths with any pension payment in the last reported financial year.
+Worst, middle and best 10% groups rank existing
 ending wealth with the explorer's floor/ceiling boundaries and at least one
 member for nonempty samples. Those groups overlap outcome groups and may overlap
 each other in very small samples; they are not additional probability buckets.
@@ -82,7 +84,7 @@ each other in very small samples; they are not additional probability buckets.
 `path_adequacy.csv`, `spending_by_group.csv`, `retirement_adequacy.png` and
 `retirement_spending_groups.png`. Per-strategy folders follow ADR 0044.
 The Path explorer offers pension-funded, independently funded and shortfall
-groups as well as existing wealth-ranked groups; it shows the individual path
+groups as well as a final-year pension group and existing wealth-ranked groups; it shows the individual path
 average or group mean and median of path averages.
 
 Pension receipt is a warning signal chosen by the user, not an enacted-law
@@ -109,6 +111,17 @@ three outcome groups, individual average spending and the pension-funded
 group's averages. A 390-pixel viewport showed no page-wide horizontal
 overflow. The new adequacy and spending PNGs and the wealth-range PNG were
 generated directly by Python and inspected visually.
+
+Final refinement checks: the 39-test reporting and plan suite passed again
+after adding the final-year pension cohort to spending summaries and the
+explorer. A fresh 40-year example produced 34 final-year pension paths, with
+mean annual retirement spending of $67,218.39 and median path average of
+$71,837.51; the explorer and CSV agreed. Cash-flow, risk, portfolio and download
+views were checked in the browser. Caption opacity is explicitly reset to
+avoid Streamlit fading the already-muted text colour a second time.
+The final desktop and 390-pixel layouts were inspected again, including the
+outcome bars and wealth chart. Narrow-screen top padding clears the fixed
+Streamlit toolbar; the viewport was restored after review.
 
 ## Dataset inputs and provenance
 

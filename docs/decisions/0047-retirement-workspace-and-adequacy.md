@@ -48,6 +48,8 @@ Receipt is a user-requested warning signal, not a new definition of ruin and
 not proof of counterfactual dependence. A small part-pension also qualifies.
 The overview separately shows receipt in the final reported financial year,
 which may be partial; it does not claim payment on the exact final date.
+This final-year pension cohort is also available in the spending table and
+Path explorer, including paths with shortfalls as well as funded paths.
 
 ### Spending averages
 

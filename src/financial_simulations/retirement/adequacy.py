@@ -46,6 +46,7 @@ def spending_by_group(adequacy: pd.DataFrame) -> pd.DataFrame:
     n = len(ranked)
     groups = [("All calculated paths", adequacy)]
     groups.extend((label, adequacy.loc[adequacy["Outcome"] == label]) for label in OUTCOME_COLOURS)
+    groups.append(("Age Pension in final year", adequacy.loc[adequacy["Age Pension in final year"].gt(0)]))
     for label, low, high in (("Worst 10% by ending wealth", 0, .1),
                              ("Middle 10% by ending wealth", .45, .55),
                              ("Best 10% by ending wealth", .9, 1)):

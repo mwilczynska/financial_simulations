@@ -17,7 +17,7 @@ CSS = """
 h1 {font-size: 2rem !important; letter-spacing: -.045em; font-weight: 650 !important;}
 h2 {font-size: 1.4rem !important; letter-spacing: -.025em; padding-top: 1.1rem !important;}
 h3 {font-size: 1.12rem !important; letter-spacing: -.015em;}
-[data-testid="stCaptionContainer"] {color: #61716b; line-height: 1.55;}
+[data-testid="stCaptionContainer"] {color: #61716b; opacity: 1; line-height: 1.55;}
 [data-testid="stMetric"] {border-top: 1px solid #dce3dd; padding: .85rem 0 .4rem;}
 [data-testid="stMetricValue"] {font-size: 1.75rem; letter-spacing: -.04em; font-variant-numeric: tabular-nums;}
 [data-testid="stMetricLabel"] p {font-size: .8rem; color: #61716b; white-space: normal;}
@@ -34,7 +34,7 @@ h3 {font-size: 1.12rem !important; letter-spacing: -.015em;}
 [data-testid="stVegaLiteChart"] {padding: .5rem 0;}
 .planner-eyebrow {font-size: .7rem; letter-spacing: .16em; font-weight: 700; color: #126a63; margin: 0 0 .4rem;}
 @media (max-width: 800px) {
-    .stMainBlockContainer {padding: 1.5rem 1rem 3rem;}
+    .stMainBlockContainer {padding: 3rem 1rem 3rem;}
     [role="tablist"] {gap: 1rem;}
     [data-testid="stMetricValue"] {font-size: 1.5rem;}
 }
