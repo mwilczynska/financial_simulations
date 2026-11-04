@@ -536,6 +536,11 @@ positions them.
    - **transfers into and out of each account**, from `account_flows`:
      savings invested, sales, contributions, fund tax, the move to the
      pension and pension payments;
+   - in both of these, clicking a legend item hides or shows it (in the
+     yearly chart this includes the net-change and additions lines), and
+     *Show all* / *Show none* buttons reset the chart. Hidden items stay in
+     the legend, faded, and the y axis refits to what is shown. This only
+     filters the display; the flows still sum to the change in wealth;
    - a year-by-year tax, cap and pension table with age at 30 June;
    - tax and cap charts, pension minimum against paid, a filterable event
      log and CSV downloads.

@@ -1366,18 +1366,60 @@ FLOW_COLOURS = {"Take-home salary": "#126a63", "Super contributions": "#386a98",
                 "Inflation": "#9aa3a8"}
 
 
-def additions_layer(frame, x, value="AUD"):
-    """Money moved from pay into outside investments: shown as a dashed line because it does not change total wealth."""
+ADDED_LABEL, ADDED_COLOUR = "Added to outside investments (line)", "#0b7a8a"
+NET_LABEL, NET_COLOUR = "Net change in wealth (line)", "#19353a"
+
+
+def additions_layer(frame, x, value="AUD", color=None):
+    """Money moved from pay into outside investments: shown as a dashed line because it does not change total wealth.
+
+    ``color`` optionally encodes a ``Flow`` column so the line joins a chart's legend.
+    """
     import altair as alt
 
     frame = frame.loc[frame[value].abs() > 1e-6]
     if frame.empty:
         return None
-    return alt.Chart(frame).mark_line(color="#0b7a8a", strokeDash=[6, 3], strokeWidth=2.5,
-                                      point=alt.OverlayMarkDef(shape="square", size=60, color="#0b7a8a", filled=True)).encode(
+    return alt.Chart(frame).mark_line(color=ADDED_COLOUR, strokeDash=[6, 3], strokeWidth=2.5,
+                                      point=alt.OverlayMarkDef(shape="square", size=60, color=ADDED_COLOUR, filled=True)).encode(
         x=x, y=f"{value}:Q",
+        **({"color": color} if color is not None else {}),
         tooltip=[alt.Tooltip("Period:N", title="Year"),
                  alt.Tooltip(f"{value}:Q", title="Added to outside investments (from pay)", format="$,.0f")])
+
+
+def legend_controls(key, names):
+    """Show all / Show none buttons for a chart whose legend hides and shows its items.
+
+    Legend clicks are handled inside the chart, so they need no rerun. The buttons rebuild the chart with every
+    item shown or hidden; the counter changes the chart spec each time so a repeated press still resets it.
+    """
+    state = st.session_state.get(f"{key}_legend", {"hidden": [], "count": 0})
+    show_all, show_none, note = st.columns([1, 1, 5], vertical_alignment="center")
+    if show_all.button("Show all", key=f"{key}_all", width="stretch"):
+        state = {"hidden": [], "count": state["count"] + 1}
+    if show_none.button("Show none", key=f"{key}_none", width="stretch"):
+        state = {"hidden": list(names), "count": state["count"] + 1}
+    note.caption("Click an item in the legend to hide or show it; the axis refits to what is shown.")
+    st.session_state[f"{key}_legend"] = state
+    return state
+
+
+def hideable(chart, field, names, state, key):
+    """Let legend clicks toggle each item; hidden items stay in the legend, faded, and leave the y scale.
+
+    The chart's colour scale needs a fixed domain so hidden items keep their legend entries. Returns the chart and
+    the selection, which other layers can filter on so their legend entries hide them too.
+    """
+    import altair as alt
+
+    # The selection holds the items shown. Vega-Lite fades legend entries outside a legend-bound selection, so
+    # hidden items fade; each click toggles one item in or out. The count in the name makes each reset a new spec.
+    # Show none selects a placeholder rather than nothing: an empty selection would leave the legend unfaded.
+    shown = [n for n in names if n not in state["hidden"]] or ["(none)"]
+    visible = alt.selection_point(name=f"show_{key}_{state['count']}", fields=[field], bind="legend", toggle="true",
+                                  empty=False, clear=False, value=[{field: n} for n in shown])
+    return chart.add_params(visible).transform_filter(visible), visible
 
 
 def flow_domain(frame, field, extra=()):
@@ -2195,22 +2237,28 @@ def section_ledger(run):
     additions = (moves.loc[moves["Flow"] == "Savings invested"].groupby("FY ending")["AUD"].sum()
                  .reindex(sorted(household["FY ending"].unique()), fill_value=0.0).reset_index(name="AUD"))
     additions["Period"] = additions["FY ending"].map(period_label)
-    y_domain = flow_domain(shown, "AUD", (household["Net change"], additions["AUD"]))
-    bars = alt.Chart(shown).mark_bar(size=16).encode(
-        x=x, y=alt.Y("sum(AUD):Q", title="Per year, today's dollars", axis=alt.Axis(format="$,.0f"),
-                     scale=alt.Scale(domain=y_domain, nice=False)),
-        color=alt.Color("Flow:N", sort=order, scale=alt.Scale(domain=order, range=[colours[f] for f in order]),
-                        legend=alt.Legend(orient="bottom", title=None, columns=2, labelLimit=220)),
-        order=alt.Order("Flow:N"),
-        tooltip=[alt.Tooltip("Period:N", title="Year"), "Flow:N", alt.Tooltip("AUD:Q", format="$,.0f")])
-    net = household.drop_duplicates("FY ending")
-    line = alt.Chart(net).mark_line(color="#19353a", strokeWidth=2, point=alt.OverlayMarkDef(color="#19353a", size=40)).encode(
-        x=x, y="Net change:Q", tooltip=[alt.Tooltip("Period:N", title="Year"), alt.Tooltip("Opening:Q", title="Wealth at start", format="$,.0f"),
-                                         alt.Tooltip("Net change:Q", title="Net change in wealth", format="$,.0f"),
-                                         alt.Tooltip("Closing:Q", title="Wealth at end", format="$,.0f")])
+    # No fixed y domain: it refits to whatever the legend leaves visible. The net-change and additions lines are
+    # legend items too, so hiding them lets the axis close in on the bars that remain.
+    net = household.drop_duplicates("FY ending").assign(Flow=NET_LABEL)
+    additions["Flow"] = ADDED_LABEL
+    items = order + [NET_LABEL] + ([ADDED_LABEL] if (additions["AUD"].abs() > 1e-6).any() else [])
+    palette = {**colours, NET_LABEL: NET_COLOUR, ADDED_LABEL: ADDED_COLOUR}
+    flow_colour = alt.Color("Flow:N", sort=items, scale=alt.Scale(domain=items, range=[palette[f] for f in items]),
+                            legend=alt.Legend(orient="bottom", title=None, columns=2, labelLimit=220))
+    legend_state = legend_controls("path_flows", items)
+    bars, visible = hideable(alt.Chart(shown).mark_bar(size=16).encode(
+        x=x, y=alt.Y("sum(AUD):Q", title="Per year, today's dollars", axis=alt.Axis(format="$,.0f")),
+        color=flow_colour, order=alt.Order("Flow:N"),
+        tooltip=[alt.Tooltip("Period:N", title="Year"), "Flow:N", alt.Tooltip("AUD:Q", format="$,.0f")]),
+        "Flow", items, legend_state, "path_flows")
+    line = alt.Chart(net).mark_line(color=NET_COLOUR, strokeWidth=2, point=alt.OverlayMarkDef(color=NET_COLOUR, size=40)).encode(
+        x=x, y="Net change:Q", color=flow_colour,
+        tooltip=[alt.Tooltip("Period:N", title="Year"), alt.Tooltip("Opening:Q", title="Wealth at start", format="$,.0f"),
+                 alt.Tooltip("Net change:Q", title="Net change in wealth", format="$,.0f"),
+                 alt.Tooltip("Closing:Q", title="Wealth at end", format="$,.0f")]).transform_filter(visible)
     zero = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(color="#5f6b73").encode(y="y:Q")
-    added = additions_layer(additions, x)
-    layers = [bars, zero, line] + ([added] if added is not None else [])
+    added = additions_layer(additions, x, color=flow_colour)
+    layers = [bars, zero, line] + ([added.transform_filter(visible)] if added is not None else [])
     st.altair_chart(with_milestones(alt.layer(*layers).properties(height=670), marks, "Position:Q"), width="stretch")
     st.caption("Every dollar that changed your total wealth in each year, for this path. The dashed teal line with squares "
                "is what was **added to outside investments** that year, from your pay or, after retirement, from unspent "
@@ -2231,11 +2279,18 @@ def section_ledger(run):
                 st.caption(f"{account}: no transfers on this path.")
                 continue
             part["Period"] = part["FY ending"].map(period_label)
-            chart = alt.Chart(part).mark_bar(size=14).encode(
+            flows = sorted(part["Flow"].unique())
+            key = "path_moves_" + account.split()[0].lower()
+            st.markdown(f"*{account}*")
+            state = legend_controls(key, flows)
+            # A fixed colour domain keeps hidden flows in the legend so they can be shown again.
+            chart, _ = hideable(alt.Chart(part).mark_bar(size=14).encode(
                 x=alt.X("FY ending:Q", axis=fy_axis(household), scale=alt.Scale(domain=domain, nice=False)),
                 y=alt.Y("sum(AUD):Q", title=account, axis=alt.Axis(format="$,.0f")),
-                color=alt.Color("Flow:N", legend=alt.Legend(orient="right", title=None, labelLimit=220)),
-                tooltip=[alt.Tooltip("Period:N", title="Year"), "Flow:N", alt.Tooltip("AUD:Q", format="$,.0f")])
+                color=alt.Color("Flow:N", scale=alt.Scale(domain=flows),
+                                legend=alt.Legend(orient="right", title=None, labelLimit=220)),
+                tooltip=[alt.Tooltip("Period:N", title="Year"), "Flow:N", alt.Tooltip("AUD:Q", format="$,.0f")]),
+                "Flow", flows, state, key)
             st.altair_chart(with_milestones(alt.layer(chart, zero).properties(height=340), marks, "Position:Q"),
                             width="stretch")
         st.caption("Transfers only, excluding investment growth. Outside investments receive your leftover pay and are "
