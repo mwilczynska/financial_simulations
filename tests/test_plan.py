@@ -169,36 +169,35 @@ def test_browser_app_runs_with_tickers_and_interactive_results(tmp_path, monkeyp
     app.number_input(key="retire__0").set_value(57)
     app.number_input(key="paths__0").set_value(16)
     app.number_input(key="retirement_paths__0").set_value(3).run()
+    # A retained session cache may contain a class from before Streamlit's hot reload.
+    app.session_state["market_cache"] = {tuple(app.session_state.plan["assets"]): object()}
     app.button(key="run_sidebar").click().run()
     assert not app.exception and not app.error
     assert len(app.session_state.result.portfolios.outcomes) == 48  # two portfolios and their combination
     assert app.session_state.plan["person"]["retirement_age"] == 57
     assert (tmp_path / "output" / "plans" / "example-early-retirement" / "portfolio_future.png").exists()
-    assert len(app.get("vega_lite_chart")) <= 4  # overview, not every diagnostic plot
+    assert len(app.get("vega_lite_chart")) >= 8  # one continuous report, without switching result views
+    assert {"Cash flow through retirement", "Spending you can sustain", "Age Pension support", "Risk & tax diagnostics",
+            "Path explorer"}.issubset({h.value for h in app.header})
     assert app.session_state.plan["outside"]["rebalance"] == "annual"
     assert any(m.label == "Risk of ruin" for m in app.metric)
-    app.radio(key="detail_view__0").set_value("Path explorer").run()
-    app.radio(key="ledger_mode__0").set_value("Path group").run()
-    picker = app.radio(key="ledger_path__0")
-    everyone = next(option for option in picker.options if option.startswith("Group: all paths"))
-    assert picker.options.index(everyone) == 0
-    picker.set_value(everyone).run()
+    app.segmented_control(key="ledger_mode__0").set_value("Path group").run()
+    picker = app.pills(key="ledger_path__0")
+    assert picker.value.startswith("Group: all paths")
     assert not app.exception and any(h.value.startswith("All paths (") for h in app.subheader)
     assert any(h.value == "Year by year, medians across the group" for h in app.subheader)
-    app.radio(key="ledger_mode__0").set_value("Individual path").run()
+    app.segmented_control(key="ledger_mode__0").set_value("Individual path").run()
     app.number_input(key="ledger_number__0").set_value(0).run()
     assert not app.exception and any(c.value.startswith("Path 0 ·") for c in app.caption)
-    app.radio(key="detail_view__0").set_value("Cash flow").run()
-    app.radio(key="cash_flow_view__0").set_value("Age Pension payments").run()
+    app.button(key="overview_flows__0_focus").click().run()
+    hidden = app.session_state["overview_flows__0_legend"]["hidden"]
+    assert "Investment returns" in hidden and "Spending" not in hidden
+    app.segmented_control(key="results_view__0").set_value("Portfolios").run()
     assert not app.exception
-    app.radio(key="cash_flow_view__0").set_value("Spending ranges & cuts").run()
-    assert not app.exception
-    app.radio(key="results_view__0").set_value("Portfolios").run()
-    for view in ("Historical performance", "Simulated growth", "Statistics"):
-        app.radio(key="portfolio_view__0").set_value(view).run()
-        assert not app.exception
-    app.radio(key="results_view__0").set_value("Downloads").run()
-    assert app.radio(key="review_plot__0").options
+    assert {"Your portfolios", "Historical portfolio behaviour", "Future portfolio simulations"}.issubset(
+        {h.value for h in app.header})
+    app.segmented_control(key="results_view__0").set_value("Downloads").run()
+    assert app.pills(key="review_plot__0").options
     assert not app.exception
 
 
@@ -609,27 +608,25 @@ def test_app_compares_ticked_strategies_and_ignores_a_stale_cores_choice(tmp_pat
     labels = [tab.label for tab in app.tabs]
     assert labels[-3:] == ["Fixed", "Guyton–Klinger", "Vanguard"]  # one tab per strategy, after the main tabs
     assert app.session_state.result.strategies["vanguard"].rule == "vanguard"
-    app.radio(key="detail_view_fixed__0").set_value("Path explorer").run()
     # Only the open tab is drawn (ADR 0046): the first, until another is chosen.
-    keys = {box.key for box in app.radio}
+    keys = {box.key for box in app.segmented_control}
     assert "ledger_mode_fixed__0" in keys and "ledger_mode_vanguard__0" not in keys
-    app.radio(key="ledger_mode_fixed__0").set_value("Path group").run()
-    picker = app.radio(key="ledger_path_fixed__0")
-    picker.set_value(picker.options[2]).run()
+    app.segmented_control(key="ledger_mode_fixed__0").set_value("Path group").run()
+    picked = "Group: the worst 1% · 1 path"
+    app.pills(key="ledger_path_fixed__0").set_value(picked).run()
     app.session_state["strategy_tabs__0"] = "Vanguard"
     app.run()
     assert not app.exception
-    app.radio(key="detail_view_vanguard__0").set_value("Path explorer").run()
-    assert app.radio(key="ledger_mode_vanguard__0").value == "Median path"
+    assert app.segmented_control(key="ledger_mode_vanguard__0").value == "Median path"
     app.session_state["strategy_tabs__0"] = "Fixed"
     app.run()
-    assert app.radio(key="ledger_mode_fixed__0").value == "Path group"
-    assert app.radio(key="ledger_path_fixed__0").value == picker.options[2]  # each strategy keeps its choice
+    assert app.segmented_control(key="ledger_mode_fixed__0").value == "Path group"
+    assert app.pills(key="ledger_path_fixed__0").value == picked  # each strategy keeps its choice
     assert not any("Session State API" in w.value for w in app.warning)
-    app.radio(key="results_view__0").set_value("Compare strategies").run()
+    app.segmented_control(key="results_view__0").set_value("Compare strategies").run()
     assert any(h.value == "Spending strategies compared" for h in app.header)
-    assert app.radio(key="compare_flow__0").value == "Spending"
-    app.radio(key="compare_flow__0").set_value("Income tax").run()
+    assert app.segmented_control(key="compare_flow__0").value == "Spending"
+    app.segmented_control(key="compare_flow__0").set_value("Income tax").run()
     app.toggle(key="compare_p10__0").set_value(True).run()
     assert not app.exception
     for rule in ("fixed", "guyton_klinger", "vanguard"):

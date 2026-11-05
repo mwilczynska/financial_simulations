@@ -4,6 +4,10 @@ Date: 2026-11-04.
 
 Status: accepted; implemented. Validation is recorded in the methodology.
 
+The nested result views and radio-choice refinement below are superseded by
+[ADR 0048](0048-continuous-retirement-report.md). The adequacy calculations,
+compact setup and outcome definitions remain in effect.
+
 ## Context and requirements
 
 The user requested a coherent UI redesign, fewer and smaller plots, less setup

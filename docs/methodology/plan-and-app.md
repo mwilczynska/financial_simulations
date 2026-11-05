@@ -23,20 +23,31 @@ Implemented under [ADR 0047](../decisions/0047-retirement-workspace-and-adequacy
 The primary navigation is **Plan / Results**. Plan shows the most common inputs
 together; expanders retain detailed portfolio, spending, employment and tax
 settings. File operations live in a header popover. Results start with retirement
-adequacy, with separate cash-flow, risk, path-explorer, portfolio and download
-views. Compared strategies retain separate tabs and choices. Historical numbered
-section references below describe the underlying analyses; the current UI groups
-them by task instead of presenting one long page.
+adequacy, followed by the continuous analytical report described below. Compared
+strategies retain separate tabs and choices. Historical numbered section references
+below describe the underlying analyses; current section links group them by task.
 
-Results use visible radio choices for views, chart measures, path groups and
-static plot previews. Collapsible sections are reserved for explanations and
-methodology; charts, tables and event logs are not hidden inside them. Cash flow
-offers income/outgoings, spending ranges/cuts and Age Pension payments. Portfolios
-offers statistics, historical performance and simulated growth. The path explorer
-separates median path, group and individual path modes; an individual path is
-selected by its numeric ID, with its ending-wealth percentile shown alongside.
-Multiple event types are selected using visible pills. These controls only select
-existing results and do not change model calculations.
+Under [ADR 0048](../decisions/0048-continuous-retirement-report.md), Retirement is
+one continuous report with in-page links to outcomes, cash flow, spending, Age
+Pension, risk/tax and the path explorer. All plots remain present without
+switching between these questions. Portfolios likewise shows its statistics,
+history, growth and distributions together. Compact segmented choices select
+the workspace, account or path mode; labelled buttons select cohorts and static
+plot previews. The path explorer separates median path, group and individual
+path modes; an individual path is selected by numeric ID, with its ending-wealth
+percentile shown alongside. Multiple event types use visible pills. Collapsible
+sections contain explanations and methodology only.
+
+The all-path, group and individual cash-flow bar charts support independent
+legend clicks, plus Show all, Show none and Spending & pension controls. The
+latter shows spending, Age Pension, personal income tax and Division 296 tax
+when present. Hidden series leave the y-axis domain; net change, its uncertainty
+interval and the additions line can be hidden too. The net-change line is always
+the original total, not the sum of visible flows. Overview bars are separate
+per-flow medians and do not sum to median net change; group means and individual
+flows reconcile when all flows are shown. A zero all-path median can conceal
+positive pension receipts on fewer than half of paths; the pension cohort's
+chart provides the complementary view. These controls change visibility only.
 
 ### Purpose, inputs and conventions
 
@@ -138,6 +149,16 @@ The subsequent visible-choice navigation refinement passed all 35 tests in
 view switching, PNG selection, and independent strategy choices. Browser review
 confirmed pension view selection and path-group controls at desktop and 390-pixel
 widths, with no page-wide horizontal overflow.
+
+The continuous-report iteration passed 37 tests across `tests/test_plan.py` and
+`tests/test_cashflow_chart.py`. The all-path cash-flow chart's spending focus and
+an actual legend click were verified in the browser: hiding Spending changed
+the visible y-axis extent from -$120,000–$0 to -$40,000–$0, and clicking it again
+restored the bars. Section links scroll within the report without replacing its
+plots. Primary charts now have more vertical room (roughly 420–520 pixels), with
+four-column cash-flow legends on desktop and two columns at narrow widths.
+A retained market-data object from before a Streamlit module reload is refreshed
+before reuse, avoiding a stale-dataclass pickling failure when rerunning a plan.
 
 ## Dataset inputs and provenance
 

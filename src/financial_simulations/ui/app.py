@@ -15,9 +15,10 @@ import pandas as pd
 import streamlit as st
 
 from financial_simulations.ui.design import install_design, show_chart
+from financial_simulations.ui.cashflow import FOCUS_FLOWS, cash_flow_chart, flow_items
 from financial_simulations.retirement.adequacy import OUTCOME_COLOURS, path_adequacy, spending_by_group
 
-from financial_simulations.data.plan_markets import CUSTOM_TICKERS, TICKERS, load_plan_markets
+from financial_simulations.data.plan_markets import CUSTOM_TICKERS, TICKERS, PlanMarketData, load_plan_markets
 from financial_simulations.retirement.plan import (PlanError, default_plan, load_plan_text, normalize_plan, plan_to_json,
                                                    plan_to_toml, sacrifice_per_year, slug)
 from financial_simulations.retirement.flows import account_flows, household_flows, milestones
@@ -37,7 +38,9 @@ PLANS_DIR = Path("plans")
 
 def cached_market(tickers):
     cache = st.session_state.setdefault("market_cache", {})
-    if tickers not in cache:
+    # Streamlit can reload the dataclass while retaining session state. An old
+    # instance cannot be pickled into a current worker, so refresh that cache entry.
+    if tickers not in cache or not isinstance(cache[tickers], PlanMarketData):
         cache[tickers] = load_plan_markets(tickers)
     return cache[tickers]
 
@@ -60,7 +63,25 @@ def first_value(widget, **value):
 
 # Widgets drawn inside a strategy's tab (strategy_key names).
 STRATEGY_WIDGETS = ("wealth_series", "wealth_bands_log", "all_paths_log", "ledger_path", "ledger_mode",
-                    "ledger_number", "event_types", "detail_view", "cash_flow_view")
+                    "ledger_number", "event_types")
+
+
+def result_choice(label, options, widget, *, default=None, **kwargs):
+    """A compact, required choice without radio dots or a closed menu."""
+    return st.segmented_control(label, options, key=widget, required=True,
+                                **first_value(widget, default=default or options[0]), **kwargs)
+
+
+def report_links(items):
+    """Jump within the rendered report; links never replace charts or rerun the plan."""
+    st.html('<nav class="report-jumps" aria-label="Jump to report section">'
+            + ''.join(f'<a href="#{anchor}">{label}</a>' for anchor, label in items) + '</nav>')
+
+
+def report_section(title, anchor, description=None):
+    st.header(title, anchor=anchor, divider="gray")
+    if description:
+        st.caption(description)
 
 
 def keep_strategy_choices(strategies):
@@ -824,7 +845,7 @@ def balances_chart(daily):
         tooltip=[alt.Tooltip("Date:T", format="%b %Y"), *age_tooltip(long), "Account:N",
                  alt.Tooltip("balance:Q", title="Balance", format="$,.0f"), alt.Tooltip("Share:Q", title="Share of wealth", format=".0%"),
                  alt.Tooltip("Total:Q", title="Total wealth", format="$,.0f")],
-    ).properties(height=350))
+    ).properties(height=440))
 
 
 def symlog_axis(upper):
@@ -838,7 +859,7 @@ def symlog_axis(upper):
     return alt.Axis(values=ticks, labelExpr=labels, labelOverlap=False)
 
 
-def band_chart(frame, title, *, log=False, symlog=False, color="#126a63", percent=False, x="Date:T", marks=None, height=350):
+def band_chart(frame, title, *, log=False, symlog=False, color="#126a63", percent=False, x="Date:T", marks=None, height=440):
     """Hoverable percentile bands with zoom, a sparse long-horizon year axis and optional life-event lines."""
     import altair as alt
 
@@ -1045,7 +1066,7 @@ def all_paths_chart(paths, marks, outcomes=None, cache_key=None, log=True):
                        x="Date:T", tooltip=["Event:N", alt.Tooltip("Date:T", format="%d %b %Y")]),
                    alt.Chart(marks).mark_text(align="left", dx=4, fontSize=11, color="#3c474d").encode(
                        x="Date:T", y=alt.Y("Offset:Q", scale=None), text="Event:N")]
-    chart = alt.layer(*layers).properties(height=420, usermeta={"embedOptions": {"renderer": "canvas"}})
+    chart = alt.layer(*layers).properties(height=500, usermeta={"embedOptions": {"renderer": "canvas"}})
     return chart, len(funded), len(depleted), clipped
 
 
@@ -1076,7 +1097,7 @@ def ending_wealth_chart(calculated, marks_text=True):
     rules = alt.Chart(points).mark_rule(strokeDash=[4, 3], color="#5f6b73").encode(y="Ending wealth:Q")
     labels = alt.Chart(points).mark_text(align="left", x=8, dy=-8, fontSize=12, fontWeight="bold", color="#19353a").encode(
         y="Ending wealth:Q", text="Label:N")
-    return zoomable(alt.layer(dots, rules, labels).properties(height=350))
+    return zoomable(alt.layer(dots, rules, labels).properties(height=420))
 
 
 def overlay_histogram(frame, field, title, *, series=("Outside super", "Inside super"), log=False, percent=True, money=False):
@@ -1104,7 +1125,7 @@ def overlay_histogram(frame, field, title, *, series=("Outside super", "Inside s
         x=f"median({value}):Q", color=alt.Color("Portfolio:N", scale=scale_for(series), legend=None),
         tooltip=["Portfolio:N", alt.Tooltip(f"median({field}):Q", title="Median",
                                             format="$,.0f" if (money or log) else ".1%" if percent else ",.2f")])
-    return zoomable(alt.layer(bars, rules).properties(height=280))
+    return zoomable(alt.layer(bars, rules).properties(height=340))
 
 
 def inflation_note(plan):
@@ -1256,7 +1277,7 @@ def section_history(run):
         y=alt.Y("Growth of 100:Q", scale=alt.Scale(type="log"), title="Growth of $100 · log scale", axis=alt.Axis(format="$,.0f")),
         color=alt.Color("Portfolio:N", scale=scale_for(names), legend=alt.Legend(orient="bottom", title=None)),
         tooltip=[alt.Tooltip("Date:T", format="%b %Y"), "Portfolio:N", alt.Tooltip("Growth of 100:Q", format="$,.0f")]
-    ).properties(height=350))
+    ).properties(height=440))
     show_chart(growth, width="stretch")
     st.caption("$100 invested at the start of the shared history, valued at each month end. On a log scale equal "
                "vertical distances are equal percentage changes, so a straight line means steady compound growth "
@@ -1270,7 +1291,7 @@ def portfolio_detail(run, names):
     """The selected portfolio's fan of growth paths."""
     plan, portfolios = run.plan, run.portfolios
     marks = milestones(plan, portfolios.dates[0], portfolios.dates[-1])
-    selected = st.radio("Portfolio", names, horizontal=True, key=key("portfolio_result"))
+    selected = result_choice("Portfolio", names, key("portfolio_result"))
     fan = portfolios.paths.loc[portfolios.paths["Portfolio"] == selected]
     show_chart(band_chart(fan, "Growth of $100 in today's dollars · log scale", log=True, color=PALETTE[selected],
                                marks=marks),
@@ -1330,7 +1351,7 @@ contain longer or deeper losses than history did. They treat every era as equall
                 domain=[float(medians["P50"].min()) * 0.95, float(medians["P50"].max()) * 1.05]), axis=alt.Axis(format="$,.0f")),
         color=alt.Color("Portfolio:N", scale=scale_for(names), legend=alt.Legend(orient="bottom", title=None)),
         tooltip=[alt.Tooltip("Date:T", format="%b %Y"), "Portfolio:N", alt.Tooltip("P50:Q", format="$,.0f")]
-    ).properties(height=380)), width="stretch")
+    ).properties(height=440)), width="stretch")
     st.caption("Median paths side by side, to compare the portfolios' central outcomes on the same draws.")
 
     st.subheader("Distributions across paths")
@@ -1392,19 +1413,21 @@ def additions_layer(frame, x, value="AUD", color=None):
                  alt.Tooltip(f"{value}:Q", title="Added to outside investments (from pay)", format="$,.0f")])
 
 
-def legend_controls(key, names):
+def legend_controls(key, names, *, spending_focus=False):
     """Show all / Show none buttons for a chart whose legend hides and shows its items.
 
     Legend clicks are handled inside the chart, so they need no rerun. The buttons rebuild the chart with every
     item shown or hidden; the counter changes the chart spec each time so a repeated press still resets it.
     """
     state = st.session_state.get(f"{key}_legend", {"hidden": [], "count": 0})
-    show_all, show_none, note = st.columns([1, 1, 5], vertical_alignment="center")
-    if show_all.button("Show all", key=f"{key}_all", width="stretch"):
-        state = {"hidden": [], "count": state["count"] + 1}
-    if show_none.button("Show none", key=f"{key}_none", width="stretch"):
-        state = {"hidden": list(names), "count": state["count"] + 1}
-    note.caption("Click an item in the legend to hide or show it; the axis refits to what is shown.")
+    with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+        if spending_focus and st.button("Spending & pension", key=f"{key}_focus"):
+            state = {"hidden": [n for n in names if n not in FOCUS_FLOWS], "count": state["count"] + 1}
+        if st.button("Show all", key=f"{key}_all"):
+            state = {"hidden": [], "count": state["count"] + 1}
+        if st.button("Show none", key=f"{key}_none"):
+            state = {"hidden": list(names), "count": state["count"] + 1}
+    st.caption("Click legend items to hide or show them. The scale adjusts automatically.")
     st.session_state[f"{key}_legend"] = state
     return state
 
@@ -1426,16 +1449,8 @@ def hideable(chart, field, names, state, key):
     return chart.add_params(visible).transform_filter(visible), visible
 
 
-def flow_domain(frame, field, extra=()):
-    """A y domain that fits diverging stacked bars (positives and negatives stack separately) and any lines."""
-    by_year = frame.groupby("FY ending")[field]
-    top = max([float(by_year.apply(lambda v: v[v > 0].sum()).max()), *[float(np.nanmax(e)) for e in extra], 0.0])
-    low = min([float(by_year.apply(lambda v: v[v < 0].sum()).min()), *[float(np.nanmin(e)) for e in extra], 0.0])
-    pad = 0.08 * (top - low or 1.0)
-    return [low - pad, top + pad]
-
-
-def typical_flows_section(annual, marks, calculated, start_wealth):
+@st.fragment
+def typical_flows_section(annual, marks, calculated, start_wealth, widget):
     """Median money in and out each year across every calculated path, with the net change's middle half."""
     import altair as alt
 
@@ -1443,37 +1458,13 @@ def typical_flows_section(annual, marks, calculated, start_wealth):
     if not columns:
         return
     paths = len(calculated)
-    st.subheader("Money in and out in a typical year, across all paths")
+    st.subheader("Yearly cash flow")
 
     def median(column):
         return float(calculated[column].median()) if column in calculated and calculated[column].notna().any() else np.nan
 
-    # The same figures as the Path explorer's single path, as medians across paths (each median is taken on its own).
-    w = st.columns(4)
-    w[0].metric("Wealth at start", compact(start_wealth), help="The same on every path: your wealth today.")
-    w[1].metric("Median wealth at retirement", compact(median("Wealth at retirement")),
-                help="Total wealth on your retirement date, today's dollars.")
-    w[2].metric("Median wealth when super becomes accessible", compact(median("Wealth when super accessible")),
-                help="Total wealth on the first day super can be withdrawn (preservation age and retirement), when that "
-                     "is after the start.")
-    w[3].metric("Median ending wealth after tax owed", compact(median("Ending wealth after tax owed")),
-                help="Total wealth at the horizon less tax already incurred but not yet paid (assessments not yet due, "
-                     f"Division 296, unpaid tax and an estimate for an unassessed final period). Before that tax the "
-                     f"median is {compact(median('Ending wealth'))}.")
-    a, b, c, d = st.columns(4)
-    a.metric("Age Pension: paths · median", affected(calculated["Age Pension received"]),
-             help="Share of paths paid any Age Pension, then the median total received among those paths, today's "
-                  "dollars. Most paths may receive none, so a median over every path would show $0.")
-    b.metric("Shortfall: paths · median", affected(calculated["Spending shortfall"]),
-             help="Share of paths with any unpaid spending, then the median total shortfall among those paths, today's "
-                  "dollars.")
-    c.metric("Median tax (personal, fund, Division 296)",
-             compact(float((calculated["Personal tax assessed"] + calculated["Fund tax"]
-                            + calculated["Division 296 tax"]).median())),
-             help="Each path's total tax over the horizon, in today's dollars; the median across paths.")
-    d.metric("Median largest fall in wealth", share(median("Largest fall in wealth")),
-             help="Each path's deepest fall of total wealth below its previous high; the median across paths. Unlike a "
-                  "portfolio drawdown it includes spending, so it keeps falling in retirement even in flat markets.")
+    st.caption(f"{paths:,} paths · median of each flow in each financial year · today's dollars. "
+               "Use Spending & pension to examine living costs and support without large market returns.")
     long = annual.melt(["Path", "FY ending"], value_vars=columns, var_name="Flow", value_name="AUD")
     long["Flow"] = long["Flow"].str.replace("Flow: ", "", regex=False)
     stats = long.groupby(["FY ending", "Flow"])["AUD"].quantile([0.25, 0.5, 0.75]).unstack().reset_index()
@@ -1486,47 +1477,34 @@ def typical_flows_section(annual, marks, calculated, start_wealth):
     wealth = [c for c in ("Wealth at start of year", "Wealth at end of year") if c in annual]
     if wealth:
         net = net.merge(annual.groupby("FY ending")[wealth].median().reset_index(), on="FY ending")
-    order = [f for f in FLOW_COLOURS if f in set(stats["Flow"])]
     domain = [int(annual["FY ending"].min()) - 0.6, int(annual["FY ending"].max()) + 0.6]
     x = alt.X("FY ending:Q", axis=fy_axis(annual), scale=alt.Scale(domain=domain, nice=False))
     additions = annual.groupby("FY ending")["Added to outside investments"].median().reset_index(name="AUD")         if "Added to outside investments" in annual else pd.DataFrame(columns=["FY ending", "AUD"])
     additions["Period"] = additions["FY ending"].map(period_label)
-    y_domain = flow_domain(stats, "Median", (net["P25"], net["P75"], additions["AUD"] if len(additions) else [0.0]))
-    bars = alt.Chart(stats).mark_bar(size=16).encode(
-        x=x, y=alt.Y("Median:Q", stack=True, title="Median per year, today's dollars", axis=alt.Axis(format="$,.0f"),
-                     scale=alt.Scale(domain=y_domain, nice=False)),
-        color=alt.Color("Flow:N", sort=order, scale=alt.Scale(domain=order, range=[FLOW_COLOURS[f] for f in order]),
-                        legend=alt.Legend(orient="bottom", title=None, columns=2, labelLimit=220)),
-        tooltip=[alt.Tooltip("Period:N", title="Year"), "Flow:N", alt.Tooltip("Median:Q", format="$,.0f"),
-                 alt.Tooltip("P25:Q", title="25th percentile", format="$,.0f"),
-                 alt.Tooltip("P75:Q", title="75th percentile", format="$,.0f")])
-    spread = alt.Chart(net).mark_errorbar(color="#19353a", thickness=1.5, ticks=True).encode(
-        x=x, y=alt.Y("P25:Q", title=""), y2="P75:Q")
-    line = alt.Chart(net).mark_line(color="#19353a", strokeWidth=2, point=alt.OverlayMarkDef(color="#19353a", size=40)).encode(
-        x=x, y="Median:Q", tooltip=[alt.Tooltip("Period:N", title="Year"),
-                                    *[alt.Tooltip(f"{c}:Q", title="Median wealth at start", format="$,.0f")
-                                      for c in wealth if c.endswith("start of year")],
-                                    alt.Tooltip("Median:Q", title="Median net change in wealth", format="$,.0f"),
-                                    alt.Tooltip("P25:Q", title="25th percentile", format="$,.0f"),
-                                    alt.Tooltip("P75:Q", title="75th percentile", format="$,.0f"),
-                                    *[alt.Tooltip(f"{c}:Q", title="Median wealth at end", format="$,.0f")
-                                      for c in wealth if c.endswith("end of year")]])
-    zero = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(color="#5f6b73").encode(y="y:Q")
-    added = additions_layer(additions, x)
-    layers = [bars, zero, spread, line] + ([added] if added is not None else [])
-    show_chart(with_milestones(alt.layer(*layers).properties(height=400), marks, "Position:Q"), width="stretch")
-    st.caption(f"Each bar is the **median across all {paths} calculated paths** of that flow in that year: take-home "
+    items = flow_items(stats, additions, FLOW_COLOURS)
+    state = legend_controls(widget, items, spending_focus=True)
+    chart = cash_flow_chart(stats, net.rename(columns={"Median": "Value"}), additions, FLOW_COLOURS, x,
+                            "Median per year, today's dollars", state, widget, value="Median", spread=True)
+    show_chart(with_milestones(chart, marks, "Position:Q"), width="stretch")
+    st.caption("Medians are calculated separately and do not add up to the net-change line. "
+               "A median of zero can hide Age Pension recipients; inspect a pension cohort below for their cash flow.")
+    st.caption((f"Wealth today {compact(start_wealth)} · median at retirement {compact(median('Wealth at retirement'))} "
+                f"· median at super access {compact(median('Wealth when super accessible'))}").replace("$", r"\$"))
+    with st.expander("How to read cash flow"):
+        st.write(f"Each bar is the **median across all {paths} calculated paths** of that flow in that year: take-home "
                "salary, super contributions and investment returns above zero; spending, income tax, contributions tax "
                "and super fund tax below. **Inflation** (grey) is the buying power your wealth lost that year: in "
                "today's dollars, wealth that only kept pace with prices shows no gain. The black line is the median net "
                "change in total wealth, with whiskers "
                "showing the middle half of paths (25th to 75th percentile); hover it for the median wealth at the start "
                "and end of each year. Hover a bar for its 25th and 75th percentiles. The figures above the chart are "
-               "medians across paths of the Path explorer's single-path figures; each is a separate median, so they need not "
+               "medians across paths; each is a separate median, so they need not "
                "come from the same path. The dashed teal line with squares is the median amount **added to outside investments** from your "
                "pay each year, and after retirement from unspent pension payments and other spare cash; it moves money "
                "from cash into the portfolio, so it is not a bar and does not change total wealth. Medians do not add up, so the bars do not sum exactly to the median net change; "
-               "investment returns vary most between paths. Section 5 shows one path whose bars add up exactly.")
+               "investment returns vary most between paths. The Path explorer shows individual paths whose bars add up exactly. "
+               "Legend filtering only changes visibility. The net-change line always represents total wealth change, "
+               "not the sum of the remaining visible bars.")
 
 
 def ruin_statistics(run, calculated, marks):
@@ -1686,13 +1664,18 @@ def age_pension_section(plan, annual, calculated, marks):
 def wealth_bands(run, calculated, marks):
     """Wealth bands for the chosen account; a fragment so switching accounts redraws only this chart."""
     names = list(dict.fromkeys(run.account_bands["Series"]))
-    choice = st.radio("Show", names, horizontal=True, key=strategy_key(run, "wealth_series"))
-    widget = strategy_key(run, "wealth_bands_log")
-    wide = st.toggle("Log scale", key=widget, **first_value(widget, value=True))
+    selector, scale = st.columns([4, 1], vertical_alignment="bottom")
+    with selector:
+        choice = result_choice("Account", names, strategy_key(run, "wealth_series"), label_visibility="collapsed")
+    with scale:
+        widget = strategy_key(run, "wealth_bands_log")
+        wide = st.toggle("Log scale", key=widget, **first_value(widget, value=True))
     bands = run.account_bands.loc[run.account_bands["Series"] == choice]
     show_chart(band_chart(bands, f"{choice}, today's dollars" + (" · log scale" if wide else ""), symlog=wide, marks=marks),
                     width="stretch")
-    st.caption(f"Month-end {choice.lower()} across the {calculated} calculated paths, in today's dollars: dark band the "
+    st.caption("Median line · middle 50% and 90% bands · today's dollars. Life-event markers show retirement and super access.")
+    with st.expander("How to read wealth bands"):
+        st.write(f"Month-end {choice.lower()} across the {calculated} calculated paths, in today's dollars: dark band the "
                "middle half, light band 90% of paths, line the median. Dashed vertical lines mark retirement, when super "
                "becomes accessible and when the pension starts. "
                + ("The axis is logarithmic above \\$1,000 and linear below, so \\$0 can be shown and a very high "
@@ -1808,7 +1791,7 @@ def section_comparison(run):
                        x="Date:T", tooltip=["Event:N", alt.Tooltip("Date:T", format="%d %b %Y")]),
                    alt.Chart(marks).mark_text(align="left", dx=4, fontSize=11, color="#3c474d").encode(
                        x="Date:T", y=alt.Y("Offset:Q", scale=None), text="Event:N")]
-    show_chart(zoomable(alt.layer(*layers).properties(height=350)), width="stretch")
+    show_chart(zoomable(alt.layer(*layers).properties(height=440)), width="stretch")
     st.caption("The median of total wealth (cash, outside investments and super) across paths at each month end, one "
                "line per strategy" + ("; dashed lines are the 10th percentile, which 90% of paths stay above" if low
                                       else "") + ". Lines are pointwise: no single path follows them. The strategies "
@@ -1819,8 +1802,7 @@ def section_comparison(run):
     flows = available_flows(strategies)
     a, b = st.columns([2, 1])
     with a:
-        flow = st.radio("Show", flows, index=flows.index(DEFAULT_FLOW) if DEFAULT_FLOW in flows else 0, horizontal=True,
-                            key=key("compare_flow"),
+        flow = result_choice("Show", flows, key("compare_flow"), default=DEFAULT_FLOW if DEFAULT_FLOW in flows else flows[0],
                             format_func=lambda f: f"{f} (withdrawals)" if f == "Spending" else f)
     with b:
         retired = st.toggle("Full retired years only", value=True, key=key("compare_retired"),
@@ -1848,7 +1830,7 @@ def section_comparison(run):
     first, last = int(bars["FY ending"].min()) - 0.6, int(bars["FY ending"].max()) + 0.6
     # Markers outside the years shown (retirement falls before the first full retired year) would sit on the axis.
     inside = marks.loc[marks["Position"].between(first, last)] if not marks.empty else marks
-    show_chart(with_milestones(alt.layer(chart, zero).properties(height=360), inside, "Position:Q"), width="stretch")
+    show_chart(with_milestones(alt.layer(chart, zero).properties(height=440), inside, "Position:Q"), width="stretch")
     st.caption(f"Each bar is the median across all {paths} paths of that year's {flow.lower()}"
                + (", shown as a positive amount paid" if outflow else "") + ", for one strategy. The choices include "
                "every flow from *Money in and out in a typical year*. Medians are taken year by year, so a strategy's "
@@ -1939,13 +1921,11 @@ def section_retirement(run):
     import altair as alt
 
     plan, paths = run.plan, run.retirement_paths
-    st.header("Retirement outcomes")
+    report_links([("retirement-outcomes", "Outcomes"), ("report-cash-flow", "Cash flow"),
+                  ("report-spending", "Spending"), ("report-pension", "Age Pension"),
+                  ("report-risk", "Risk & tax"), ("report-paths", "Path explorer")])
+    st.header("Retirement outcomes", anchor="retirement-outcomes")
     calculated = paths.loc[paths["Status"] != "unsupported"]
-    view = st.radio("Explore these results", ["Overview", "Cash flow", "Risk & tax", "Path explorer"],
-                    horizontal=True, key=strategy_key(run, "detail_view"), label_visibility="collapsed")
-    if view == "Path explorer":
-        section_ledger(run)
-        return
     unsupported = int((paths["Status"] == "unsupported").sum())
     st.caption(f"{len(calculated):,} calculated paths · {unsupported:,} unsupported · "
                f"Through {run.result.daily.index[-1]:%d %b %Y} · Today's dollars")
@@ -1960,23 +1940,18 @@ def section_retirement(run):
     annual = run.retirement_annual.copy()
     annual["Period"] = annual["FY ending"].map(period_label)
     adequacy = path_adequacy(paths, annual, plan["plan"]["start_date"])
-    if view == "Overview":
-        adequacy_overview(run, adequacy, calculated, marks)
-        st.subheader("Wealth over time")
-        wealth_bands(run, len(calculated), marks)
-        spending_averages(adequacy)
-        calculation_details(run)
-        return
-    if view == "Cash flow":
-        cash_view = st.radio("Cash flow view", ["Income & outgoings", "Spending ranges & cuts", "Age Pension payments"],
-                             horizontal=True, key=strategy_key(run, "cash_flow_view"))
-        if cash_view == "Income & outgoings":
-            typical_flows_section(annual, marks, calculated, float(run.result.daily["total"].iloc[0]))
-        elif cash_view == "Spending ranges & cuts":
-            spending_section(plan, annual, calculated, marks)
-        else:
-            age_pension_section(plan, annual, calculated, marks)
-        return
+    adequacy_overview(run, adequacy, calculated, marks)
+    report_section("Cash flow through retirement", "report-cash-flow")
+    typical_flows_section(annual, marks, calculated, float(run.result.daily["total"].iloc[0]),
+                           strategy_key(run, "overview_flows"))
+    st.subheader("Wealth over time")
+    wealth_bands(run, len(calculated), marks)
+    report_section("Spending you can sustain", "report-spending")
+    spending_section(plan, annual, calculated, marks)
+    spending_averages(adequacy)
+    report_section("Age Pension support", "report-pension")
+    age_pension_section(plan, annual, calculated, marks)
+    report_section("Risk & tax diagnostics", "report-risk")
     ruin_statistics(run, calculated, marks)
     a, b, c, d = st.columns(4)
     a.metric("Median first retired-year withdrawal", share(calculated["First retired-year withdrawal rate"].median()),
@@ -2033,7 +2008,7 @@ def section_retirement(run):
         st.info("No full financial year after retirement falls inside the horizon, so there are no withdrawal rates.")
     else:
         rate_chart = band_chart(quantile_bands(retired, "FY ending", "Withdrawal rate"), "Withdrawal rate", percent=True,
-                                color="#b76a42", x="FY ending:Q", marks=marks, height=360)
+                                color="#b76a42", x="FY ending:Q", marks=marks, height=440)
         show_chart(rate_chart, width="stretch")
         with st.expander("How to read the withdrawal rate"):
             st.markdown(f"""
@@ -2064,7 +2039,7 @@ total wealth; spending rises with inflation{"" if not plan['spending']['real_cha
             y=alt.Y("Paths with a shortfall:Q", axis=alt.Axis(format=".0%"),
                     scale=alt.Scale(domain=[0, max(0.1, float(stress["Paths with a shortfall"].max()) * 1.2)])),
             tooltip=[alt.Tooltip("Period:N", title="Year"), alt.Tooltip("Paths with a shortfall:Q", format=".1%")])
-        show_chart(with_milestones(bars.properties(height=300), marks, "Position:Q"), width="stretch")
+        show_chart(with_milestones(bars.properties(height=360), marks, "Position:Q"), width="stretch")
         st.caption("Share of paths that could not pay all spending in each year. Shortfalls often cluster just before "
                    "super becomes accessible, when only outside money can pay.")
     with b:
@@ -2114,6 +2089,9 @@ total wealth; spending rises with inflation{"" if not plan['spending']['real_cha
                                                           "Median withdrawal rate", "Largest fall in wealth")}})
         st.caption("Amounts are in today's dollars, sorted from the worst ending wealth to the best. Path numbers are positions in the shared draw sequence (path 0 is the first draw), not ranks. "
                    "Scroll sideways for every column; hover a header for its full name.")
+    report_section("Path explorer", "report-paths", "Inspect the pension cohorts, a wealth-ranked group or an individual future.")
+    section_ledger(run)
+    calculation_details(run)
 
 
 PATH_GROUPS = (("Worst 1%", 0.0, 0.01), ("Worst 5%", 0.0, 0.05), ("Worst 10%", 0.0, 0.10),
@@ -2197,27 +2175,19 @@ def group_paths(run, members, label):
         long = long.groupby("Flow").filter(lambda g: g["AUD"].abs().max() > 1e-6)
         long["Period"] = long["FY ending"].map(period_label)
         yearly["Period"] = yearly["FY ending"].map(period_label)
-        order = [f for f in FLOW_COLOURS if f in set(long["Flow"])]
         x = alt.X("FY ending:Q", axis=fy_axis(yearly), scale=alt.Scale(
             domain=[int(yearly["FY ending"].min()) - 0.6, int(yearly["FY ending"].max()) + 0.6], nice=False))
-        domain = flow_domain(long, "AUD", (yearly["Net change in wealth"], yearly["Added to outside investments"]))
-        bars = alt.Chart(long).mark_bar(size=16).encode(
-            x=x, y=alt.Y("sum(AUD):Q", title="Average per year, today's dollars", axis=alt.Axis(format="$,.0f"),
-                         scale=alt.Scale(domain=domain, nice=False)),
-            color=alt.Color("Flow:N", sort=order, scale=alt.Scale(domain=order, range=[FLOW_COLOURS[f] for f in order]),
-                            legend=alt.Legend(orient="bottom", title=None, columns=2, labelLimit=220)),
-            tooltip=[alt.Tooltip("Period:N", title="Year"), "Flow:N", alt.Tooltip("AUD:Q", title="Average", format="$,.0f")])
-        line = alt.Chart(yearly).mark_line(color="#19353a", strokeWidth=2, point=alt.OverlayMarkDef(color="#19353a", size=40)).encode(
-            x=x, y="Net change in wealth:Q", tooltip=[alt.Tooltip("Period:N", title="Year"),
-                                                     alt.Tooltip("Net change in wealth:Q", title="Average net change", format="$,.0f")])
-        zero = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(color="#5f6b73").encode(y="y:Q")
-        added = additions_layer(yearly.rename(columns={"Added to outside investments": "AUD"}), x)
-        layers = [bars, zero, line] + ([added] if added is not None else [])
         st.subheader("Money in and out, averaged across the group")
-        show_chart(with_milestones(alt.layer(*layers).properties(height=360), marks, "Position:Q"), width="stretch")
+        additions = yearly.rename(columns={"Added to outside investments": "AUD"})
+        widget = strategy_key(run, "group_flows")
+        state = legend_controls(widget, flow_items(long, additions, FLOW_COLOURS), spending_focus=True)
+        chart = cash_flow_chart(long, yearly.rename(columns={"Net change in wealth": "Value"}),
+                                additions, FLOW_COLOURS, x, "Average per year, today's dollars", state, widget)
+        show_chart(with_milestones(chart, marks, "Position:Q"), width="stretch")
         st.caption("Each bar is the **average** of that flow across the group's paths in that year, unlike the medians "
                    "elsewhere in this group: averages add up, so the bars sum to the average net change in wealth "
-                   "(black line). The dashed teal line is the average added to outside investments from pay.")
+                   "(black line) when all flows are shown. Hiding items leaves the total net-change line unchanged. "
+                   "The dashed teal line is the average added to outside investments from pay.")
         born = date.fromisoformat(plan["person"]["date_of_birth"])
         table = annual.groupby("FY ending")[[c for c in ("Wealth at 1 July", "Spending paid", "Tax paid", "Age Pension",
                                                           "Pension payments", "Withdrawal rate")
@@ -2249,8 +2219,6 @@ def section_ledger(run):
 
     paths = run.retirement_paths
     calculated = paths.loc[paths["Status"] != "unsupported"].sort_values("Ending wealth")
-    st.subheader("Path explorer")
-    st.caption("Inspect a single future or a group, from annual spending down to each payment.")
     ranks = ending_percentiles(calculated)
     if calculated.empty:
         st.info("No supported paths are available to inspect.")
@@ -2270,19 +2238,24 @@ def section_ledger(run):
             for name, low, high in PATH_GROUPS]:
         choice = f"{label} · {len(members)} path{'s' if len(members) != 1 else ''}"
         choices[choice], headings[choice] = members, heading
-    mode = st.radio("Inspect", ["Median path", "Path group", "Individual path"], horizontal=True,
-                    key=strategy_key(run, "ledger_mode"))
-    st.caption(f"Path {run.representative_path} ends nearest the median; its journey can still be uneven. "
-               "Choose a pension or shortfall group, a wealth-ranked group, or an individual path. "
-               "Final-year pension groups include any payment in the last reported year, which may be partial.")
+    mode = result_choice("Inspect", ["Median path", "Path group", "Individual path"],
+                         strategy_key(run, "ledger_mode"), label_visibility="collapsed")
     if mode == "Path group":
         widget = strategy_key(run, "ledger_path")
         if widget in st.session_state and st.session_state[widget] not in choices:
             del st.session_state[widget]
-        picked = st.radio("Path group", list(choices), horizontal=True, key=widget)
+        labels = {choice: choice.split(" · ")[0].removeprefix("Group: ").removeprefix("the ")
+                  for choice in choices}
+        picked = st.pills("Cohort", list(choices), required=True, key=widget,
+                          format_func=lambda choice: labels[choice].replace("(45th to 55th percentile)", "").strip().capitalize(),
+                          **first_value(widget, default=next(iter(choices))))
+        st.caption("Outcome groups and wealth-ranked groups overlap. Final-year pension means any payment "
+                   "in the last reported financial year, which may be partial.")
         group_paths(run, choices[picked], headings[picked])
         return
     path = run.representative_path
+    if mode == "Median path":
+        st.caption("The path ending nearest the median. Its journey can still include poor years.")
     if mode == "Individual path":
         widget = strategy_key(run, "ledger_number")
         path = int(st.number_input("Path number", min_value=int(paths["Path"].min()),
@@ -2347,8 +2320,9 @@ def section_ledger(run):
     items = order + [NET_LABEL] + ([ADDED_LABEL] if (additions["AUD"].abs() > 1e-6).any() else [])
     palette = {**colours, NET_LABEL: NET_COLOUR, ADDED_LABEL: ADDED_COLOUR}
     flow_colour = alt.Color("Flow:N", sort=items, scale=alt.Scale(domain=items, range=[palette[f] for f in items]),
-                            legend=alt.Legend(orient="bottom", title=None, columns=2, labelLimit=220))
-    legend_state = legend_controls("path_flows", items)
+                            legend=alt.Legend(orient="bottom", title=None,
+                                              columns=alt.ExprRef(expr="width < 500 ? 2 : 4"), labelLimit=210))
+    legend_state = legend_controls(strategy_key(run, "path_flows"), items, spending_focus=True)
     bars, visible = hideable(alt.Chart(shown).mark_bar(size=16).encode(
         x=x, y=alt.Y("sum(AUD):Q", title="Per year, today's dollars", axis=alt.Axis(format="$,.0f")),
         color=flow_colour, order=alt.Order("Flow:N"),
@@ -2362,7 +2336,7 @@ def section_ledger(run):
     zero = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(color="#5f6b73").encode(y="y:Q")
     added = additions_layer(additions, x, color=flow_colour)
     layers = [bars, zero, line] + ([added.transform_filter(visible)] if added is not None else [])
-    show_chart(with_milestones(alt.layer(*layers).properties(height=400), marks, "Position:Q"), width="stretch")
+    show_chart(with_milestones(alt.layer(*layers).properties(height=520), marks, "Position:Q"), width="stretch")
     st.caption("Every dollar that changed your total wealth in each year, for this path. The dashed teal line with squares "
                "is what was **added to outside investments** that year, from your pay or, after retirement, from unspent "
                "pension payments and other spare cash: it moves money from cash into the portfolio, so it is drawn as a "
@@ -2383,9 +2357,9 @@ def section_ledger(run):
                 continue
             part["Period"] = part["FY ending"].map(period_label)
             flows = sorted(part["Flow"].unique())
-            key = "path_moves_" + account.split()[0].lower()
+            move_key = strategy_key(run, "path_moves_" + account.split()[0].lower())
             st.markdown(f"*{account}*")
-            state = legend_controls(key, flows)
+            state = legend_controls(move_key, flows)
             # A fixed colour domain keeps hidden flows in the legend so they can be shown again.
             chart, _ = hideable(alt.Chart(part).mark_bar(size=14).encode(
                 x=alt.X("FY ending:Q", axis=fy_axis(household), scale=alt.Scale(domain=domain, nice=False)),
@@ -2393,8 +2367,8 @@ def section_ledger(run):
                 color=alt.Color("Flow:N", scale=alt.Scale(domain=flows),
                                 legend=alt.Legend(orient="right", title=None, labelLimit=220)),
                 tooltip=[alt.Tooltip("Period:N", title="Year"), "Flow:N", alt.Tooltip("AUD:Q", format="$,.0f")]),
-                "Flow", flows, state, key)
-            show_chart(with_milestones(alt.layer(chart, zero).properties(height=340), marks, "Position:Q"),
+                "Flow", flows, state, move_key)
+            show_chart(with_milestones(alt.layer(chart, zero).properties(height=420), marks, "Position:Q"),
                             width="stretch")
         st.caption("Transfers only, excluding investment growth. Outside investments receive your leftover pay and are "
                    "sold to pay spending and tax; super receives contributions (after the 15% tax), pays fund tax and "
@@ -2440,7 +2414,7 @@ def section_ledger(run):
                     int(part["FY ending"].min()) - 0.5, int(part["FY ending"].max()) + 0.5])),
                 y=alt.Y("AUD:Q", axis=alt.Axis(format="$,.0f")),
                 color=alt.Color("Measure:N", legend=alt.Legend(orient="bottom", title=None)),
-                tooltip=["Year:N", "Measure:N", alt.Tooltip("AUD:Q", format="$,.0f")]).properties(height=300))
+                tooltip=["Year:N", "Measure:N", alt.Tooltip("AUD:Q", format="$,.0f")]).properties(height=360))
             show_chart(with_milestones(chart, marks, "Position:Q"), width="stretch")
     st.caption("Left: income, realised gains and tax assessed each year. Right: concessional contributions against the "
                "cap available, which includes carried-forward unused cap when your balance allows it.")
@@ -2451,7 +2425,7 @@ def section_ledger(run):
         show_chart(alt.Chart(pension).mark_bar().encode(
             x=alt.X("FY ending:O", title=YEAR_TITLE), xOffset="Measure:N", y=alt.Y("AUD:Q", axis=alt.Axis(format="$,.0f")),
             color=alt.Color("Measure:N", scale=alt.Scale(range=["#c9b8da", "#8363a0"]), legend=alt.Legend(orient="bottom", title=None)),
-            tooltip=["Year:N", "Measure:N", alt.Tooltip("AUD:Q", format="$,.0f")]).properties(height=280), width="stretch")
+            tooltip=["Year:N", "Measure:N", alt.Tooltip("AUD:Q", format="$,.0f")]).properties(height=360), width="stretch")
         st.caption("The legislated minimum (a percentage of the 1 July balance that rises with age) against what was "
                    "paid. Payments above the minimum happen when spending needs them.")
     outstanding = result.outstanding
@@ -2476,6 +2450,13 @@ def section_ledger(run):
                       "text/csv", key=strategy_key(run, "download_daily"))
     b.download_button("Download this path's events (CSV, nominal)", result.events.to_csv(index=False), f"{name}-path{path}-events.csv",
                       "text/csv", key=strategy_key(run, "download_events"))
+
+
+def run_notes(notes):
+    if notes:
+        with st.expander("Model & run notes"):
+            for note in notes:
+                st.write(note)
 
 
 def results(plan):
@@ -2504,29 +2485,26 @@ def results(plan):
     strategies = run.strategies or {run.rule: run}
     keep_strategy_choices(strategies)
     views = ["Retirement"] + (["Compare strategies"] if len(strategies) > 1 else []) + ["Portfolios", "Downloads"]
-    view = st.radio("Results view", views, horizontal=True, key=key("results_view"), label_visibility="collapsed")
+    view = result_choice("Results view", views, key("results_view"), label_visibility="collapsed")
     common = [note for note in run.notes if all(note in other.notes for other in strategies.values())]
     if common:
         st.caption("Market basis: sampled USD returns used as an AUD proxy; FX is not modelled.")
-        with st.expander("Model & run notes"):
-            for note in common:
-                st.write(note)
     BORN["date"] = date.fromisoformat(run.plan["person"]["date_of_birth"])
     if view == "Portfolios":
-        portfolio_view = st.radio("Portfolio view", ["Statistics", "Historical performance", "Simulated growth"],
-                                  horizontal=True, key=key("portfolio_view"))
-        if portfolio_view == "Statistics":
-            section_portfolios(run)
-        elif portfolio_view == "Historical performance":
-            section_history(run)
-        else:
-            section_future(run)
+        report_links([("your-portfolios", "Statistics"), ("historical-portfolio-behaviour", "History & growth"),
+                      ("future-portfolio-simulations", "Distributions")])
+        section_portfolios(run)
+        section_history(run)
+        section_future(run)
+        run_notes(common)
         return
     if view == "Compare strategies":
         section_comparison(run)
+        run_notes(common)
         return
     if view == "Downloads":
         result_downloads(run, strategies)
+        run_notes(common)
         return
     if len(strategies) > 1:
         st.caption(f"Strategies use the same {len(run.retirement_paths):,} market paths. Select one to explore.")
@@ -2543,6 +2521,7 @@ def results(plan):
                 section_retirement(strategy)
     else:
         section_retirement(run)
+    run_notes(common)
 
 
 def result_downloads(run, strategies):
@@ -2570,7 +2549,8 @@ def result_downloads(run, strategies):
             plots = {prefix + file.name.replace("_", " ").replace(".png", ""): file
                      for file, prefix in files if file.exists()}
             if plots:
-                selected = st.radio("Review plot", list(plots), horizontal=True, key=key("review_plot"))
+                selected = st.pills("Review plot", list(plots), required=True, key=key("review_plot"),
+                                    **first_value(key("review_plot"), default=next(iter(plots))))
                 st.image(str(plots[selected]), caption=selected)
     with st.expander("Assumptions behind the rules"):
         for year, manifest in run.rules_manifest.items():
