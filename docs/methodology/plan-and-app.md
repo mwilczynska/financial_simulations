@@ -160,6 +160,15 @@ four-column cash-flow legends on desktop and two columns at narrow widths.
 A retained market-data object from before a Streamlit module reload is refreshed
 before reuse, avoiding a stale-dataclass pickling failure when rerunning a plan.
 
+On 5 November 2026, the fresh 40-year browser run was inspected at desktop and
+390-pixel widths. The final-year pension cohort still showed 34 paths, $67,218
+average annual spending and $71,838 median path average. Its Spending & pension
+preset showed positive Age Pension receipts alongside spending and income tax.
+Sticky section links and heading offsets were checked; narrow cash-flow legend
+labels were shortened after visual review found clipping. The page and charts
+fit the 390-pixel viewport. Chart schema/filter tests passed again after this
+responsive legend change.
+
 ## Dataset inputs and provenance
 
 `assets` is a list of ticker codes available to **both** portfolios. It is a

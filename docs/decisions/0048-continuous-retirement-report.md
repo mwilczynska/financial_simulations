@@ -18,6 +18,8 @@ Hiding diagnostics would violate the requirement to retain plots. Instead:
 - Retirement becomes a continuous report: outcomes, cash flow and wealth,
   spending and cohort averages, Age Pension, risk/tax diagnostics and the path
   explorer. In-page links scroll to these sections without changing results.
+  The section links remain visible while scrolling, with anchor spacing that
+  keeps headings below the fixed navigation at desktop and narrow widths.
 - Retirement, strategy comparison (when applicable), portfolios and downloads
   remain distinct workspaces, selected with a compact segmented control.
   Portfolios also presents all its plots together. Compared strategies retain
@@ -36,6 +38,8 @@ Hiding diagnostics would violate the requirement to retain plots. Instead:
   use roughly 420–520 pixels and small diagnostic charts 340–360 pixels. Cash-flow
   legends use four columns on desktop and two on narrow screens, preserving
   more of the chart height for the plot itself. Outcome summary bars stay compact.
+  Narrow legends use concise labels while the full flow names remain in the
+  data and tooltips; each path/group chart identifies its selected cohort locally.
 - Net change always represents total change in wealth, even when some flows are
   hidden. Group flows retain arithmetic means; the overview retains separately
   calculated medians, which do not add up. Filtering changes presentation only.

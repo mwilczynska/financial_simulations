@@ -15,7 +15,7 @@ import pandas as pd
 import streamlit as st
 
 from financial_simulations.ui.design import install_design, show_chart
-from financial_simulations.ui.cashflow import FOCUS_FLOWS, cash_flow_chart, flow_items
+from financial_simulations.ui.cashflow import FOCUS_FLOWS, cash_flow_chart, flow_items, flow_legend
 from financial_simulations.retirement.adequacy import OUTCOME_COLOURS, path_adequacy, spending_by_group
 
 from financial_simulations.data.plan_markets import CUSTOM_TICKERS, TICKERS, PlanMarketData, load_plan_markets
@@ -2178,6 +2178,7 @@ def group_paths(run, members, label):
         x = alt.X("FY ending:Q", axis=fy_axis(yearly), scale=alt.Scale(
             domain=[int(yearly["FY ending"].min()) - 0.6, int(yearly["FY ending"].max()) + 0.6], nice=False))
         st.subheader("Money in and out, averaged across the group")
+        st.caption(f"{label} · {len(members):,} paths · arithmetic mean of each flow in each year")
         additions = yearly.rename(columns={"Added to outside investments": "AUD"})
         widget = strategy_key(run, "group_flows")
         state = legend_controls(widget, flow_items(long, additions, FLOW_COLOURS), spending_focus=True)
@@ -2302,6 +2303,7 @@ def section_ledger(run):
                "accessible, then the move from accumulation into the pension. Dashed lines mark the life events.")
 
     st.subheader("Money in and out on this path, before and during retirement")
+    st.caption(f"Path {path} · {ordinal(ranks[path])} percentile by ending wealth · today's dollars")
     household = household_flows(daily, inflation=True)
     household["Period"] = household["FY ending"].map(period_label)
     shown = household.groupby("Flow").filter(lambda g: g["AUD"].abs().max() > 1e-6)
@@ -2320,8 +2322,7 @@ def section_ledger(run):
     items = order + [NET_LABEL] + ([ADDED_LABEL] if (additions["AUD"].abs() > 1e-6).any() else [])
     palette = {**colours, NET_LABEL: NET_COLOUR, ADDED_LABEL: ADDED_COLOUR}
     flow_colour = alt.Color("Flow:N", sort=items, scale=alt.Scale(domain=items, range=[palette[f] for f in items]),
-                            legend=alt.Legend(orient="bottom", title=None,
-                                              columns=alt.ExprRef(expr="width < 500 ? 2 : 4"), labelLimit=210))
+                            legend=flow_legend())
     legend_state = legend_controls(strategy_key(run, "path_flows"), items, spending_focus=True)
     bars, visible = hideable(alt.Chart(shown).mark_bar(size=16).encode(
         x=x, y=alt.Y("sum(AUD):Q", title="Per year, today's dollars", axis=alt.Axis(format="$,.0f")),

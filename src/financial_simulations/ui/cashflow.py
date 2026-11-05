@@ -1,5 +1,7 @@
 """Legend-filtered cash-flow charts; reporting values are supplied by the ledger UI."""
 
+import json
+
 import altair as alt
 import pandas as pd
 
@@ -9,6 +11,20 @@ ADDED_LABEL = "Added to outside investments (line)"
 NET_COLOUR = "#19353a"
 ADDED_COLOUR = "#0b7a8a"
 FOCUS_FLOWS = ("Spending", "Age Pension", "Income tax", "Division 296 tax")
+
+
+def flow_legend():
+    """Keep the full ledger labels on desktop and concise, unclipped labels on phones."""
+    short = {"Take-home salary": "Salary", "Super contributions": "Super contrib.",
+             "Investment returns": "Returns", "Interest on cash": "Cash interest",
+             "Contributions tax": "Contrib. tax", "Super fund tax": "Super tax",
+             "Division 296 tax": "Div. 296 tax", NET_LABEL: "Net wealth change",
+             ADDED_LABEL: "Savings invested"}
+    labels = json.dumps(short)
+    return alt.Legend(orient="bottom", title=None, columnPadding=8,
+                      columns=alt.ExprRef(expr="width < 500 ? 2 : 4"),
+                      labelLimit=alt.ExprRef(expr="width < 500 ? 95 : 210"),
+                      labelExpr=f"width < 500 ? ({labels}[datum.label] || datum.label) : datum.label")
 
 
 def flow_items(frame, additions, colours):
@@ -27,8 +43,7 @@ def cash_flow_chart(frame, net, additions, colours, x, title, state, name, *, va
     palette = {**colours, NET_LABEL: NET_COLOUR, ADDED_LABEL: ADDED_COLOUR}
     colour = alt.Color("Flow:N", sort=items,
                        scale=alt.Scale(domain=items, range=[palette[f] for f in items]),
-                       legend=alt.Legend(orient="bottom", title=None,
-                                         columns=alt.ExprRef(expr="width < 500 ? 2 : 4"), labelLimit=210))
+                       legend=flow_legend())
     shown = [item for item in items if item not in state["hidden"]] or ["(none)"]
     visible = alt.selection_point(name=f"show_{name}_{state['count']}", fields=["Flow"],
                                   bind="legend", toggle="true", empty=False, clear=False,

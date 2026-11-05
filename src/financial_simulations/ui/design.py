@@ -34,16 +34,20 @@ h3 {font-size: 1.12rem !important; letter-spacing: -.015em;}
 [data-testid="stVegaLiteChart"] {padding: .5rem 0;}
 .report-jumps {display: flex; flex-wrap: wrap; gap: .3rem 1.3rem; padding: .75rem 0;
     border-bottom: 1px solid #dce3dd; margin-bottom: .25rem;}
+[data-testid="stElementContainer"]:has(> .stHtml > .report-jumps) {
+    position: sticky; top: 3.75rem; z-index: 10; background: #fcfcfa;
+}
 .report-jumps a {font-size: .85rem; color: #405650; text-decoration: none; padding: .25rem 0;
     border-bottom: 2px solid transparent; transition: color 140ms ease, border-color 140ms ease;}
 .report-jumps a:hover, .report-jumps a:focus-visible {color: #126a63; border-bottom-color: #126a63;}
-h2, h3 {scroll-margin-top: 5rem;}
+h2, h3 {scroll-margin-top: 8.5rem !important;}
 [data-testid="stButtonGroup"] button {font-size: .85rem;}
 .planner-eyebrow {font-size: .7rem; letter-spacing: .16em; font-weight: 700; color: #126a63; margin: 0 0 .4rem;}
 @media (max-width: 800px) {
     .stMainBlockContainer {padding: 3rem 1rem 3rem;}
     [role="tablist"] {gap: 1rem;}
     [data-testid="stMetricValue"] {font-size: 1.5rem;}
+    h2, h3 {scroll-margin-top: 11rem !important;}
 }
 @media (prefers-reduced-motion: reduce) {
     [role="tab"], [data-testid="stButton"] button, [data-testid="stDownloadButton"] button,
