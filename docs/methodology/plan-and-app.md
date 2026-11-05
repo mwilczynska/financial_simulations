@@ -34,9 +34,11 @@ switching between these questions. Portfolios likewise shows its statistics,
 history, growth and distributions together. Compact segmented choices select
 the workspace, account or path mode; labelled buttons select cohorts and static
 plot previews. The path explorer separates median path, group and individual
-path modes; an individual path is selected by numeric ID, with its ending-wealth
-percentile shown alongside. Multiple event types use visible pills. Collapsible
-sections contain explanations and methodology only.
+path modes. The searchable individual path dropdown shows the path ID and its
+ending-wealth percentile, lowest ending wealth first. It lists only calculated
+paths, starts on the median path and displays the same percentile precision as
+the table and path details (up to two decimal places). Multiple event types use
+visible pills. Collapsible sections contain explanations and methodology only.
 
 The all-path, group and individual cash-flow bar charts support independent
 legend clicks, plus Show all, Show none and Spending & pension controls. The
@@ -168,6 +170,11 @@ Sticky section links and heading offsets were checked; narrow cash-flow legend
 labels were shortened after visual review found clipping. The page and charts
 fit the 390-pixel viewport. Chart schema/filter tests passed again after this
 responsive legend change.
+
+The individual path picker refinement passed the focused browser-app and
+path-ranking tests. In the 100-path preview, the menu showed distinct labels
+starting at the 0.5th percentile, kept its order by ending wealth, and opened
+the expected ledger when a path was found by percentile.
 
 ## Dataset inputs and provenance
 

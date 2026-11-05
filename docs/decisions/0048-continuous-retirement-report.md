@@ -26,8 +26,13 @@ Hiding diagnostics would violate the requirement to retain plots. Instead:
   ADR 0046's tracked tabs and independent choices; only the active strategy is
   rendered.
 - Compact segmented controls select accounts or a single path versus a group.
-  Cohort names use short labelled buttons. Hundreds of paths are addressed by
-  numeric ID. Expanders remain exclusively explanatory in Results.
+  Cohort names use short labelled buttons. Expanders remain exclusively
+  explanatory in Results. On 5 November, the user asked to replace the numeric
+  path input with a searchable dropdown. It keeps each calculated path's ID,
+  labels it with its existing ending-wealth percentile, and orders paths from
+  lowest to highest ending wealth. The median path is the starting selection.
+  Two decimal places keep adjacent ranks distinguishable at the supported path
+  counts; the table and path details use the same precision.
 - The yearly cash-flow chart is near the top of the report. The all-path median
   and group-mean charts now support the existing single-path chart's independent
   legend toggles. A Spending & pension preset isolates spending, Age Pension,
@@ -58,6 +63,7 @@ accounting conventions are unchanged.
 User feedback in this chat is the requirement. Information hierarchy and
 control choices are engineering judgement. `tests/test_plan.py` checks the
 continuous report, navigation, flow preset and strategy-state persistence.
+It also verifies the individual path picker labels, order and selected path ID.
 `tests/test_cashflow_chart.py` checks filtering of every value-bearing layer,
 an unfixed y scale, retained totals and recoverability after hiding everything.
 Browser review includes actual legend clicks, section links and narrow layout.

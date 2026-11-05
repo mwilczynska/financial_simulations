@@ -2069,7 +2069,8 @@ total wealth; spending rises with inflation{"" if not plan['spending']['real_cha
         st.subheader(f"Every path ({len(paths)})")
         table = paths.drop(columns=["Ending wealth, nominal"], errors="ignore")
         ranks = ending_percentiles(calculated)
-        table.insert(2, "Ending wealth percentile", table["Path"].map(ranks))
+        table.insert(2, "Ending wealth percentile", table["Path"].map(ranks).map(
+            lambda rank: round(rank, 2), na_action="ignore"))
         table = table.sort_values("Ending wealth percentile", na_position="last")
         for field in ("First retired-year withdrawal rate", "Highest withdrawal rate", "Median withdrawal rate",
                       "Largest fall in wealth"):
@@ -2082,8 +2083,8 @@ total wealth; spending rises with inflation{"" if not plan['spending']['real_cha
             "Path": st.column_config.NumberColumn("Path", format="%d", pinned=True),
             "Status": st.column_config.TextColumn("Status", pinned=True),
             "Ending wealth percentile": st.column_config.NumberColumn(
-                "Percentile", format="%.0f", pinned=True,
-                help="Where this path's ending wealth ranks among calculated paths: 1 is near the worst, 99 near the best."),
+                "Percentile", format="%.2f", pinned=True,
+                help="Ending wealth rank among calculated paths. Lower percentiles mean lower ending wealth."),
             **{field: money_column(field) for field in money},
             **{field: percent_column(field) for field in ("First retired-year withdrawal rate", "Highest withdrawal rate",
                                                           "Median withdrawal rate", "Largest fall in wealth")}})
@@ -2113,9 +2114,11 @@ def group_members(calculated, low, high):
     return [int(p) for p in ordered[first:last]]
 
 
-def ordinal(value):
-    n = int(round(value))
-    n = min(max(n, 1), 99)
+def percentile_ordinal(value):
+    number = f"{value:.2f}".rstrip("0").rstrip(".")
+    if "." in number:
+        return f"{number}th"
+    n = int(number)
     return f"{n}{'th' if 10 <= n % 100 <= 20 else {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')}"
 
 
@@ -2219,14 +2222,14 @@ def section_ledger(run):
     import altair as alt
 
     paths = run.retirement_paths
-    calculated = paths.loc[paths["Status"] != "unsupported"].sort_values("Ending wealth")
-    ranks = ending_percentiles(calculated)
+    calculated = paths.loc[paths["Status"] != "unsupported"]
     if calculated.empty:
         st.info("No supported paths are available to inspect.")
         return
+    ranks = ending_percentiles(calculated)
+    everyone = list(ranks)  # ending_percentiles inserts paths from lowest to highest ending wealth
     choices = {}
     headings = {}  # group choices: their members and view heading
-    everyone = calculated["Path"].astype(int).tolist()
     adequacy = path_adequacy(paths, run.retirement_annual, run.plan["plan"]["start_date"])
     risk_groups = [(f"Group: {label.lower()}", label,
                     adequacy.loc[adequacy["Outcome"] == label, "Path"].astype(int).tolist())
@@ -2259,13 +2262,14 @@ def section_ledger(run):
         st.caption("The path ending nearest the median. Its journey can still include poor years.")
     if mode == "Individual path":
         widget = strategy_key(run, "ledger_number")
-        path = int(st.number_input("Path number", min_value=int(paths["Path"].min()),
-                                   max_value=int(paths["Path"].max()), step=1, key=widget,
-                                   **first_value(widget, value=int(run.representative_path))))
-        if path not in everyone:
-            st.info("This path is unsupported and has no calculated ledger. Choose another path number.")
-            return
-    st.caption(f"Path {path} · {ordinal(ranks[path])} percentile by ending wealth")
+        if widget in st.session_state and st.session_state[widget] not in ranks:
+            del st.session_state[widget]
+        path = st.selectbox("Path number", everyone, key=widget, width=340,
+                            format_func=lambda p: f"Path {p} · {percentile_ordinal(ranks[p])} percentile",
+                            help="Ranked by ending wealth, lowest first. Type a path number or percentile to search.",
+                            **first_value(widget, index=everyone.index(path)))
+    percentile = percentile_ordinal(ranks[path])
+    st.caption(f"Path {path} · {percentile} percentile by ending wealth")
     summary = adequacy.set_index("Path").loc[path]
     st.metric("Average annual retirement spending", compact(summary["Average annual retirement spending"]),
               help="Spending actually paid, averaged over complete retired financial years in today's dollars. "
@@ -2288,7 +2292,7 @@ def section_ledger(run):
                      "is after the start.")
     w[3].metric(f"Wealth at {daily.index[-1].date()}", compact(daily["total"].iloc[-1]))
     a, b, c, d, e = st.columns(5)
-    a.metric("Ending wealth percentile", ordinal(ranks[path]),
+    a.metric("Ending wealth percentile", percentile,
              help="Where this path's ending wealth ranks among calculated paths.")
     b.metric("Age Pension received", compact(daily["age_pension"].sum()) if "age_pension" in daily else "–")
     c.metric("Spending shortfall", compact(daily["shortfall"].sum()))
@@ -2303,7 +2307,7 @@ def section_ledger(run):
                "accessible, then the move from accumulation into the pension. Dashed lines mark the life events.")
 
     st.subheader("Money in and out on this path, before and during retirement")
-    st.caption(f"Path {path} · {ordinal(ranks[path])} percentile by ending wealth · today's dollars")
+    st.caption(f"Path {path} · {percentile} percentile by ending wealth · today's dollars")
     household = household_flows(daily, inflation=True)
     household["Period"] = household["FY ending"].map(period_label)
     shown = household.groupby("Flow").filter(lambda g: g["AUD"].abs().max() > 1e-6)

@@ -187,8 +187,15 @@ def test_browser_app_runs_with_tickers_and_interactive_results(tmp_path, monkeyp
     assert not app.exception and any(h.value.startswith("All paths (") for h in app.subheader)
     assert any(h.value == "Year by year, medians across the group" for h in app.subheader)
     app.segmented_control(key="ledger_mode__0").set_value("Individual path").run()
-    app.number_input(key="ledger_number__0").set_value(0).run()
-    assert not app.exception and any(c.value.startswith("Path 0 ·") for c in app.caption)
+    picker = app.selectbox(key="ledger_number__0")
+    run = app.session_state.result
+    ordered = run.retirement_paths.query("Status != 'unsupported'").sort_values("Ending wealth")["Path"].tolist()
+    assert picker.value == run.representative_path
+    assert picker.options == [f"Path {path} · {rank} percentile"
+                              for path, rank in zip(ordered, ("16.67th", "50th", "83.33th"), strict=True)]
+    picker.set_value(ordered[0]).run()
+    assert not app.exception
+    assert any(c.value == f"Path {ordered[0]} · 16.67th percentile by ending wealth" for c in app.caption)
     app.button(key="overview_flows__0_focus").click().run()
     hidden = app.session_state["overview_flows__0_legend"]["hidden"]
     assert "Investment returns" in hidden and "Spending" not in hidden
@@ -434,7 +441,7 @@ def test_all_paths_chart_draws_a_spread_of_funded_paths_and_every_ruin_path():
 def test_path_groups_rank_by_ending_wealth_and_keep_at_least_one_path():
     pytest.importorskip("streamlit")
     import pandas as pd
-    from financial_simulations.ui.app import ending_percentiles, group_members, ordinal
+    from financial_simulations.ui.app import ending_percentiles, group_members, percentile_ordinal
 
     calculated = pd.DataFrame({"Path": range(200), "Ending wealth": [float((p * 37) % 200) for p in range(200)]})
     worst = calculated.sort_values("Ending wealth")["Path"].tolist()
@@ -444,7 +451,8 @@ def test_path_groups_rank_by_ending_wealth_and_keep_at_least_one_path():
     assert group_members(calculated, 0.45, 0.55) == worst[90:110]
     ranks = ending_percentiles(calculated)
     assert ranks[worst[0]] == pytest.approx(0.25) and ranks[worst[-1]] == pytest.approx(99.75)
-    assert [ordinal(v) for v in (0.25, 2, 11, 21, 52.6, 99.75)] == ["1st", "2nd", "11th", "21st", "53rd", "99th"]
+    assert [percentile_ordinal(v) for v in (0.25, 2, 11, 21, 52.6, 99.75)] == [
+        "0.25th", "2nd", "11th", "21st", "52.6th", "99.75th"]
 
 
 def test_run_keeps_each_paths_account_series_and_wealth_when_super_is_accessible(processed_fixture):
