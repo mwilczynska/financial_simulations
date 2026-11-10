@@ -12,15 +12,14 @@ from matplotlib.ticker import FuncFormatter
 import numpy as np
 import pandas as pd
 
-from financial_simulations.retirement.flows import account_flows, household_flows, milestones
+from financial_simulations.reporting.palette import (ADDED_COLOUR, BLUE, FLOW_COLOURS, NET_COLOUR, PORTFOLIO_COLOURS,
+                                                     TIER_COLOURS)
+from financial_simulations.retirement.flows import account_flows, fold_taxes, household_flows, milestones
 from financial_simulations.retirement.real import real_daily, real_events
 
 
-COLORS = {"Outside super": "#126a63", "Inside super": "#386a98", "Combined": "#b76a42"}
-FLOW_COLOURS = {"Take-home salary": "#126a63", "Super contributions": "#386a98", "Investment returns": "#9a8a2e",
-                "Interest on cash": "#4f8f3a", "Age Pension": "#d08c2f",
-                "Spending": "#b76a42", "Income tax": "#8c2f2f", "Contributions tax": "#c2577a", "Super fund tax": "#8363a0", "Division 296 tax": "#5b3f7a",
-                "Inflation": "#9aa3a8"}
+# The app's colours (ADR 0047): the PNG plots and the interactive charts use one palette.
+COLORS = PORTFOLIO_COLOURS
 
 
 def _figure(title, subtitle, *, height=5.5):
@@ -136,9 +135,9 @@ def write_retirement_plots(output: Path, plan, retirement_paths, retirement_band
             subtitle += "\nLog-like y-axis above $1,000 keeps central paths visible beside the upper tail"
         fig, ax = _figure("Retirement wealth range", subtitle)
         dates = pd.to_datetime(retirement_bands["Date"])
-        ax.fill_between(dates, retirement_bands["P05"], retirement_bands["P95"], color="#126a63", alpha=0.13, label="5th–95th percentile")
-        ax.fill_between(dates, retirement_bands["P25"], retirement_bands["P75"], color="#126a63", alpha=0.25, label="25th–75th percentile")
-        ax.plot(dates, retirement_bands["P50"], color="#126a63", linewidth=1.7, label="Median")
+        ax.fill_between(dates, retirement_bands["P05"], retirement_bands["P95"], color=BLUE, alpha=0.13, label="5th–95th percentile")
+        ax.fill_between(dates, retirement_bands["P25"], retirement_bands["P75"], color=BLUE, alpha=0.25, label="25th–75th percentile")
+        ax.plot(dates, retirement_bands["P50"], color=BLUE, linewidth=1.7, label="Median")
         if wide:
             ax.set_yscale("symlog", linthresh=1000)
             upper = float(retirement_bands["P95"].max())
@@ -157,10 +156,10 @@ def write_retirement_plots(output: Path, plan, retirement_paths, retirement_band
 
         cpi = plan["assumptions"]["cpi_annual"]
         daily = real_daily(representative.daily, cpi)
-        flows = household_flows(daily, inflation=True)
+        flows = fold_taxes(household_flows(daily, inflation=True))
         fig, ax = _figure("Money in and out each year",
                           "Path nearest median ending wealth; today's dollars; years end 30 June; in above zero, out below; "
-                          "line = net change in wealth")
+                          "line = net change in wealth; Tax = income, contributions, fund and Division 296 tax")
         years = sorted(flows["FY ending"].unique())
         positive, negative = np.zeros(len(years)), np.zeros(len(years))
         for label, color in FLOW_COLOURS.items():
@@ -172,11 +171,11 @@ def write_retirement_plots(output: Path, plan, retirement_paths, retirement_band
             positive += np.where(values >= 0, values, 0)
             negative += np.where(values < 0, values, 0)
         net = flows.drop_duplicates("FY ending").set_index("FY ending").reindex(years)["Net change"]
-        ax.plot(years, net, color="#19353a", marker="o", markersize=3, linewidth=1.6, label="Net change in wealth")
+        ax.plot(years, net, color=NET_COLOUR, marker="o", markersize=3, linewidth=1.6, label="Net change in wealth")
         moves = account_flows(daily, real_events(representative.events, daily.index[0], cpi))
         added = moves.loc[moves["Flow"] == "Savings invested"].groupby("FY ending")["AUD"].sum().reindex(years, fill_value=0)
         if added.abs().max() > 1e-6:
-            ax.plot(years, added, color="#0b7a8a", linestyle="--", marker="s", markersize=4, linewidth=1.6,
+            ax.plot(years, added, color=ADDED_COLOUR, linestyle="--", marker="s", markersize=4, linewidth=1.6,
                     label="Added to outside investments (transfer)")
         ax.axhline(0, color="#5f6b73", linewidth=0.8)
         top, low = max(positive.max(), net.max(), added.max(), 1.0), min(negative.min(), net.min(), -1.0)
@@ -192,6 +191,70 @@ def write_retirement_plots(output: Path, plan, retirement_paths, retirement_band
         fig.subplots_adjust(bottom=0.26)
         ax.legend(frameon=False, ncol=4, fontsize=8, loc="upper center", bbox_to_anchor=(0.5, -0.1))
         fig.savefig(output / "retirement_flows.png")
+
+
+def write_outcome_plot(output: Path, plan, retirement_paths, retirement_annual):
+    """Write one strategy's path outcomes: the share of paths in each state each year, and average retirement
+    spending by group of paths (ADR 0048). The same figures as the app's Outcomes page."""
+    from financial_simulations.retirement.outcomes import (TIERS, full_age_pension_by_year, group_spending, path_outcomes,
+                                                           state_shares, tier_shares, yearly_states)
+
+    output = Path(output)
+    full_rate = full_age_pension_by_year(plan)
+    outcomes = path_outcomes(retirement_paths, retirement_annual, full_rate)
+    shares = state_shares(yearly_states(outcomes, retirement_annual, full_rate))
+    overall = tier_shares(outcomes)
+    spending = group_spending(outcomes)
+    with matplotlib.rc_context({"font.family": "DejaVu Sans"}):
+        fig = Figure(figsize=(11, 8.6 if len(spending) else 5.5), dpi=150, facecolor="#f9f9f7")
+        axes = fig.subplots(2 if len(spending) else 1, 1, squeeze=False,
+                            gridspec_kw={"height_ratios": [1.15, 1]} if len(spending) else None)[:, 0]
+        fig.subplots_adjust(left=0.19, right=0.97, top=0.86, bottom=0.08, hspace=0.42)
+        fig.text(0.06, 0.955, "How the paths fared", fontsize=16, fontweight="bold", color="#19353a")
+        fig.text(0.06, 0.915, f"{len(outcomes)} calculated paths, by the worst they reached: "
+                 + "; ".join(f"{tier.lower()} {overall[tier]:.0%}" for tier in TIERS), fontsize=9, color="#536369")
+        ax = axes[0]
+        years = sorted(shares["FY ending"].unique())
+        wide = shares.pivot(index="FY ending", columns="State", values="Share").reindex(years)
+        # Worst state at the bottom, so the trouble grows up from the axis.
+        order = list(reversed(TIERS))
+        ax.stackplot(years, [wide[tier].to_numpy() for tier in order], colors=[TIER_COLOURS[tier] for tier in order],
+                     labels=order, linewidth=0.6, edgecolor="#f9f9f7")
+        ax.set_xlim(years[0], years[-1])
+        ax.set_ylim(0, 1)
+        ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:.0%}"))
+        ax.set_ylabel("Share of paths")
+        ax.set_title("State of every path in each year ending 30 June (ran out holds from the first shortfall)",
+                     fontsize=10, loc="left", color="#19353a")
+        for _, mark in milestones(plan, date_of(years[0]), date_of(years[-1])).iterrows():
+            ax.axvline(mark["Position"], color="#5f6b73", linestyle="--", linewidth=1)
+            ax.text(mark["Position"], 1.0, " " + mark["Event"], fontsize=8, color="#3c474d", va="top")
+        ax.set_facecolor("#f9f9f7")
+        ax.spines[["top", "right"]].set_visible(False)
+        ax.legend(frameon=False, ncol=4, fontsize=8, loc="upper center", bbox_to_anchor=(0.5, -0.09))
+        if len(spending):
+            ax = axes[1]
+            rows = spending.iloc[::-1].reset_index(drop=True)
+            colours = [TIER_COLOURS.get(name, BLUE) for name in rows["Group"]]
+            ax.hlines(rows.index, rows["P10"], rows["P90"], colors=colours, linewidth=5, alpha=0.35)
+            ax.scatter(rows["Median"], rows.index, color=colours, s=46, zorder=3)
+            ax.set_yticks(rows.index, [f"{g} ({n})" for g, n in zip(rows["Group"], rows["Paths"])], fontsize=8)
+            ax.set_xlim(left=0)
+            ax.xaxis.set_major_formatter(FuncFormatter(_money))
+            ax.grid(axis="x", alpha=0.22)
+            ax.set_axisbelow(True)
+            ax.set_title("Average spending paid per retired year, today's dollars: median path (dot) and 10th to 90th "
+                         "percentile; paths in brackets", fontsize=10, loc="left", color="#19353a")
+            ax.set_facecolor("#f9f9f7")
+            ax.spines[["top", "right"]].set_visible(False)
+        fig.savefig(output / "retirement_outcomes.png")
+
+
+def date_of(fy_ending):
+    """30 June of a financial year, for placing life events on a year axis."""
+    from datetime import date
+
+    return date(int(fy_ending), 6, 30)
 
 
 def write_comparison_plots(output: Path, plan, strategies: dict):

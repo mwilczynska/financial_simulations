@@ -1,0 +1,18 @@
+# The app's theme for `streamlit run`; it repeats financial_simulations.reporting.palette.STREAMLIT_THEME.
+[theme]
+base = "light"
+primaryColor = "#1c5cab"
+backgroundColor = "#f9f9f7"
+secondaryBackgroundColor = "#f0efec"
+textColor = "#1a1a19"
+linkColor = "#1c5cab"
+borderColor = "#e1e0d9"
+showWidgetBorder = true
+baseRadius = "0.6rem"
+baseFontSize = 15
+headingFontSizes = ["1.6rem", "1.25rem", "1.02rem"]
+headingFontWeights = [650, 650, 600]
+metricValueFontSize = "1.55rem"
+metricValueFontWeight = 600
+dataframeHeaderBackgroundColor = "#f4f3ef"
+chartCategoricalColors = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"]

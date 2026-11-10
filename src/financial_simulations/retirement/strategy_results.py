@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 
 from financial_simulations.retirement.flows import HOUSEHOLD
+from financial_simulations.retirement.outcomes import TIERS, full_age_pension_by_year, path_outcomes
 
 
 # Short names and fixed colours by strategy, never by rank. The four colours are the first four slots of the
@@ -42,22 +43,30 @@ def retired_spending(run) -> pd.Series:
     return totals.reindex(annual["Path"].unique()).dropna()
 
 
-# (measure, kind, how): kind is "money" or "share"; how computes the value from one strategy's PlanRun.
+# (measure, kind, how): kind is "money" or "share"; how computes the value from one strategy's PlanRun and its
+# paths' outcome tiers (``outcomes.path_outcomes``, ADR 0048).
 MEASURES = (
+    ("Paths that ran out", "share", lambda run, outcomes: _share(outcomes["Outcome"] == TIERS[3])),
+    ("Paths that reached the full Age Pension", "share", lambda run, outcomes: _share(outcomes["Outcome"] == TIERS[2])),
+    ("Paths on a part Age Pension", "share", lambda run, outcomes: _share(outcomes["Outcome"] == TIERS[1])),
+    ("Average retired-year spending: median", "money",
+     lambda run, outcomes: _quantile(outcomes["Average retired-year spending"], 0.5)),
+    ("Average retired-year spending: 10th percentile", "money",
+     lambda run, outcomes: _quantile(outcomes["Average retired-year spending"], 0.1)),
     ("Starting retirement spending (median)", "money",
-     lambda run: _quantile(_calculated(run)["Starting retirement spending"], 0.5)),
-    ("Spending over full retired years: median", "money", lambda run: _quantile(retired_spending(run), 0.5)),
-    ("Spending over full retired years: 10th percentile", "money", lambda run: _quantile(retired_spending(run), 0.1)),
+     lambda run, outcomes:_quantile(_calculated(run)["Starting retirement spending"], 0.5)),
+    ("Spending over full retired years: median", "money", lambda run, outcomes:_quantile(retired_spending(run), 0.5)),
+    ("Spending over full retired years: 10th percentile", "money", lambda run, outcomes:_quantile(retired_spending(run), 0.1)),
     ("Lowest retired year's spending: median", "money",
-     lambda run: _quantile(_calculated(run)["Lowest retired-year spending"], 0.5)),
+     lambda run, outcomes:_quantile(_calculated(run)["Lowest retired-year spending"], 0.5)),
     ("Lowest retired year's spending: 10th percentile", "money",
-     lambda run: _quantile(_calculated(run)["Lowest retired-year spending"], 0.1)),
-    ("Paths with any spending shortfall", "share", lambda run: _share(_calculated(run)["Spending shortfall"] > 0)),
-    ("Paths that ever spent below the start", "share", lambda run: _share(_calculated(run)["Years below start"] > 0)),
+     lambda run, outcomes:_quantile(_calculated(run)["Lowest retired-year spending"], 0.1)),
+    ("Paths with any spending shortfall", "share", lambda run, outcomes:_share(_calculated(run)["Spending shortfall"] > 0)),
+    ("Paths that ever spent below the start", "share", lambda run, outcomes:_share(_calculated(run)["Years below start"] > 0)),
     ("Ending wealth after tax owed: median", "money",
-     lambda run: _quantile(_calculated(run)["Ending wealth after tax owed"], 0.5)),
+     lambda run, outcomes:_quantile(_calculated(run)["Ending wealth after tax owed"], 0.5)),
     ("Ending wealth after tax owed: 10th percentile", "money",
-     lambda run: _quantile(_calculated(run)["Ending wealth after tax owed"], 0.1)),
+     lambda run, outcomes:_quantile(_calculated(run)["Ending wealth after tax owed"], 0.1)),
 )
 
 
@@ -68,9 +77,12 @@ def _calculated(run) -> pd.DataFrame:
 
 def comparison_table(strategies: dict) -> pd.DataFrame:
     """One row per measure, one column per strategy (by rule), plus the measure's kind."""
+    outcomes = {rule: path_outcomes(run.retirement_paths, run.retirement_annual, full_age_pension_by_year(run.plan))
+                for rule, run in strategies.items()}
     rows = []
     for measure, kind, how in MEASURES:
-        rows.append({"Measure": measure, "Kind": kind, **{rule: how(run) for rule, run in strategies.items()}})
+        rows.append({"Measure": measure, "Kind": kind,
+                     **{rule: how(run, outcomes[rule]) for rule, run in strategies.items()}})
     return pd.DataFrame(rows)
 
 

@@ -24,6 +24,32 @@ HOUSEHOLD = (("salary", "Take-home salary", 1), ("employer_contributions", "Supe
              ("fund_tax", "Super fund tax", -1), ("division_296", "Division 296 tax", -1))
 
 
+TAXES = ("Income tax", "Contributions tax", "Super fund tax", "Division 296 tax")
+TAX = "Tax"
+
+
+def fold_taxes(flows: pd.DataFrame) -> pd.DataFrame:
+    """``household_flows`` rows with the four taxes added into one ``Tax`` flow per year, for charts.
+
+    Eleven flows are too many colours to tell apart, and the taxes are read together. Sums are unchanged, so the
+    flows still add up to the net change in wealth; the yearly tables keep each tax.
+    """
+    tax = flows["Flow"].isin(TAXES)
+    if not tax.any():
+        return flows
+    keys = [c for c in flows.columns if c not in ("Flow", "AUD")]
+    folded = flows.loc[tax].groupby(keys, as_index=False, sort=False)["AUD"].sum().assign(Flow=TAX)
+    return pd.concat([flows.loc[~tax], folded[flows.columns]], ignore_index=True)
+
+
+def fold_tax_columns(annual: pd.DataFrame) -> pd.DataFrame:
+    """A per-path yearly frame with its ``Flow: <tax>`` columns added into one ``Flow: Tax`` column."""
+    taxes = [f"Flow: {name}" for name in TAXES if f"Flow: {name}" in annual]
+    if not taxes:
+        return annual
+    return annual.drop(columns=taxes).assign(**{f"Flow: {TAX}": annual[taxes].sum(axis=1)})
+
+
 def financial_year_end(day) -> int:
     """The calendar year in which the 1 July to 30 June financial year containing ``day`` ends."""
     return day.year + (day.month >= 7)
