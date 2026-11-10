@@ -23,8 +23,10 @@ CSS = f"""
   [data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"] {{ display: none; }}
 
   /* The bar that stays on screen: brand, pages, plan menu and Run. */
-  .st-key-topbar {{ position: sticky; top: 0; z-index: 99; background: {PAGE}; padding: 0.55rem 0 0.6rem;
-                   border-bottom: 1px solid {GRID}; margin-bottom: 0.4rem; }}
+  /* Streamlit wraps the container, and an element only sticks inside its parent, so the wrapper is what sticks. */
+  [data-testid="stLayoutWrapper"]:has(> .st-key-topbar) {{ position: sticky; top: 0; z-index: 99; background: {PAGE};
+                                                          border-bottom: 1px solid {GRID}; }}
+  .st-key-topbar {{ padding: 0.55rem 0 0.6rem; }}
   .brand {{ font-weight: 700; font-size: 1.08rem; letter-spacing: -0.01em; color: {INK}; line-height: 1.15; }}
   .brand small {{ display: block; font-weight: 400; font-size: 0.8rem; color: {INK_SECONDARY}; white-space: nowrap;
                   overflow: hidden; text-overflow: ellipsis; }}
@@ -135,7 +137,6 @@ def configure(chart):
             .configure_legend(orient="top", direction="horizontal", title=None, labelColor=INK_SECONDARY, labelFontSize=12,
                               symbolSize=110, symbolStrokeWidth=0, padding=0, offset=10, labelLimit=260, columnPadding=14)
             .configure_line(strokeWidth=2, strokeCap="round", strokeJoin="round")
-            .configure_bar(cornerRadiusEnd=3)
             .configure_text(font=FONT, color=INK_SECONDARY))
 
 

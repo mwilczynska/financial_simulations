@@ -2,7 +2,9 @@
 
 Date: 2026-11-02.
 
-Status: accepted; implemented and tested.
+Status: accepted; implemented and tested. The tabs were superseded on 10 November 2026 by a strategy picker
+([ADR 0047](0047-app-layout-and-one-visual-system.md)); drawing one strategy at a time and keeping each strategy's
+choices still hold.
 
 ## Context
 

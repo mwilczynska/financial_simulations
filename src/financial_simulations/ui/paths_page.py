@@ -38,7 +38,7 @@ def choices_for(run, d):
     choices = {f"Median ending wealth · path {run.representative_path}": run.representative_path}
     headings = {}
     for name, members in d.groups.items():
-        label = "all paths" if name == "All paths" else name.lower() if name in TIERS else f"the {name.lower()}"
+        label = "all paths" if name == "All paths" else name if name in TIERS else f"the {name.lower()}"
         choice = f"Group: {label} · {plural(len(members), 'path')}"
         choices[choice] = members
         headings[choice] = name if name == "All paths" or name in TIERS else f"The {name.lower()} of paths"

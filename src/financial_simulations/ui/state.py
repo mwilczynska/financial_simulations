@@ -86,7 +86,8 @@ def calculation_cores():
 def compact(value):
     if value is None or not np.isfinite(value):
         return "–"
-    return f"${value / 1e6:,.2f}m" if abs(value) >= 1e6 else f"${value:,.0f}"
+    sign, value = ("-" if value < 0 else ""), abs(value)
+    return f"{sign}${value / 1e6:,.2f}m" if value >= 1e6 else f"{sign}${value:,.0f}"
 
 
 def dollars(value):

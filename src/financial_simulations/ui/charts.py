@@ -65,6 +65,14 @@ def money_axis(**options):
                               "(datum.value < 0 ? '-$' : '$') + format(abs(datum.value), ',.0f')", **options)
 
 
+def log_axis(low, high, **options):
+    """A dollar axis for a log scale: a tick at each power of ten (and at 3 times it when the range is short)."""
+    powers = range(int(np.floor(np.log10(max(low, 1e-9)))), int(np.ceil(np.log10(high))) + 1)
+    steps = (1, 3) if len(powers) <= 4 else (1,)
+    ticks = [m * 10.0 ** p for p in powers for m in steps if low <= m * 10.0 ** p <= high]
+    return alt.Axis(values=ticks, format="$,.0f", **options)
+
+
 def symlog_axis(upper):
     """A dollar axis for a symlog scale: $0 and powers of ten, labelled $1k, $10k, ... $1m."""
     first_power = 4 if upper >= 1e6 else 3
@@ -142,8 +150,8 @@ def band_chart(frame, title, *, log=False, symlog=False, color=BLUE, percent=Fal
     if symlog:
         scale, axis = alt.Scale(type="symlog", constant=1000, zero=True), symlog_axis(float(frame["P95"].max()))
     elif log:
-        scale = alt.Scale(type="log", domain=[float(frame["P05"].min()) * 0.9, float(frame["P95"].max()) * 1.1], nice=False)
-        axis = alt.Axis(format="$,.0f")
+        low, high = float(frame["P05"].min()) * 0.9, float(frame["P95"].max()) * 1.1
+        scale, axis = alt.Scale(type="log", domain=[low, high], nice=False), log_axis(low, high)
     else:
         scale, axis = alt.Scale(zero=True), alt.Axis(format=".0%") if percent else money_axis()
     number = ".1%" if percent else "$,.0f"
@@ -367,6 +375,8 @@ def states_chart(shares, marks, height=MEDIUM):
         color=alt.Color("State:N", sort=list(TIERS), legend=None,
                         scale=alt.Scale(domain=list(TIERS), range=[TIER_COLOURS[t] for t in TIERS])),
         order=alt.Order("order:Q"),
+        # Self-funded is the quiet background; the three states that need attention keep their full colour.
+        opacity=alt.condition(alt.datum.State == TIERS[0], alt.value(0.4), alt.value(1)),
         tooltip=[alt.Tooltip("Period:N", title="Year"), "State:N", alt.Tooltip("Share:Q", title="Share of paths", format=".1%"),
                  alt.Tooltip("Paths:Q", format=",d")]).properties(height=height)
     inside = marks.loc[marks["Position"].between(frame["FY ending"].min(), frame["FY ending"].max())] if len(marks) else marks
@@ -386,7 +396,7 @@ def group_spending_chart(groups):
                alt.Tooltip("P90:Q", title="90th percentile", format="$,.0f"),
                alt.Tooltip("Lowest year (median):Q", title="Lowest year (median path)", format="$,.0f")]
     base = alt.Chart(frame)
-    x = alt.X("P10:Q", title="Average spending paid per retired year, today's dollars", axis=money_axis(grid=True),
+    x = alt.X("P10:Q", title="Average spending paid per retired year, today's dollars", axis=money_axis(grid=True, tickCount=7),
               scale=alt.Scale(domain=[0, float(frame["P90"].max()) * 1.12], nice=False))
     span = base.mark_bar(height=10, opacity=0.3, cornerRadius=5).encode(
         x=x, x2="P90:Q", y=y, color=alt.Color("Colour:N", scale=None), tooltip=tooltip)
@@ -408,7 +418,7 @@ def flow_domain(frame, field, extra=()):
 def flow_colour(items, palette=None):
     palette = {**FLOW_COLOURS, NET_LABEL: NET_COLOUR, ADDED_LABEL: ADDED_COLOUR, **(palette or {})}
     return alt.Color("Flow:N", sort=items, scale=alt.Scale(domain=items, range=[palette[f] for f in items]),
-                     legend=alt.Legend(columns=6, symbolType="square"))
+                     legend=alt.Legend(columns=5, symbolType="square"))
 
 
 def additions_layer(frame, x, value="AUD", color=None):

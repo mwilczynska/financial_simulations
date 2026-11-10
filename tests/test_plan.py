@@ -165,7 +165,7 @@ def test_browser_app_runs_with_tickers_and_interactive_results(tmp_path, monkeyp
                             default_timeout=120)
     app.run()
     assert not app.exception
-    assert [t.label for t in app.tabs] == ["You", "Investments", "Retirement", "Assumptions", "Results"]
+    assert [t.label for t in app.tabs] == ["You", "Investments", "Retirement", "Assumptions"]  # the Plan page opens first
     app.number_input(key="retire__0").set_value(57)
     app.number_input(key="paths__0").set_value(16)
     app.number_input(key="retirement_paths__0").set_value(3).run()
@@ -173,15 +173,31 @@ def test_browser_app_runs_with_tickers_and_interactive_results(tmp_path, monkeyp
     assert not app.exception and not app.error
     assert len(app.session_state.result.portfolios.outcomes) == 48  # two portfolios and their combination
     assert app.session_state.plan["person"]["retirement_age"] == 57
-    assert (tmp_path / "output" / "plans" / "example-early-retirement" / "portfolio_future.png").exists()
-    assert len(app.get("vega_lite_chart")) >= 15
+    folder = tmp_path / "output" / "plans" / "example-early-retirement"
+    assert (folder / "portfolio_future.png").exists() and (folder / "retirement_outcomes.png").exists()
     assert app.session_state.plan["outside"]["rebalance"] == "annual"
+    # A finished run opens the Outcomes page; only its open tab (Wealth) is drawn.
+    assert app.session_state.page == "Outcomes"
+    assert [t.label for t in app.tabs] == ["Wealth", "Risk over time", "Spending", "Age Pension", "Money in and out", "Tables"]
+    assert len(app.get("vega_lite_chart")) == 2
+    for tab in ("Risk over time", "Spending", "Age Pension", "Money in and out", "Tables"):
+        app.session_state["outcome_tabs__0"] = tab
+        app.run()
+        assert not app.exception, tab
+    for page in ("Markets", "Method", "Paths"):
+        app.session_state["page"] = page
+        app.run()
+        assert not app.exception, page
     picker = app.selectbox(key="ledger_path__0")
     everyone = next(option for option in picker.options if option.startswith("Group: all paths"))
     assert picker.options.index(everyone) == 1  # straight after the median path
     picker.set_value(everyone).run()
     assert not app.exception and any(h.value.startswith("All paths (") for h in app.subheader)
-    assert any(h.value == "Year by year, medians across the group" for h in app.subheader)
+    assert [t.label for t in app.tabs] == ["Balances", "Money in and out", "Year by year"]
+    for tab in ("Money in and out", "Year by year"):
+        app.session_state["group_tabs__0"] = tab
+        app.run()
+        assert not app.exception, tab
 
 
 def test_35_year_path_and_plots_keep_yearly_summary_compact(tmp_path, processed_fixture):
@@ -588,27 +604,31 @@ def test_app_compares_ticked_strategies_and_ignores_a_stale_cores_choice(tmp_pat
     app.number_input(key="retirement_paths__0").set_value(3).run()
     app.button(key="run_sidebar").click().run()
     assert not app.exception and not app.error
-    labels = [tab.label for tab in app.tabs]
-    assert labels[-3:] == ["Fixed", "Guyton–Klinger", "Vanguard"]  # one tab per strategy, after the main tabs
     assert app.session_state.result.strategies["vanguard"].rule == "vanguard"
-    # Only the open tab is drawn (ADR 0046): the first, until another is chosen.
+    # One strategy is drawn at a time (ADR 0046): the first, until another is picked (ADR 0047).
+    app.session_state["page"] = "Paths"
+    app.run()
     keys = {box.key for box in app.selectbox}
     assert "ledger_path_fixed__0" in keys and "ledger_path_vanguard__0" not in keys
     picker = app.selectbox(key="ledger_path_fixed__0")
     picker.set_value(picker.options[2]).run()
-    app.session_state["strategy_tabs__0"] = "Vanguard"
+    app.session_state["strategy_pick__0"] = "vanguard"
     app.run()
     assert not app.exception
     assert app.selectbox(key="ledger_path_vanguard__0").value.startswith("Median ending wealth")
-    app.session_state["strategy_tabs__0"] = "Fixed"
+    app.session_state["strategy_pick__0"] = "fixed"
     app.run()
     assert app.selectbox(key="ledger_path_fixed__0").value == picker.options[2]  # each strategy keeps its choice
     assert not any("Session State API" in w.value for w in app.warning)
-    assert any(h.value == "Spending strategies compared" for h in app.header)
+    app.session_state["page"] = "Compare"
+    app.run()
+    assert not app.exception
     assert app.selectbox(key="compare_flow__0").value == "Spending"
     app.selectbox(key="compare_flow__0").set_value("Income tax").run()
     app.toggle(key="compare_p10__0").set_value(True).run()
     assert not app.exception
+    app.session_state["page"] = "Plan"
+    app.run()
     for rule in ("fixed", "guyton_klinger", "vanguard"):
         app.checkbox(key=f"compare_{rule}__0").uncheck().run()
     assert not app.exception and any(e.value == "Tick at least one strategy." for e in app.error)
@@ -623,15 +643,21 @@ def test_strategy_comparison_measures_follow_their_definitions():
         paths = pd.DataFrame({"Path": [0, 1, 2], "Status": ["funded"] * 3, "Starting retirement spending": [50.0] * 3,
                               "Lowest retired-year spending": spending, "Spending shortfall": shortfall,
                               "Years below start": below, "Ending wealth after tax owed": ending})
+        paths["Status"] = ["depleted" if s > 0 else "funded" for s in shortfall]
         annual = pd.DataFrame({"Path": [0, 0, 1, 1, 2, 2], "FY ending": [2030, 2031] * 3,
                                "Full retired year": [False, True] * 3, "Spending paid": [1.0, 10.0, 1.0, 20.0, 1.0, 30.0],
+                               "Shortfall": [0.0, 0.0, 0.0, 0.0, 0.0, shortfall[2]], "Age Pension": [0.0, 5.0, 0.0, 0.0, 0.0, 0.0],
                                "Flow: Spending": [-1.0, -10.0, -1.0, -20.0, -1.0, -30.0]})
         wealth = pd.DataFrame({"Date": pd.to_datetime(["2030-06-30"] * 3), "Path": [0, 1, 2], "Total wealth": [1.0, 2.0, 9.0]})
-        return SimpleNamespace(retirement_paths=paths, retirement_annual=annual, wealth_paths=wealth)
+        return SimpleNamespace(retirement_paths=paths, retirement_annual=annual, wealth_paths=wealth, plan=default_plan())
 
     strategies = {"fixed": run([40.0, 50.0, 60.0], [0.0, 5.0, 9.0], [0.0, 0.0, 3.0], [0, 1, 1]),
                   "percent": run([10.0, 20.0, 30.0], [6.0, 7.0, 8.0], [0.0, 0.0, 0.0], [1, 1, 1])}
     table = comparison_table(strategies).set_index("Measure")
+    # Outcome tiers count each path once (ADR 0048): path 2 ran out under fixed; path 0 drew a part Age Pension.
+    assert table.loc["Paths that ran out", "fixed"] == pytest.approx(1 / 3) and table.loc["Paths that ran out", "percent"] == 0
+    assert table.loc["Paths on a part Age Pension", "fixed"] == pytest.approx(1 / 3)
+    assert table.loc["Average retired-year spending: median", "fixed"] == 20.0
     assert retired_spending(strategies["fixed"]).tolist() == [10.0, 20.0, 30.0]  # full retired years only
     assert table.loc["Spending over full retired years: median", "fixed"] == 20.0
     assert table.loc["Lowest retired year's spending: median", "percent"] == 20.0

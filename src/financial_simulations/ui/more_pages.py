@@ -4,7 +4,7 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from financial_simulations.reporting.palette import INK_SECONDARY, MUTED, PORTFOLIO_COLOURS
+from financial_simulations.reporting.palette import MUTED, PORTFOLIO_COLOURS
 from financial_simulations.retirement.flows import milestones
 from financial_simulations.retirement.strategy_results import (DEFAULT_FLOW, OUTFLOWS, STRATEGY_COLOURS, STRATEGY_NAMES,
                                                                available_flows, comparison_table, wealth_lines,
@@ -12,7 +12,7 @@ from financial_simulations.retirement.strategy_results import (DEFAULT_FLOW, OUT
 from financial_simulations.ui import charts
 from financial_simulations.ui.results import derived
 from financial_simulations.ui.state import compact, fit, percent_column, percentile_table, share, sticky, sticky_choice
-from financial_simulations.ui.theme import MEDIUM, SHORT, card, chart_title, draw, explain, legend, page_title
+from financial_simulations.ui.theme import MEDIUM, card, chart_title, draw, explain, legend, page_title
 
 
 def strategy_scale(rules):
@@ -162,7 +162,7 @@ def markets_page(run):
         draw(charts.zoomable(alt.Chart(history).mark_line(strokeWidth=1.8).encode(
             x=alt.X("Date:T", title=None, axis=charts.year_axis(history)),
             y=alt.Y("Growth of 100:Q", scale=alt.Scale(type="log"), title="Growth of $100 · log scale",
-                    axis=alt.Axis(format="$,.0f")),
+                    axis=charts.log_axis(float(history["Growth of 100"].min()), float(history["Growth of 100"].max()))),
             color=alt.Color("Portfolio:N", scale=alt.Scale(domain=names, range=[PORTFOLIO_COLOURS[n] for n in names])),
             tooltip=[alt.Tooltip("Date:T", format="%b %Y"), "Portfolio:N", alt.Tooltip("Growth of 100:Q", format="$,.0f")]
         ).properties(height=MEDIUM)))
@@ -315,5 +315,3 @@ repeat and join bad stretches, so a path can contain longer or deeper losses tha
         for year, manifest in run.rules_manifest.items():
             st.markdown(f"**{year}**: " + "; ".join(f"`{name}`" for name in manifest["assumptions"]))
 
-
-__all__ = ["compare_page", "markets_page", "method_page", "INK_SECONDARY", "SHORT"]

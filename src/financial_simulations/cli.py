@@ -45,9 +45,14 @@ def main(argv=None) -> int:
         # threads are enough; the default reserves a buffer per CPU thread (about 0.8 GB on a 32-thread machine).
         env = {**os.environ, **{name: os.environ.get(name, "4") for name in
                                 ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS")}}
+        from financial_simulations.reporting.palette import STREAMLIT_THEME
+
+        # The theme goes on the command line so the app looks the same from any working folder.
+        theme = [part for name, value in STREAMLIT_THEME.items()
+                 for part in (f"--theme.{name}", json.dumps(value) if isinstance(value, (list, bool)) else str(value))]
         return subprocess.call([sys.executable, "-m", "streamlit", "run", str(app), "--server.port", str(args.port),
                                 "--server.headless", "true", "--browser.gatherUsageStats", "false",
-                                "--client.toolbarMode", "minimal"], env=env)
+                                "--client.toolbarMode", "minimal", *theme], env=env)
     try:
         if args.command in ("paired", "holdout"):
             from financial_simulations import studies

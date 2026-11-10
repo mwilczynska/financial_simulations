@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from financial_simulations.reporting.palette import AXIS, BLUE, FLOW_COLOURS, INK, MAGENTA, NEUTRAL, TIER_COLOURS, YELLOW
+from financial_simulations.reporting.palette import BLUE, FLOW_COLOURS, INK, MAGENTA, TIER_COLOURS, YELLOW
 from financial_simulations.retirement.outcomes import FULL_RATE_SHARE, TIERS, ending_percentiles, group_spending, tier_shares
 from financial_simulations.retirement.strategy_results import STRATEGY_NAMES
 from financial_simulations.rules.au.superannuation import age_on
@@ -334,18 +334,31 @@ def age_pension_tab(run):
     e.metric("Typical year's Age Pension", compact(float(paid_years.median())) if len(paid_years) else "–",
              help="Median Age Pension in the years it is paid. The full single rate is about "
                   f"{compact(full_now)} a year now.")
-    if len(years):
+    paid = years.loc[years["Age Pension"] > 0]
+    if len(paid):
         with card("apbands"):
-            chart_title("Age Pension paid each year", "Median, middle half and 90% of paths, from Age Pension age; zero "
-                                                      "where the means test paid nothing.")
-            draw(charts.band_chart(charts.quantile_bands(years, "FY ending", "Age Pension"),
-                                   "Age Pension per year, today's dollars", color=YELLOW, x="FY ending:Q", marks=d.marks))
-            explain("The Age Pension rises as your own wealth falls: on paths where markets did badly it pays more, "
+            chart_title("Age Pension paid each year, among the paths receiving it",
+                        "Median, middle half and 90% of the paths paid any Age Pension that year. Dashed line: the full "
+                        "single rate.")
+            bands = charts.quantile_bands(paid, "FY ending", "Age Pension")
+            full = d.full_rate.rename_axis("FY ending").reset_index(name="Full rate")
+            full = full.loc[full["FY ending"].between(bands["FY ending"].min(), bands["FY ending"].max())]
+            full["Period"] = full["FY ending"].map(charts.period_label)
+            line = alt.Chart(full).mark_line(color=INK, strokeDash=[5, 3], strokeWidth=1.5).encode(
+                x="FY ending:Q", y="Full rate:Q",
+                tooltip=[alt.Tooltip("Period:N", title="Year"),
+                         alt.Tooltip("Full rate:Q", title="Full single rate for the year", format="$,.0f")])
+            draw(alt.layer(charts.band_chart(bands, "Age Pension per year, today's dollars", color=YELLOW, x="FY ending:Q"),
+                           line))
+            explain("Only the paths paid some Age Pension in a year are counted in that year's bands; the *Risk over "
+                    "time* tab shows how many that is. The full rate rises in today's dollars because its basic rate "
+                    "is indexed to wages, which are assumed to grow faster than prices; a year can pay slightly more "
+                    "than the line when it has 27 pension paydays. "
+                    "The Age Pension rises as your own wealth falls: on paths where markets did badly it pays more, "
                     "which cushions late retirement. Paths with large balances get none until their assets fall below "
                     "the assets-test cut-off (about \\$746,000 for a homeowner today), and the full rate needs assets "
                     "under about \\$333,000. Rules follow Services Australia's single rates, assets and income tests and "
-                    "deeming; see the methodology for what is approximated. The *Risk over time* tab shows how many "
-                    "paths are on a part or full pension each year.")
+                    "deeming; see the methodology for what is approximated.")
     on_pension = outcomes.loc[received & (outcomes["Status"] != "depleted")]
     if len(on_pension):
         with card("apwho"):
@@ -397,12 +410,13 @@ def flows_tab(run):
     additions = (annual.groupby("FY ending")["Added to outside investments"].median().reset_index(name="AUD")
                  if "Added to outside investments" in annual else pd.DataFrame(columns=["FY ending", "AUD"]))
     additions["Period"] = additions["FY ending"].map(charts.period_label)
-    domain = charts.flow_domain(stats, "Median", (net["P25"], net["P75"], additions["AUD"] if len(additions) else [0.0]))
+    # The net change's middle half is in its tooltip, not drawn: in late years it is several times the bars' height
+    # and would flatten them.
+    domain = charts.flow_domain(stats, "Median", (net["Median"], additions["AUD"] if len(additions) else [0.0]))
     bars = charts.flow_bars(stats, x, "Median", "Median per year, today's dollars", order, domain=domain,
                             tooltip=[alt.Tooltip("Median:Q", format="$,.0f"),
                                      alt.Tooltip("P25:Q", title="25th percentile", format="$,.0f"),
                                      alt.Tooltip("P75:Q", title="75th percentile", format="$,.0f")])
-    spread = alt.Chart(net).mark_errorbar(color=INK, thickness=1.2, ticks=True).encode(x=x, y=alt.Y("P25:Q", title=""), y2="P75:Q")
     line = alt.Chart(net).mark_line(color=INK, strokeWidth=2, point=alt.OverlayMarkDef(color=INK, size=30)).encode(
         x=x, y="Median:Q", tooltip=[alt.Tooltip("Period:N", title="Year"),
                                     *[alt.Tooltip(f"{c}:Q", title="Median wealth at start", format="$,.0f")
@@ -413,20 +427,20 @@ def flows_tab(run):
                                     *[alt.Tooltip(f"{c}:Q", title="Median wealth at end", format="$,.0f")
                                       for c in wealth if c.endswith("end of year")]])
     added = charts.additions_layer(additions, x)
-    layers = [bars, charts.zero_rule(), spread, line] + ([added] if added is not None else [])
+    layers = [bars, charts.zero_rule(), line] + ([added] if added is not None else [])
     with card("typical"):
         chart_title("Money in and out in a typical year",
                     f"The median across all {len(outcomes):,} paths of each flow in each year: money in above zero, money "
                     "out below.")
-        legend([("Net change in wealth, with its middle half", INK, "line"),
+        legend([("Median net change in wealth", INK, "line"),
                 *([("Added to outside investments", charts.ADDED_COLOUR, "line")] if added is not None else [])])
         draw(charts.with_milestones(alt.layer(*layers).properties(height=MEDIUM + 60), d.marks, "Position:Q"))
         explain("Each bar is the median across paths of that flow in that year. **Tax** adds income tax, the 15% "
                 "contributions tax, super fund tax and Division 296 tax; the yearly tables on the Paths page keep each "
                 "one. **Inflation** (grey) is the buying power your wealth lost that year: in today's dollars, wealth "
                 "that only kept pace with prices shows no gain. The black line is the median net change in total "
-                "wealth, with whiskers for the middle half of paths; hover it for the median wealth at the start and "
-                "end of each year. The dashed line is the median amount added to outside investments from your pay "
+                "wealth; hover it for its 25th and 75th percentiles and the median wealth at the start and end of each "
+                "year. The dashed line is the median amount added to outside investments from your pay "
                 "each year, and after retirement from unspent pension payments and other spare cash; it moves money "
                 "from cash into the portfolio, so it is not a bar. Medians do not add up, so the bars do not sum "
                 "exactly to the median net change; investment returns vary most between paths. A single path on the "

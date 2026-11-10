@@ -83,9 +83,10 @@ def state_shares(states: pd.DataFrame) -> pd.DataFrame:
 def path_outcomes(paths: pd.DataFrame, annual: pd.DataFrame, full_rate) -> pd.DataFrame:
     """The calculated paths with their outcome tier, Age Pension reliance and average retired-year spending."""
     calculated = paths.loc[paths["Status"] != "unsupported"].copy()
-    states = yearly_states(calculated, annual, full_rate)
     by_path = lambda series: calculated["Path"].map(series)
-    full_years = states.loc[states["State"] == TIERS[2]].groupby("Path").size()
+    # Counted from the payments themselves, not the yearly states: a path that ran out can also have full-rate years.
+    limit = FULL_RATE_SHARE * annual["FY ending"].map(pd.Series(full_rate, dtype=float))
+    full_years = annual.loc[annual["Age Pension"] >= limit.fillna(np.inf)].groupby("Path").size()
     paid_years = annual.loc[annual["Age Pension"] > 0].groupby("Path").size()
     retired = annual.loc[annual["Full retired year"]].groupby("Path")
     spending, pension = retired["Spending paid"].sum(), retired["Age Pension"].sum()

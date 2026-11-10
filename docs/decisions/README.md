@@ -51,7 +51,9 @@ Decision records preserve why Financial Simulations makes a material modelling o
 | [0043](0043-compared-spending-strategies-in-the-plan.md) | 2026-11-02 | Accepted; implemented and tested | Schema version 3: `spending.compare` lists the strategies to compare, sharing one percentage start; version 2 `rule` files still load |
 | [0044](0044-run-every-strategy-on-shared-paths.md) | 2026-11-02 | Accepted; implemented and tested | Every compared strategy runs on every shared path inside each worker task; per-strategy results and `strategies/<rule>/` output folders |
 | [0045](0045-strategy-comparison-section.md) | 2026-11-02 | Accepted; implemented and tested | Spending strategies compared: statistics led by spending, median wealth over time and yearly flow medians per strategy, with matching PNGs |
-| [0046](0046-one-tab-per-strategy.md) | 2026-11-02 | Accepted; implemented and tested | One tracked results tab per compared strategy, drawn only when open, keeping each tab's choices |
+| [0046](0046-one-tab-per-strategy.md) | 2026-11-02 | Accepted; its tabs superseded by 0047 | One tracked results tab per compared strategy, drawn only when open, keeping each tab's choices |
+| [0047](0047-app-layout-and-one-visual-system.md) | 2026-11-10 | Accepted; implemented and tested | No sidebar: a top bar with pages, plan menu and Run; one page drawn at a time; fewer, smaller charts; one palette for the app and PNGs; taxes drawn as one flow |
+| [0048](0048-outcome-tiers-and-average-retirement-spending.md) | 2026-11-10 | Accepted; implemented and tested | Each path's outcome tier (self-funded, part Age Pension, full Age Pension, ran out), yearly states, and average retired-year spending by path and group |
 
 ## When to write a record
 

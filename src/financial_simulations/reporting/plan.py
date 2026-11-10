@@ -159,7 +159,8 @@ def write_retirement_plots(output: Path, plan, retirement_paths, retirement_band
         flows = fold_taxes(household_flows(daily, inflation=True))
         fig, ax = _figure("Money in and out each year",
                           "Path nearest median ending wealth; today's dollars; years end 30 June; in above zero, out below; "
-                          "line = net change in wealth; Tax = income, contributions, fund and Division 296 tax")
+                          "line = net change in wealth\nTax = income tax, contributions tax, super fund tax and "
+                          "Division 296 tax")
         years = sorted(flows["FY ending"].unique())
         positive, negative = np.zeros(len(years)), np.zeros(len(years))
         for label, color in FLOW_COLOURS.items():
@@ -209,7 +210,7 @@ def write_outcome_plot(output: Path, plan, retirement_paths, retirement_annual):
         fig = Figure(figsize=(11, 8.6 if len(spending) else 5.5), dpi=150, facecolor="#f9f9f7")
         axes = fig.subplots(2 if len(spending) else 1, 1, squeeze=False,
                             gridspec_kw={"height_ratios": [1.15, 1]} if len(spending) else None)[:, 0]
-        fig.subplots_adjust(left=0.19, right=0.97, top=0.86, bottom=0.08, hspace=0.42)
+        fig.subplots_adjust(left=0.27, right=0.97, top=0.86, bottom=0.08, hspace=0.42)
         fig.text(0.06, 0.955, "How the paths fared", fontsize=16, fontweight="bold", color="#19353a")
         fig.text(0.06, 0.915, f"{len(outcomes)} calculated paths, by the worst they reached: "
                  + "; ".join(f"{tier.lower()} {overall[tier]:.0%}" for tier in TIERS), fontsize=9, color="#536369")
@@ -243,8 +244,8 @@ def write_outcome_plot(output: Path, plan, retirement_paths, retirement_annual):
             ax.xaxis.set_major_formatter(FuncFormatter(_money))
             ax.grid(axis="x", alpha=0.22)
             ax.set_axisbelow(True)
-            ax.set_title("Average spending paid per retired year, today's dollars: median path (dot) and 10th to 90th "
-                         "percentile; paths in brackets", fontsize=10, loc="left", color="#19353a")
+            ax.set_title("Average spending paid per retired year, today's dollars: median path and 10th to 90th "
+                         "percentile", fontsize=10, loc="left", color="#19353a")
             ax.set_facecolor("#f9f9f7")
             ax.spines[["top", "right"]].set_visible(False)
         fig.savefig(output / "retirement_outcomes.png")

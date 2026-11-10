@@ -315,15 +315,15 @@ The You tab shows a first-year estimate of where pay goes, using the
 The estimate excludes investment income. Birth dates are entered as year,
 month and day fields.
 
-**Saving plans.** The sidebar holds the plan name, which is also the file
+**Saving plans.** The *Plan* menu in the top bar holds the plan name, which is also the file
 name. **Save** writes `plans/<plan-name>.toml` and shows which file the app is
 working on. After a name change, **Rename** writes the new file and removes
 the old one; **Save** keeps both. **Open** loads a saved plan. Import and
 browser download sit in an expander.
 
 **Inflation.** Results are in today's dollars, the dollars of the plan's
-start date ([ADR 0026](../decisions/0026-results-in-todays-dollars.md)). An
-expander at the top of the Results tab explains the conversion:
+start date ([ADR 0026](../decisions/0026-results-in-todays-dollars.md)). The
+Method page explains the conversion:
 
 - A balance on date `d` is divided by `(1 + CPI) ** ((d - start) / 365.25)`.
 - A flow during a financial year is divided by `(1 + CPI) ** n`, where `n` is
@@ -358,7 +358,80 @@ plain terms: average run length in trading days, the jump probability
 `1 / block_length`, and the trade-off between keeping longer historical
 patterns and mixing eras.
 
-The Results tab has five sections, each chart followed by an explanation.
+### App layout since 10 November 2026
+
+[ADR 0047](../decisions/0047-app-layout-and-one-visual-system.md) replaced the sidebar and the single results page.
+A bar that stays on screen holds the pages, the state of the results, the *Plan* menu and *Run plan*. Only the open
+page is drawn, and a finished run opens Outcomes.
+
+| Page | Contents |
+| --- | --- |
+| Plan | The inputs, in tabs You, Investments, Retirement and Assumptions |
+| Outcomes | The outcome tiers and headline figures, then tabs *Wealth*, *Risk over time*, *Spending*, *Age Pension*, *Money in and out* and *Tables* (old section 4) |
+| Paths | One path's daily ledger or a group of paths, in tabs *Balances*, *Money in and out*, *Year by year* and *Event log* (old section 5) |
+| Compare | The compared strategies' statistics, wealth over time and yearly flows; shown when several strategies ran |
+| Markets | The portfolios, their history and the simulated futures (old sections 1 to 3) |
+| Method | How results are calculated, today's dollars, saved files and rule assumptions |
+
+With several strategies, Outcomes and Paths show one strategy at a time, chosen at the top of the page. The
+calculations behind every figure are unchanged, so the section-by-section description below still defines them;
+where it says "section", read the page in this table. ADR 0047 lists the charts that were removed (their figures
+remain in tables) and two that changed: the four taxes are drawn as one *Tax* flow in money in and out charts
+(`flows.fold_taxes`), and the Age Pension chart shows only the paths paid that year, with the full single rate as a
+line. Colours for the app and the PNG plots come from `reporting/palette.py`.
+
+### Outcome tiers and average retirement spending
+
+[ADR 0048](../decisions/0048-outcome-tiers-and-average-retirement-spending.md); code in `retirement/outcomes.py`.
+
+**Purpose.** Risk of ruin misses paths that never run out but fall far enough to live on the Age Pension. Each
+calculated path is put in one tier, the worst it reached.
+
+| Tier | Definition |
+| --- | --- |
+| Ran out | `Status` is `depleted` |
+| Full Age Pension | Funded, and in at least one financial year `Age Pension >= 0.95 × full rate for that year` |
+| Part Age Pension | Funded, some Age Pension, no full-rate year |
+| Self-funded | Funded, no Age Pension |
+
+**Full rate for a year.** With `m(y)` the projected maximum fortnightly single rate for the financial year ending in
+`y` (basic rate, pension supplement and energy supplement; `rules/au/age_pension.py`, projected by
+`rules/au/projection.py`), and `n` the whole financial years since the opening year:
+
+```
+full(y) = 26 × m(y) / (1 + CPI) ** n
+```
+
+This is the same financial-year step as the ledger's flows in today's dollars (`real.year_deflator`), so it compares
+directly with each path's yearly `Age Pension`. The basic rate is indexed to wages and the supplements to CPI, so
+`full(y)` rises slowly in today's dollars when wage growth is above CPI. The 0.95 factor is an engineering
+judgement, explained in the decision record.
+
+**Yearly states.** Each path has one state per financial year, with the same names. *Ran out* holds from the first
+year with a spending shortfall; a path that is `depleted` with no shortfall (unpaid tax, or tax owed at the horizon
+it cannot settle) is marked in its last year. Otherwise the year's own payment sets full, part or self-funded. The
+app and `retirement_outcomes.png` show the share of paths in each state each year.
+
+**Average retired-year spending.** For one path, the mean of `Spending paid` over its full retired financial years,
+in today's dollars. For a group of paths the app reports the median of those averages and their 10th and 90th
+percentiles. Groups are every path, each tier, and the ending-wealth groups (worst 1%, 5%, 10%, middle 10%, best
+10%, 1%).
+
+**Example** (10 November 2026; the example plan run for 40 years to age 93 with fixed spending starting at 5% of
+wealth at retirement, 100 paths, seed 20261028): 64 paths self-funded, 21 part Age Pension, 5 full Age Pension and 10
+ran out. The median path averaged $66,486 a year in retirement; the medians by tier were $68,684, $63,887, $59,916
+and $61,602.
+
+**Limitations.** The tiers cover only the simulated years: a horizon that ends before age 67 has no Age Pension
+tiers. A path with one full-rate year that later recovers stays in the full Age Pension tier. The full-rate test
+inherits the Age Pension model's scope (single person, no Rent Assistance). With few paths a tier can rest on a
+handful of market sequences.
+
+**Validation.** `tests/test_outcomes.py` (tiers, the 95% boundary, yearly states, groups, the full rate).
+
+### Results: how each figure is defined
+
+The results were first laid out as five sections on one page, each chart followed by an explanation.
 Financial years are written "Jul 2026 – Jun 2027" in tables and tooltips,
 and axes are titled "Year ending 30 June". Dashed vertical lines mark
 retirement, when super becomes accessible and when the pension starts on
