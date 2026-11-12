@@ -7,10 +7,10 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from financial_simulations.reporting.palette import FLOW_COLOURS, INK, MUTED, SERIES
+from financial_simulations.reporting.palette import INK, MUTED, SERIES
 from financial_simulations.retirement.flows import account_flows, fold_taxes, household_flows
 from financial_simulations.retirement.outcomes import TIERS, ending_percentiles
-from financial_simulations.retirement.path_markets import PORTFOLIO, path_markets, real_growth
+from financial_simulations.retirement.path_markets import PORTFOLIO, group_markets, path_markets, real_growth
 from financial_simulations.retirement.plan import slug
 from financial_simulations.retirement.real import real_daily, real_events, year_deflator
 from financial_simulations.retirement.run_plan import ledger_for_path
@@ -19,7 +19,7 @@ from financial_simulations.ui import charts
 from financial_simulations.ui.results import derived, header, kept_tabs
 from financial_simulations.ui.state import (affected, compact, fit, key, money_column, ordinal, percent_column, plural,
                                             result_key, share, sticky, sticky_choice)
-from financial_simulations.ui.theme import MEDIUM, SHORT, card, chart_title, draw, explain, legend
+from financial_simulations.ui.theme import SHORT, card, chart_title, draw, explain
 
 
 def selected_ledger(run, path):
@@ -89,54 +89,12 @@ def group_view(run, d, members, label):
              help="Share of the group's paths paid any Age Pension, then the median total received among them.")
     e.metric("Reached the full Age Pension", share(float((group["Full Age Pension years"] > 0).mean())),
              help="Share of the group's paths with at least one year paid the full rate.")
-    tabs = kept_tabs(result_key(run, "group_tabs"), ["Balances", "Money in and out", "Year by year"])
-    annual = d.annual.loc[d.annual["Path"].isin(members)]
+    tabs = kept_tabs(result_key(run, "group_tabs"), ["Markets, wealth and money", "Year by year"])
     if tabs[0].open:
         with tabs[0]:
-            series = run.path_series.loc[run.path_series["Path"].isin(members)] if run.path_series is not None else None
-            if series is not None and not series.empty:
-                series = series.assign(Accumulation=series["Super and pension"] - series["Pension account"])
-                middle = series.groupby("Date")[["Outside super", "Accumulation", "Pension account"]].median()
-                frame = pd.DataFrame({"cash": 0.0, "outside_investments": middle["Outside super"],
-                                      "accumulation": middle["Accumulation"], "pension": middle["Pension account"]},
-                                     index=pd.DatetimeIndex(middle.index, name="Date"))
-                with card("groupbalances"):
-                    chart_title("Balances by account", "Median month-end balance across the group's paths; outside "
-                                                       "super combines cash and investments.")
-                    draw(charts.with_milestones(charts.balances_chart(frame), d.marks))
-                    explain("Each account's median is taken on its own, so the stacked total need not equal any one "
-                            "path's wealth. Medians are used because one extreme path can pull an average a long way, "
-                            "especially in the open-ended best and worst groups.")
-    flows = [c for c in annual.columns if c.startswith("Flow: ")]
-    if tabs[1].open and flows:
+            group_story(run, d, members, label)
+    if tabs[1].open:
         with tabs[1]:
-            yearly = annual.groupby("FY ending")[flows + ["Net change in wealth", "Added to outside investments"]].mean().reset_index()
-            long = yearly.melt("FY ending", value_vars=flows, var_name="Flow", value_name="AUD")
-            long["Flow"] = long["Flow"].str.replace("Flow: ", "", regex=False)
-            long = long.groupby("Flow").filter(lambda g: g["AUD"].abs().max() > 1e-6)
-            long["Period"] = long["FY ending"].map(charts.period_label)
-            yearly["Period"] = yearly["FY ending"].map(charts.period_label)
-            order = [f for f in FLOW_COLOURS if f in set(long["Flow"])]
-            x = alt.X("FY ending:Q", axis=charts.fy_axis(yearly), scale=charts.fy_scale(yearly))
-            domain = charts.flow_domain(long, "AUD", (yearly["Net change in wealth"], yearly["Added to outside investments"]))
-            bars = charts.flow_bars(long, x, "AUD", "Average per year, today's dollars", order, domain=domain,
-                                    tooltip=[alt.Tooltip("AUD:Q", title="Average", format="$,.0f")])
-            line = alt.Chart(yearly).mark_line(color=INK, strokeWidth=2, point=alt.OverlayMarkDef(color=INK, size=30)).encode(
-                x=x, y="Net change in wealth:Q",
-                tooltip=[alt.Tooltip("Period:N", title="Year"),
-                         alt.Tooltip("Net change in wealth:Q", title="Average net change", format="$,.0f")])
-            added = charts.additions_layer(yearly.rename(columns={"Added to outside investments": "AUD"}), x)
-            layers = [bars, charts.zero_rule(), line] + ([added] if added is not None else [])
-            with card("groupflows"):
-                chart_title("Money in and out, averaged across the group", "Money in above zero, money out below.")
-                legend([("Average net change in wealth", INK, "line"),
-                        *([("Added to outside investments", charts.ADDED_COLOUR, "line")] if added is not None else [])])
-                draw(charts.with_milestones(alt.layer(*layers).properties(height=MEDIUM + 60), d.marks, "Position:Q"))
-                explain("Each bar is the **average** of that flow across the group's paths in that year, unlike the "
-                        "medians elsewhere in this group: averages add up, so the bars sum to the average net change "
-                        "in wealth (black line). Tax adds income, contributions, fund and Division 296 tax.")
-    if tabs[2].open:
-        with tabs[2]:
             raw = run.retirement_annual.loc[run.retirement_annual["Path"].isin(members)]
             table = raw.groupby("FY ending")[[c for c in ("Wealth at 1 July", "Spending paid", "Tax paid", "Age Pension",
                                                           "Pension payments", "Withdrawal rate") if c in raw]].median().reset_index()
@@ -158,6 +116,74 @@ def group_view(run, d, members, label):
             st.caption("Medians across the group's paths for each year, today's dollars, each column taken on its own. "
                        "The two share columns count the group's paths with unpaid spending, and paid any Age Pension, "
                        "that year.")
+
+
+def story_colours(run, stats):
+    """Each market series' kind and colour: the portfolios dark, each ticker its colour from the Markets page."""
+    kinds = dict(zip(stats["Series"], stats["Kind"]))
+    tickers = charts.ticker_colours(run.plan["assets"])
+    portfolio_colours = iter((INK, MUTED))
+    return kinds, {name: next(portfolio_colours) if kind == PORTFOLIO else tickers[name] for name, kind in kinds.items()}
+
+
+@st.fragment
+def group_story(run, d, members, label):
+    """Markets, balances and money in and out for a group of paths, stacked on one date axis.
+
+    Medians for the markets and the balances, averages for the flows, which must add up (ADR 0040).
+    """
+    cpi = run.plan["assumptions"]["cpi_annual"]
+    cache = st.session_state.setdefault("group_markets_cache", {})
+    if (id(run), label) not in cache:
+        if len(cache) > 12:
+            cache.clear()
+        with st.spinner(f"Compounding the markets of {plural(len(members), 'path')} day by day..."):
+            cache[(id(run), label)] = group_markets(run.plan, run.market, run.portfolios, members)
+    growth, stats = cache[(id(run), label)]
+    series = run.path_series.loc[run.path_series["Path"].isin(members)] if run.path_series is not None else None
+    annual = d.annual.loc[d.annual["Path"].isin(members)]
+    flows = [c for c in annual.columns if c.startswith("Flow: ")]
+    if series is None or series.empty or not flows:
+        st.caption("This run has no month-end balances or yearly flows to draw.")
+        return
+    series = series.assign(Accumulation=series["Super and pension"] - series["Pension account"])
+    middle = series.groupby("Date")[["Outside super", "Accumulation", "Pension account"]].median()
+    balances = pd.DataFrame({"cash": 0.0, "outside_investments": middle["Outside super"],
+                             "accumulation": middle["Accumulation"], "pension": middle["Pension account"]},
+                            index=pd.DatetimeIndex(middle.index, name="Date"))
+    balances["total"] = balances.sum(axis=1)
+    yearly = annual.groupby("FY ending")[flows + ["Net change in wealth", "Added to outside investments"]].mean().reset_index()
+    household = yearly.melt("FY ending", value_vars=flows, var_name="Flow", value_name="AUD")
+    household["Flow"] = household["Flow"].str.replace("Flow: ", "", regex=False)
+    household["Net change"] = household["FY ending"].map(yearly.set_index("FY ending")["Net change in wealth"])
+    additions = yearly[["FY ending", "Added to outside investments"]].rename(columns={"Added to outside investments": "AUD"})
+    kinds, colours = story_colours(run, stats)
+    _, items = charts.flow_items(household, additions)
+    with card("groupstory"):
+        chart_title("Markets, wealth and money across the group",
+                    "The same three views as a single path, summarised over the group's paths: median markets, median "
+                    "balances and average flows.")
+        market_table(stats, "Median across the group")
+        with st.container(horizontal=True, vertical_alignment="center"):
+            states = {"markets": legend_controls("path_markets", list(growth.columns), "Markets"),
+                      "flows": legend_controls("path_flows", items, "Money in and out")}
+        st.caption("Click a legend item to hide or show it; the axis refits. Drag any panel sideways to pan all three, "
+                   "Shift+scroll to zoom, double-click to reset.")
+        with st.container(key="pathstorychart"):
+            draw(*charts.path_story(real_growth(growth, cpi), kinds, colours, balances, household, additions, d.marks,
+                                    states, group=True))
+        explain("**Markets (top).** For each portfolio and ticker, the median across the group's paths of what $1 "
+                "invested on the first day is worth at each month end, in today's dollars, on a log scale. The table "
+                "gives the median of each path's own growth per year, volatility and worst drawdown. Each line's "
+                "median is taken on its own, so the lines need not come from one path: a group of bad outcomes "
+                "shows what markets typically did on those paths.\n\n"
+                "**Wealth (middle).** The median month-end balance of each account across the group's paths; outside "
+                "investments include cash. Each account's median is taken on its own, so the stacked total need not "
+                "equal any one path's wealth. Medians are used because one extreme path can pull an average a long "
+                "way, especially in the open-ended best and worst groups.\n\n"
+                "**Money in and out (bottom).** Each bar is the **average** of that flow across the group's paths in "
+                "that financial year, unlike the medians above: averages add up, so the bars sum to the average net "
+                "change in wealth (black line). Tax adds income, contributions, fund and Division 296 tax.")
 
 
 def legend_controls(name, names, label=None):
@@ -202,8 +228,8 @@ def selected_markets(run, path):
     return cache[(id(run), path)]
 
 
-def market_table(stats):
-    """Each series' growth and risk on this path, portfolios first."""
+def market_table(stats, heading="On this path"):
+    """Each series' growth and risk, portfolios first."""
     table = stats.drop(columns="Kind").copy()
     weights = [c for c in table.columns if c.endswith(" weight")]
     if (stats["Kind"] == PORTFOLIO).sum() == 1:  # one portfolio in both places: one weight column
@@ -214,7 +240,7 @@ def market_table(stats):
     for column in weights:  # text, so a portfolio's row is blank rather than "None"
         table[column] = table[column].map(lambda w: "" if pd.isna(w) else f"{w:.0%}")
     st.dataframe(table, width="stretch", hide_index=True, height=fit(table, 8),
-                 column_config={"Series": st.column_config.TextColumn("On this path", pinned=True),
+                 column_config={"Series": st.column_config.TextColumn(heading, pinned=True),
                                 "CAGR": st.column_config.NumberColumn(
                                     "Growth per year (CAGR)", format="%.1f%%",
                                     help="Compound annual growth of $1 over the whole path, before inflation."),
@@ -239,10 +265,7 @@ def path_story(run, d, path, result, daily):
     cpi = run.plan["assumptions"]["cpi_annual"]
     growth, stats = selected_markets(run, path)
     household, _, additions = path_flow_frames(run, result, daily)
-    kinds = dict(zip(stats["Series"], stats["Kind"]))
-    tickers = charts.ticker_colours(run.plan["assets"])
-    portfolio_colours = iter((INK, MUTED))
-    colours = {name: next(portfolio_colours) if kind == PORTFOLIO else tickers[name] for name, kind in kinds.items()}
+    kinds, colours = story_colours(run, stats)
     _, items = charts.flow_items(household, additions)
     with card("pathstory"):
         chart_title("Markets, wealth and money on this path",

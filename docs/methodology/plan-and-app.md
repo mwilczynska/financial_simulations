@@ -368,7 +368,7 @@ page is drawn, and a finished run opens Outcomes.
 | --- | --- |
 | Plan | The inputs, in tabs You, Investments, Retirement and Assumptions |
 | Outcomes | The outcome tiers and headline figures, then tabs *Wealth*, *Risk over time*, *Spending*, *Age Pension*, *Money in and out* and *Tables* (old section 4) |
-| Paths | One path's daily ledger, in tabs *Markets, wealth and money*, *Transfers between accounts*, *Year by year* and *Event log*; or a group of paths, in tabs *Balances*, *Money in and out* and *Year by year* (old section 5) |
+| Paths | One path's daily ledger, in tabs *Markets, wealth and money*, *Transfers between accounts*, *Year by year* and *Event log*; or a group of paths, in tabs *Markets, wealth and money* and *Year by year* (old section 5) |
 | Compare | The compared strategies' statistics, wealth over time and yearly flows; shown when several strategies ran |
 | Markets | The portfolios, their history and the simulated futures (old sections 1 to 3) |
 | Method | How results are calculated, today's dollars, saved files and rule assumptions |
@@ -472,6 +472,12 @@ plotted dates and inset, with the net-change line at its midpoint. A hairline ma
 pointer in every panel; the markets and wealth tooltips give that month's values and the flows tooltip that
 financial year's. `retirement_markets.png` draws the same lines and statistics for the path nearest median ending
 wealth.
+
+**A group of paths.** With `g_p[t]` the growth of one series on path `p` of the group, the line drawn is
+`median over p of g_p[m]` at the opening mark and each month end `m`, and each statistic is the median over `p` of
+that path's statistic (`group_markets`). The balances are each account's median month-end balance and the flows
+each flow's average across the group's paths, so the bars sum to the average net change. Each median is taken on
+its own, so the lines and balances need not belong to one path.
 
 **Example** (12 November 2026; the example plan run for 40 years with fixed spending, path 37): outside super
 portfolio CAGR 13.4%, 10.6% after inflation, volatility 23.0%, worst drawdown 69.1%, $1 grew to $55.97 in today's

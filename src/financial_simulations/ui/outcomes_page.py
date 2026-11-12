@@ -197,7 +197,7 @@ def risk_tab(run):
         chart_title("Where the paths stand each year",
                     "The share of paths in each state in each financial year. The coloured area is the trouble: it "
                     "grows as paths fall onto the Age Pension or run short.")
-        legend([(tier, TIER_COLOURS[tier]) for tier in reversed(TIERS)])
+        st.caption("Click a legend item to hide or show that state; the axis refits.")
         draw(charts.states_chart(d.shares, d.marks))
         explain(f"Each path is in one state each financial year. **Ran out** holds from the first year with unpaid "
                 f"spending onward, even if the path later recovers (for example once super becomes accessible). **Full "

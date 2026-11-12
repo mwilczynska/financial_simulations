@@ -43,6 +43,10 @@ CSS = f"""
   /* Room for the y axis of a stacked chart, whose panels are each given the container's full width. */
   .st-key-pathstorychart {{ padding-right: 104px; }}
 
+  /* A tab's content is drawn only once it is open, so for a moment after a click its panel is empty. Without a
+     minimum height the page would shorten and the browser would scroll up; with it the page stays where it was. */
+  [data-testid="stTabPanel"] {{ min-height: 100vh; }}
+
   h1, h2, h3 {{ letter-spacing: -0.015em; }}
   .page-title {{ margin: 0.35rem 0 0.9rem; }}
   .page-title h1 {{ font-size: 1.6rem; font-weight: 650; margin: 0; padding: 0; color: {INK}; }}

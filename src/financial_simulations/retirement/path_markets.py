@@ -8,7 +8,7 @@ statistics here equal that path's row in ``PortfolioAnalysis.outcomes``.
 import numpy as np
 import pandas as pd
 
-from financial_simulations.retirement.analysis import PORTFOLIOS
+from financial_simulations.retirement.analysis import PORTFOLIOS, _month_ends, _simulate
 from financial_simulations.retirement.real import stock_deflator
 
 
@@ -34,6 +34,51 @@ def compound(returns: np.ndarray, dates, weights: np.ndarray, rebalance: bool) -
     return values
 
 
+def _portfolios(plan: dict, tickers) -> tuple[dict, dict]:
+    """The entered portfolios as ``(weights, rebalance)`` by title, and the series drawn for them (one if alike)."""
+    entered = {title: (np.array([plan[section]["weights"].get(t, 0.0) for t in tickers]),
+                       plan[section]["rebalance"] == "annual") for title, section in PORTFOLIOS}
+    (first, a), (second, b) = entered.items()
+    if np.allclose(a[0], b[0]) and a[1] == b[1]:
+        return entered, {ONE_PORTFOLIO: a}
+    return entered, {f"{first} portfolio": a, f"{second} portfolio": b}
+
+
+def group_markets(plan: dict, market, portfolios, members) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """A group of paths' markets: the median growth of $1 at each month end, and median statistics, per series.
+
+    The same series, columns and definitions as ``path_markets``. Each path's series is compounded daily by the
+    portfolio analysis's own routine (a ticker is a one-ticker portfolio that is never rebalanced); the growth
+    frame holds the median across the group's paths at the opening mark and each month end, nominal, and each
+    statistic is the median of the paths' own statistics. Each series' median is taken on its own, so the lines
+    need not belong to one path.
+    """
+    dates = tuple(portfolios.dates)
+    tickers = tuple(market.path.assets)
+    entered, shown = _portfolios(plan, tickers)
+    accounts = dict(shown)
+    for column, ticker in enumerate(tickers):
+        accounts[ticker] = (np.eye(len(tickers))[column], False)
+    marks = _month_ends(dates)
+    series = _simulate(market.path.returns, portfolios.indices[np.asarray(list(members), dtype=int)], dates, accounts, {}, marks)
+    months = pd.DatetimeIndex([dates[position] for position in marks], name="Date")
+    growth = pd.DataFrame({name: np.median(s.snapshots, axis=0) / 100 for name, s in series.items()}, index=months)
+    years = (months[-1] - months[0]).days / 365.25
+    prices = float(stock_deflator([months[-1]], months[0], plan["assumptions"]["cpi_annual"])[0])
+    rows = []
+    for name, s in series.items():
+        end = s.terminal / 100
+        row = {"Series": name, "Kind": PORTFOLIO if name in shown else ASSET,
+               "CAGR": float(np.median(end ** (1 / years) - 1)),
+               "CAGR after inflation": float(np.median((end / prices) ** (1 / years) - 1)),
+               "Volatility": float(np.median(s.volatility)), "Worst drawdown": float(np.median(s.max_drawdown)),
+               "Growth of $1 after inflation": float(np.median(end / prices))}
+        for title, (weights, _) in entered.items():
+            row[f"{title} weight"] = float(weights[tickers.index(name)]) if name in tickers else np.nan
+        rows.append(row)
+    return growth, pd.DataFrame(rows)
+
+
 def path_markets(plan: dict, market, portfolios, path: int) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Growth of $1 on every observation date, and one row of statistics per series, for one path.
 
@@ -46,13 +91,7 @@ def path_markets(plan: dict, market, portfolios, path: int) -> tuple[pd.DataFram
     returns = portfolios.returns_for(market, path)
     dates = tuple(portfolios.dates)
     tickers = tuple(market.path.assets)
-    entered = {title: (np.array([plan[section]["weights"].get(t, 0.0) for t in tickers]),
-                       plan[section]["rebalance"] == "annual") for title, section in PORTFOLIOS}
-    (first, a), (second, b) = entered.items()
-    if np.allclose(a[0], b[0]) and a[1] == b[1]:
-        shown = {ONE_PORTFOLIO: a}
-    else:
-        shown = {f"{first} portfolio": a, f"{second} portfolio": b}
+    entered, shown = _portfolios(plan, tickers)
     growth = pd.DataFrame({name: compound(returns, dates, weights, rebalance) for name, (weights, rebalance) in shown.items()},
                           index=pd.DatetimeIndex(dates, name="Date"))
     for column, ticker in enumerate(tickers):

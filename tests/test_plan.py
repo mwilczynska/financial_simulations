@@ -201,11 +201,12 @@ def test_browser_app_runs_with_tickers_and_interactive_results(tmp_path, monkeyp
     assert picker.options.index(everyone) == 1  # straight after the median path
     picker.set_value(everyone).run()
     assert not app.exception and any(h.value.startswith("All paths (") for h in app.subheader)
-    assert [t.label for t in app.tabs] == ["Balances", "Money in and out", "Year by year"]
-    for tab in ("Money in and out", "Year by year"):
-        app.session_state["group_tabs__0"] = tab
-        app.run()
-        assert not app.exception, tab
+    # A group has the same stacked view, from medians and averages across its paths.
+    assert [t.label for t in app.tabs] == ["Markets, wealth and money", "Year by year"]
+    assert len(app.get("vega_lite_chart")) == 1 and "CAGR" in app.dataframe[0].value
+    app.session_state["group_tabs__0"] = "Year by year"
+    app.run()
+    assert not app.exception
 
 
 def test_35_year_path_and_plots_keep_yearly_summary_compact(tmp_path, processed_fixture):

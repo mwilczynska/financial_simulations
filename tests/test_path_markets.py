@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from financial_simulations.retirement.path_markets import ONE_PORTFOLIO, compound, path_markets, real_growth
+from financial_simulations.retirement.path_markets import ONE_PORTFOLIO, compound, group_markets, path_markets, real_growth
 from financial_simulations.retirement.plan import build_inputs, future_observations, normalize_plan
 from financial_simulations.retirement.analysis import analyse_portfolios
 from financial_simulations.data.plan_markets import load_plan_markets
@@ -48,6 +48,27 @@ def test_path_markets_matches_the_portfolio_analysis_for_the_same_path(monkeypat
     real = real_growth(growth, cpi)
     assert real[names[0]].iloc[-1] == pytest.approx(by_series.loc[names[0], "Growth of $1 after inflation"])
     assert (by_series["CAGR"] > by_series["CAGR after inflation"]).all() == (cpi > 0)
+
+
+def test_group_markets_of_one_path_is_that_path_and_medians_are_per_series(monkeypatch, processed_fixture):
+    monkeypatch.setenv("FINANCIAL_DATASETS_PROCESSED", str(processed_fixture))
+    plan = normalize_plan(quick_plan())
+    market = load_plan_markets(plan["assets"])
+    portfolios = analyse_portfolios(plan, market, future_observations(plan, market))
+    growth, stats = path_markets(plan, market, portfolios, 3)
+    months, alone = group_markets(plan, market, portfolios, [3])
+    # A group of one path: the same statistics, and the path's own growth at the opening mark and each month end.
+    assert list(alone["Series"]) == list(stats["Series"])
+    for column in ("CAGR", "CAGR after inflation", "Volatility", "Worst drawdown", "Growth of $1 after inflation"):
+        assert alone[column].to_numpy() == pytest.approx(stats[column].to_numpy())
+    assert months.index[0] == growth.index[0] and months.index[-1] == growth.index[-1]
+    assert months.to_numpy() == pytest.approx(growth.loc[months.index].to_numpy())
+    # Several paths: each statistic is the median of the paths' own statistics.
+    members = [0, 3, 5]
+    _, group = group_markets(plan, market, portfolios, members)
+    each = [path_markets(plan, market, portfolios, p)[1] for p in members]
+    for column in ("CAGR", "Volatility", "Worst drawdown"):
+        assert group[column].to_numpy() == pytest.approx(np.median([s[column].to_numpy() for s in each], axis=0))
 
 
 def test_identical_portfolios_are_one_series(monkeypatch, processed_fixture):

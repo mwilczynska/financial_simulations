@@ -61,6 +61,24 @@ they are one line, *Your portfolio*.
 | Worst drawdown | The deepest fall below a previous high |
 | $1 grew to | The ending value of $1 in today's dollars |
 
+**Groups of paths** (added later on 12 November 2026, after the user picked a group and found the old tabs). A
+group opens on the same view, summarised over its paths: the median across the group's paths of each series'
+growth of $1 at each month end, the median month-end balance of each account, and the average of each yearly flow
+(averages, because the flows must add up, [ADR 0040](0040-medians-and-mostly-zero-measures.md)). The table gives the
+median of each path's own statistics. Each series' median is taken on its own, so the lines need not belong to one
+path. `group_markets` compounds every path with the portfolio analysis's routine, treating a ticker as a
+one-ticker portfolio that is never rebalanced. The group's tabs are *Markets, wealth and money* and *Year by
+year*.
+
+**Legends that hide and show** (same day, user request: "click on/off various groups in figures"). Every chart
+with a legend now toggles its items on a click: accounts in the balances panel, the states in *Where the paths
+stand each year* (whose axis now refits, so hiding *Self-funded* closes in on the trouble), flows in the Outcomes
+money chart, portfolios on the Markets page and strategies on the Compare page.
+
+**Tabs keep the page still** (same day, user request). A tab's content is drawn only once it is open, so the panel
+was empty for a moment after a click, the page shortened and the browser scrolled up. Tab panels now have a
+minimum height of one window.
+
 **PNG.** `retirement_markets.png` per strategy draws the same lines for the path nearest median ending wealth,
 with each series' CAGR, volatility and worst drawdown in the legend. `ledger.png` and `retirement_flows.png`
 already cover that path's balances and flows.
@@ -103,8 +121,10 @@ already cover that path's balances and flows.
   `ui/theme.py` (`draw`, `with_views`); `reporting/plan.py` (`write_path_markets_plot`); `retirement/run_plan.py`.
 - **Methodology:** [plan-and-app.md](../methodology/plan-and-app.md).
 - **Tests:** `tests/test_path_markets.py` checks rebalancing on the first observation of a calendar year, agreement
-  with the portfolio analysis for the same path, each ticker's compounding and that identical portfolios are one
-  series; `tests/test_plan.py::test_browser_app_runs_with_tickers_and_interactive_results` opens the view and its
+  with the portfolio analysis for the same path, each ticker's compounding, that identical portfolios are one
+  series, that a group of one path reproduces that path, and that a group's statistics are medians of its paths'; `tests/test_plan.py::test_browser_app_runs_with_tickers_and_interactive_results` opens the view and its
   other tabs and checks the PNG is written.
 - **Browser check** on 12 November 2026: the three panels line up, the hairline and its tooltips follow the
-  pointer through all three, and legend clicks in one panel leave the other's hidden items alone.
+  pointer through all three, and legend clicks in one panel leave the other's hidden items alone. Later the same
+  day: a group shows the three panels; legend clicks hide items in the states, Outcomes flows, Markets and Compare
+  charts; and the scroll position held at 700 pixels through three tab changes on the Outcomes page.

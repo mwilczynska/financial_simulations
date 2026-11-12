@@ -187,7 +187,7 @@ def balances_chart(daily, height=MEDIUM, x=None, zoom=True, **axis):
     long["Total"] = long.groupby("Date")["balance"].transform("sum")
     long["Share"] = long["balance"] / long["Total"].where(long["Total"] > 0)
     long = add_age(long)
-    return (zoomable if zoom else lambda chart: chart)(alt.Chart(long).mark_area(stroke=SURFACE, strokeWidth=1).encode(
+    chart, _ = toggle(alt.Chart(long).mark_area(stroke=SURFACE, strokeWidth=1).encode(
         x=x if x is not None else alt.X("Date:T", title=None, axis=year_axis(long)),
         y=alt.Y("balance:Q", stack="zero", title="Today's dollars", axis=money_axis(**axis)),
         color=alt.Color("Account:N", sort=labels, scale=alt.Scale(domain=labels, range=[v[1] for v in ACCOUNT_COLOURS.values()])),
@@ -196,7 +196,8 @@ def balances_chart(daily, height=MEDIUM, x=None, zoom=True, **axis):
                  alt.Tooltip("balance:Q", title="Balance", format="$,.0f"),
                  alt.Tooltip("Share:Q", title="Share of wealth", format=".0%"),
                  alt.Tooltip("Total:Q", title="Total wealth", format="$,.0f")],
-    ).properties(height=height))
+    ).properties(height=height), "Account", labels, "accounts")
+    return zoomable(chart) if zoom else chart
 
 
 def shown_paths(paths):
@@ -373,16 +374,18 @@ def states_chart(shares, marks, height=MEDIUM):
     """The share of paths in each outcome state in each financial year, as stacked areas with the worst at the bottom."""
     frame = add_age(shares, "FY ending")
     frame = frame.assign(Period=frame["FY ending"].map(period_label), order=frame["State"].map(list(reversed(TIERS)).index))
-    chart = alt.Chart(frame).mark_area(stroke=SURFACE, strokeWidth=1).encode(
+    # No fixed y domain: with every state shown the stack reaches 100%, and hiding Self-funded in the legend lets
+    # the axis close in on the states that need attention.
+    chart, _ = toggle(alt.Chart(frame).mark_area(stroke=SURFACE, strokeWidth=1).encode(
         x=alt.X("FY ending:Q", axis=fy_axis(frame), scale=fy_scale(frame, pad=0)),
-        y=alt.Y("Share:Q", stack="zero", title="Share of paths", axis=alt.Axis(format=".0%"), scale=alt.Scale(domain=[0, 1])),
-        color=alt.Color("State:N", sort=list(TIERS), legend=None,
-                        scale=alt.Scale(domain=list(TIERS), range=[TIER_COLOURS[t] for t in TIERS])),
+        y=alt.Y("Share:Q", stack="zero", title="Share of paths", axis=alt.Axis(format=".0%"), scale=alt.Scale(nice=False)),
+        color=alt.Color("State:N", sort=list(reversed(TIERS)), legend=alt.Legend(symbolType="square"),
+                        scale=alt.Scale(domain=list(reversed(TIERS)), range=[TIER_COLOURS[t] for t in reversed(TIERS)])),
         order=alt.Order("order:Q"),
         # Self-funded is the quiet background; the three states that need attention keep their full colour.
         opacity=alt.condition(alt.datum.State == TIERS[0], alt.value(0.4), alt.value(1)),
         tooltip=[alt.Tooltip("Period:N", title="Year"), "State:N", alt.Tooltip("Share:Q", title="Share of paths", format=".1%"),
-                 alt.Tooltip("Paths:Q", format=",d")]).properties(height=height)
+                 alt.Tooltip("Paths:Q", format=",d")]).properties(height=height), "State", list(reversed(TIERS)), "states")
     inside = marks.loc[marks["Position"].between(frame["FY ending"].min(), frame["FY ending"].max())] if len(marks) else marks
     return with_milestones(chart, inside, "Position:Q")
 
@@ -460,13 +463,21 @@ def hideable(chart, field, names, state, key):
     return chart.add_params(visible).transform_filter(visible), visible
 
 
+def toggle(chart, field, names, key):
+    """Legend clicks hide and show a chart's items, with every item shown to start (see ``hideable``)."""
+    return hideable(chart, field, names, {"hidden": [], "count": 0}, key)
+
+
 def flow_bars(frame, x, value, title, items, *, domain=None, tooltip=(), size=14):
-    """Stacked money in (above zero) and out (below) bars by flow, in the fixed flow order and colours."""
+    """Stacked money in (above zero) and out (below) bars by flow, in the fixed flow order and colours.
+
+    Legend clicks hide and show a flow.
+    """
     scale = alt.Scale(domain=domain, nice=False) if domain else alt.Undefined
-    return alt.Chart(frame).mark_bar(size=size, stroke=SURFACE, strokeWidth=0.6).encode(
+    return toggle(alt.Chart(frame).mark_bar(size=size, stroke=SURFACE, strokeWidth=0.6).encode(
         x=x, y=alt.Y(f"{value}:Q", stack=True, title=title, axis=money_axis(), scale=scale),
         color=flow_colour(items), order=alt.Order("Flow:N"),
-        tooltip=[alt.Tooltip("Period:N", title="Year"), "Flow:N", *tooltip])
+        tooltip=[alt.Tooltip("Period:N", title="Year"), "Flow:N", *tooltip]), "Flow", items, "flows")[0]
 
 
 def cursor_layers(frame, x, cursor, tooltip):
@@ -494,14 +505,15 @@ def fy_span(end_year, first, last, inset=0.16):
     return start + pad, end - pad, start + (end - start) / 2
 
 
-def path_story(growth, kinds, colours, daily, household, additions, marks, states, heights=(300, 250, 330)):
+def path_story(growth, kinds, colours, daily, household, additions, marks, states, heights=(300, 250, 330), group=False):
     """One path in three panels on one date axis: markets, balances by account, and money in and out.
 
     ``growth`` is the path's growth of $1 in today's dollars by series (``kinds`` names each a portfolio or a
     ticker); ``daily`` the ledger in today's dollars; ``household`` the yearly flows with taxes folded;
     ``additions`` the yearly amounts added to outside investments. ``states`` holds the legend state of the markets
     and flows panels. The panels share the x scale, so a drag or Shift+scroll moves all three, and one hairline
-    follows the pointer through all three.
+    follows the pointer through all three. With ``group`` the frames summarise a group of paths (median growth
+    and balances at month ends, average flows) and the axis titles say so.
 
     Returns the chart and, by selection name, the name prefixes of the views each selection belongs to. Altair
     lists every selection of a layered panel against every layer that has one, which defines some twice
@@ -531,12 +543,15 @@ def path_story(growth, kinds, colours, daily, household, additions, marks, state
     weekly = weekly.loc[~weekly.index.duplicated()].rename_axis("Date").reset_index()
     long = weekly.melt("Date", var_name="Series", value_name="Growth")
     long["Kind"] = long["Series"].map(kinds)
-    # A log axis draws a grid line at every 1-9 multiple; only the 1, 2 and 5 multiples are labelled.
-    money = ("indexof([1, 2, 5], round(datum.value / pow(10, floor(log(datum.value) / LN10 + 1e-9)))) < 0 ? '' : "
+    # A log axis draws a grid line at every tick; only exact 1, 2, 3 and 5 multiples of a power of ten are labelled
+    # (a short range has ticks such as 1.2 and 1.4, which would otherwise all read "$1").
+    mantissa = "(datum.value / pow(10, floor(log(datum.value) / LN10 + 1e-9)))"
+    money = (f"abs({mantissa} - round({mantissa})) > 1e-6 || indexof([1, 2, 3, 5], round({mantissa})) < 0 ? '' : "
              "'$' + (datum.value < 1 ? format(datum.value, '~g') : format(datum.value, ',.0f'))")
     lines, visible = hideable(alt.Chart(long).mark_line(clip=True).encode(
         x=x(), y=alt.Y("Growth:Q", scale=alt.Scale(type="log", nice=False, padding=10),
-                       title="Growth of $1, today's dollars · log scale", axis=alt.Axis(labelExpr=money, minExtent=wide)),
+                       title=("Median growth" if group else "Growth") + " of $1, today's dollars · log scale",
+                       axis=alt.Axis(labelExpr=money, minExtent=wide)),
         color=alt.Color("Series:N", sort=names, scale=alt.Scale(domain=names, range=[colours[n] for n in names]),
                         legend=alt.Legend(symbolType="stroke", symbolStrokeWidth=3, symbolSize=260, columns=8)),
         size=alt.Size("Kind:N", legend=None, scale=alt.Scale(domain=sorted(set(kinds.values())),
@@ -577,7 +592,8 @@ def path_story(growth, kinds, colours, daily, household, additions, marks, state
     additions = placed(additions).assign(Flow=ADDED_LABEL)
     colour = flow_colour(items)
     bars, showing = hideable(alt.Chart(shown).mark_bar(stroke=SURFACE, strokeWidth=0.6, clip=True).encode(
-        x=x("Start"), x2="End:T", y=alt.Y("sum(AUD):Q", title="Per year, today's dollars", axis=money_axis(minExtent=wide)),
+        x=x("Start"), x2="End:T", y=alt.Y("sum(AUD):Q", title=("Average per" if group else "Per") + " year, today's dollars",
+                                          axis=money_axis(minExtent=wide)),
         color=colour, order=alt.Order("Flow:N")), "Flow", items, states["flows"], "path_flows")
     bars = bars.add_params(zoom).properties(name="story_flows_0")
     net_line = alt.Chart(net).mark_line(color=INK, strokeWidth=2, clip=True, point=alt.OverlayMarkDef(color=INK, size=30)).encode(
@@ -602,13 +618,16 @@ def path_story(growth, kinds, colours, daily, household, additions, marks, state
     def titled(panel, text):
         return panel.properties(title=alt.Title(text, anchor="start", fontSize=13, fontWeight=600, color=INK, offset=6))
 
-    markets, wealth, flows = titled(markets, "Markets"), titled(wealth, "Wealth"), titled(flows, "Money in and out")
+    markets = titled(markets, "Markets · medians across the group" if group else "Markets")
+    wealth = titled(wealth, "Wealth · median balances" if group else "Wealth")
+    flows = titled(flows, "Money in and out · average across the group" if group else "Money in and out")
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)  # Altair notes that the shared selections are merged, as intended
         chart = (alt.vconcat(markets, wealth, flows, spacing=22)
                  .resolve_scale(x="shared", color="independent", size="independent"))
     panels = ("story_markets_", "story_wealth_", "story_flows_")
-    return chart, {zoom.name: panels, cursor.name: ("cursor_targets_",), visible.name: panels[:1], showing.name: panels[2:]}
+    return chart, {zoom.name: panels, cursor.name: ("cursor_targets_",), visible.name: panels[:1], showing.name: panels[2:],
+                   "show_accounts_0": panels[1:2]}
 
 
 def allocation_pie(weights, tickers):
@@ -642,14 +661,14 @@ def overlay_histogram(frame, field, title, *, series, log=False, percent=True, h
     ticks = [np.log10(v) for v in (1, 2, 5, 10, 20, 50, 100, 200, 500, 1e3, 2e3, 5e3, 1e4, 2e4, 5e4, 1e5, 2e5, 5e5, 1e6)]
     axis = (alt.Axis(labelExpr="'$' + format(pow(10, datum.value), ',.0f')", title=title, values=ticks) if log
             else alt.Axis(format=".0%" if percent else ",.2f", title=title))
-    bars = alt.Chart(part).mark_bar(opacity=0.45, binSpacing=0).encode(
+    bars, visible = toggle(alt.Chart(part).mark_bar(opacity=0.45, binSpacing=0).encode(
         x=alt.X(f"{value}:Q", bin=alt.Bin(maxbins=40), axis=axis),
         y=alt.Y("count():Q", stack=None, title="Paths"),
-        color=alt.Color("Portfolio:N", scale=scale),
+        color=alt.Color("Portfolio:N", scale=scale, legend=alt.Legend(symbolType="square")),
         tooltip=["Portfolio:N", alt.Tooltip("count():Q", title="Paths in this bar"),
                  *([] if log else [alt.Tooltip(f"{value}:Q", bin=alt.Bin(maxbins=40), title="Range",
-                                               format=".1%" if percent else ",.2f")])])
-    rules = alt.Chart(part).mark_rule(strokeDash=[5, 3], strokeWidth=2).encode(
+                                               format=".1%" if percent else ",.2f")])]), "Portfolio", list(series), "portfolios")
+    rules = alt.Chart(part).transform_filter(visible).mark_rule(strokeDash=[5, 3], strokeWidth=2).encode(
         x=f"median({value}):Q", color=alt.Color("Portfolio:N", scale=scale, legend=None),
         tooltip=["Portfolio:N", alt.Tooltip(f"median({field}):Q", title="Median",
                                             format="$,.0f" if log else ".1%" if percent else ",.2f")])

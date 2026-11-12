@@ -59,17 +59,21 @@ def compare_page(run):
         long["Statistic"] = long["Statistic"].map({"Median": "Median", "P10": "10th percentile"})
         long = charts.add_age(long)
         base = alt.Chart(long).encode(x=alt.X("Date:T", title=None, axis=charts.year_axis(long)), color=colour)
-        drawn = base.mark_line(strokeWidth=2).encode(
+        names = [STRATEGY_NAMES[r] for r in rules]
+        drawn, visible = charts.toggle(base.mark_line(strokeWidth=2).encode(
             y=alt.Y("Wealth:Q", title="Total wealth, today's dollars", axis=charts.money_axis()),
             strokeDash=alt.StrokeDash("Statistic:N", scale=alt.Scale(domain=["Median", "10th percentile"], range=[[1, 0], [6, 3]]),
-                                      legend=alt.Legend() if low else None))
+                                      legend=alt.Legend() if low else None)), "Strategy", names, "strategies")
+        drawn = drawn.properties(name="compare_lines_0")
         hover = alt.selection_point(fields=["Date"], nearest=True, on="pointerover", empty=False, name="compare_hover")
-        targets = base.mark_point(size=80, opacity=0).encode(
+        targets = base.transform_filter(visible).mark_point(size=80, opacity=0).encode(
             y="Wealth:Q", tooltip=[alt.Tooltip("Date:T", format="%b %Y"), *charts.age_tooltip(long), "Strategy:N", "Statistic:N",
                                    alt.Tooltip("Wealth:Q", format="$,.0f")]).add_params(hover)
         rule = alt.Chart(long).mark_rule(color=MUTED).encode(x="Date:T").transform_filter(hover)
-        # One flat layer: nesting a chart that owns a selection inside another layer duplicates its signals.
-        draw(charts.zoomable(alt.layer(drawn, targets, rule, *charts.milestone_layers(marks)).properties(height=MEDIUM + 40)))
+        # One flat layer: nesting a chart that owns a selection inside another layer duplicates its signals. The
+        # legend selection belongs to the lines only (see charts.path_story on Altair's lists of views).
+        draw(charts.zoomable(alt.layer(drawn, targets, rule, *charts.milestone_layers(marks)).properties(height=MEDIUM + 40)),
+             views={visible.name: ("compare_lines_",)})
         st.caption("The strategies match until retirement and separate after it. Lines are worked out month by month: "
                    "no single path follows them.")
     with card("compareyears"):
@@ -96,11 +100,12 @@ def compare_page(run):
         bars["Strategy"] = bars["Strategy"].map(STRATEGY_NAMES)
         bars["Period"] = bars["FY ending"].map(charts.period_label)
         outflow = flow in OUTFLOWS
-        chart = alt.Chart(bars).mark_bar(cornerRadiusTopLeft=2, cornerRadiusTopRight=2).encode(
+        chart, _ = charts.toggle(alt.Chart(bars).mark_bar(cornerRadiusTopLeft=2, cornerRadiusTopRight=2).encode(
             x=alt.X("x0:Q", axis=charts.fy_axis(bars), scale=charts.fy_scale(bars)), x2="x1:Q",
             y=alt.Y("Value:Q", title=f"Median {flow.lower()}" + (" paid" if outflow else "") + " per year, today's dollars",
                     axis=charts.money_axis()), y2=alt.datum(0), color=colour,
-            tooltip=[alt.Tooltip("Period:N", title="Year"), "Strategy:N", alt.Tooltip("Value:Q", title="Median", format="$,.0f")])
+            tooltip=[alt.Tooltip("Period:N", title="Year"), "Strategy:N", alt.Tooltip("Value:Q", title="Median", format="$,.0f")]),
+            "Strategy", [STRATEGY_NAMES[r] for r in rules], "strategy_bars")
         first, last = int(bars["FY ending"].min()) - 0.6, int(bars["FY ending"].max()) + 0.6
         # Markers outside the years shown (retirement falls before the first full retired year) would sit on the axis.
         inside = marks.loc[marks["Position"].between(first, last)] if not marks.empty else marks
@@ -159,13 +164,13 @@ def markets_page(run):
                                          "log scale.")
         history = portfolios.historical
         names = list(dict.fromkeys(history["Portfolio"]))
-        draw(charts.zoomable(alt.Chart(history).mark_line(strokeWidth=1.8).encode(
+        draw(charts.zoomable(charts.toggle(alt.Chart(history).mark_line(strokeWidth=1.8).encode(
             x=alt.X("Date:T", title=None, axis=charts.year_axis(history)),
             y=alt.Y("Growth of 100:Q", scale=alt.Scale(type="log"), title="Growth of $100 · log scale",
                     axis=charts.log_axis(float(history["Growth of 100"].min()), float(history["Growth of 100"].max()))),
             color=alt.Color("Portfolio:N", scale=alt.Scale(domain=names, range=[PORTFOLIO_COLOURS[n] for n in names])),
             tooltip=[alt.Tooltip("Date:T", format="%b %Y"), "Portfolio:N", alt.Tooltip("Growth of 100:Q", format="$,.0f")]
-        ).properties(height=MEDIUM)))
+        ).properties(height=MEDIUM), "Portfolio", names, "history")[0]))
         st.dataframe(summary.drop(columns=["First", "Last"]), width="stretch", hide_index=True, column_config={
             "CAGR": percent_column("CAGR", "Compound annual growth rate of the whole portfolio over the full shared history."),
             "Volatility": percent_column("Volatility", "Standard deviation of daily portfolio returns times √252."),
