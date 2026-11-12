@@ -453,7 +453,16 @@ today's dollars:  g[t] / (1 + CPI) ** ((d[t] - d[0]).days / 365.25)
 ```
 
 This is the portfolio analysis's compounding (`analysis._simulate`). When the two portfolios hold the same weights
-and rebalance alike they are one series.
+and rebalance alike they are one series. When they differ, a combined portfolio leads them:
+
+```text
+combined[t] = share_outside * g_outside[t] + share_super * g_super[t]
+share_x     = opening balance of x / (opening outside investments + opening super balance)
+```
+
+Each part compounds as its own portfolio and nothing moves between them, so the split drifts with returns. These are
+the portfolio analysis's `combined_shares` and its *Combined* series; the combined series is left out when both
+opening balances are zero. Its statistics are worked out from its own daily values like any other series.
 
 **Statistics**, per series, with `years = (d[T] - d[0]).days / 365.25`:
 
@@ -484,7 +493,8 @@ portfolio CAGR 13.4%, 10.6% after inflation, volatility 23.0%, worst drawdown 69
 dollars; `USLCAP3x` CAGR 6.5%, volatility 51.8%, worst drawdown 98.5%.
 
 **Limitations.** The portfolio lines are the entered portfolios at their target weights, not the ledger's holdings,
-which also reflect contributions, sales and the cash buffer. Returns are USD histories used as an AUD proxy. The
+which also reflect contributions, sales and the cash buffer. The combined portfolio keeps the opening split between
+outside and super; the household's actual split also moves with contributions, drawdowns and pension transfers. Returns are USD histories used as an AUD proxy. The
 factor 252 is a convention, not the sampled history's exact observations per year.
 
 **Validation.** `tests/test_path_markets.py`: rebalancing at the first observation of a calendar year; a portfolio's

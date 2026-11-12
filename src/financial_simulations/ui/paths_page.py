@@ -7,10 +7,10 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from financial_simulations.reporting.palette import INK, MUTED, SERIES
+from financial_simulations.reporting.palette import INK, INK_SECONDARY, MUTED, NEUTRAL, SERIES
 from financial_simulations.retirement.flows import account_flows, fold_taxes, household_flows
 from financial_simulations.retirement.outcomes import TIERS, ending_percentiles
-from financial_simulations.retirement.path_markets import PORTFOLIO, group_markets, path_markets, real_growth
+from financial_simulations.retirement.path_markets import COMBINED_PORTFOLIO, PORTFOLIO, group_markets, path_markets, real_growth
 from financial_simulations.retirement.plan import slug
 from financial_simulations.retirement.real import real_daily, real_events, year_deflator
 from financial_simulations.retirement.run_plan import ledger_for_path
@@ -122,7 +122,8 @@ def story_colours(run, stats):
     """Each market series' kind and colour: the portfolios dark, each ticker its colour from the Markets page."""
     kinds = dict(zip(stats["Series"], stats["Kind"]))
     tickers = charts.ticker_colours(run.plan["assets"])
-    portfolio_colours = iter((INK, MUTED))
+    count = sum(kind == PORTFOLIO for kind in kinds.values())  # three when a combined portfolio leads
+    portfolio_colours = iter((INK, INK_SECONDARY, NEUTRAL) if count > 2 else (INK, MUTED))
     return kinds, {name: next(portfolio_colours) if kind == PORTFOLIO else tickers[name] for name, kind in kinds.items()}
 
 
@@ -164,15 +165,12 @@ def group_story(run, d, members, label):
                     "The same three views as a single path, summarised over the group's paths: median markets, median "
                     "balances and average flows.")
         market_table(stats, "Median across the group")
-        with st.container(horizontal=True, vertical_alignment="center"):
-            states = {"markets": legend_controls("path_markets", list(growth.columns), "Markets"),
-                      "flows": legend_controls("path_flows", items, "Money in and out")}
-        st.caption("Click a legend item to hide or show it; the axis refits. Drag any panel sideways to pan all three, "
-                   "Shift+scroll to zoom, double-click to reset.")
-        with st.container(key="pathstorychart"):
+        slot, states = story_controls(list(growth.columns), items)
+        with slot:
             draw(*charts.path_story(real_growth(growth, cpi), kinds, colours, balances, household, additions, d.marks,
                                     states, group=True))
-        explain("**Markets (top).** For each portfolio and ticker, the median across the group's paths of what $1 "
+        explain(combined_note(run, stats) +
+                "**Markets (top).** For each portfolio and ticker, the median across the group's paths of what $1 "
                 "invested on the first day is worth at each month end, in today's dollars, on a log scale. The table "
                 "gives the median of each path's own growth per year, volatility and worst drawdown. Each line's "
                 "median is taken on its own, so the lines need not come from one path: a group of bad outcomes "
@@ -184,6 +182,34 @@ def group_story(run, d, members, label):
                 "**Money in and out (bottom).** Each bar is the **average** of that flow across the group's paths in "
                 "that financial year, unlike the medians above: averages add up, so the bars sum to the average net "
                 "change in wealth (black line). Tax adds income, contributions, fund and Division 296 tax.")
+
+
+def story_controls(series, items):
+    """The stacked chart's place on the page and its legend states, with each panel's buttons beside that panel.
+
+    The markets buttons sit above the chart, at its top panel, and the money in and out buttons below it, at its
+    bottom panel. The chart is drawn into the returned container after the buttons below it have been read.
+    """
+    states = {"markets": legend_controls("path_markets", series, "Markets")}
+    st.caption("Click a legend item to hide or show it; the axis refits. Drag any panel sideways to pan all three, "
+               "Shift+scroll to zoom, double-click to reset.")
+    # Streamlit gives each stacked panel the container's full width and the y axis is drawn outside that, so this
+    # container is narrower by the axis's width (see the pathstorychart rule in theme.py).
+    slot = st.container(key="pathstorychart")
+    states["flows"] = legend_controls("path_flows", items, "Money in and out (the bars and lines above)")
+    return slot, states
+
+
+def combined_note(run, stats):
+    """How the combined portfolio is made up, when the view has one."""
+    shares = run.portfolios.combined_shares
+    if COMBINED_PORTFOLIO not in set(stats["Series"]) or not shares:
+        return ""
+    split = " and ".join(f"{share:.1%} {title.lower()}" for title, share in shares.items())
+    return (f"**Combined portfolio.** Your outside and super portfolios held side by side: $1 split {split} on the "
+            "first day, the plan's opening invested balances, with each part then growing as its own portfolio and "
+            "no money moved between them. It is what your investments as a whole earned before any contributions, "
+            "spending or tax.\n\n")
 
 
 def legend_controls(name, names, label=None):
@@ -272,16 +298,11 @@ def path_story(run, d, path, result, daily):
                     "Three views of the same years on one date axis: what markets did, what your accounts held, and "
                     "the money that came in and went out.")
         market_table(stats)
-        with st.container(horizontal=True, vertical_alignment="center"):
-            states = {"markets": legend_controls("path_markets", list(growth.columns), "Markets"),
-                      "flows": legend_controls("path_flows", items, "Money in and out")}
-        st.caption("Click a legend item to hide or show it; the axis refits. Drag any panel sideways to pan all three, "
-                   "Shift+scroll to zoom, double-click to reset.")
-        # Streamlit gives each stacked panel the container's full width and the y axis is drawn outside that, so
-        # this container is narrower by the axis's width (see the pathstorychart rule in theme.py).
-        with st.container(key="pathstorychart"):
+        slot, states = story_controls(list(growth.columns), items)
+        with slot:
             draw(*charts.path_story(real_growth(growth, cpi), kinds, colours, daily, household, additions, d.marks, states))
-        explain("**Markets (top).** Each line is $1 invested on the first day, in today's dollars, on a log scale: a "
+        explain(combined_note(run, stats) +
+                "**Markets (top).** Each line is $1 invested on the first day, in today's dollars, on a log scale: a "
                 "steady slope is steady growth, and a crash is the same drop wherever it happens. The thick line is "
                 "your portfolio at its entered weights; the thin lines are its tickers. The table above gives each "
                 "line's growth per year, volatility and worst drawdown on this path, all worked out from the path's "

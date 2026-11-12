@@ -79,6 +79,17 @@ money chart, portfolios on the Markets page and strategies on the Compare page.
 was empty for a moment after a click, the page shortened and the browser scrolled up. Tab panels now have a
 minimum height of one window.
 
+**Combined portfolio** (same day, user request: "combined portfolio stats to the table and the lineplot"). When
+the outside and super portfolios differ, a *Combined portfolio* series leads the table and the markets panel: $1
+split between the two in proportion to the plan's opening outside investments and super balances, each part then
+compounding as its own portfolio with nothing moved between them. This is the portfolio analysis's existing
+combined series (`PortfolioAnalysis.combined_shares`), so its statistics equal that path's *Combined* row there.
+It is absent when the portfolios are alike (the one line is already the combination) or both balances are zero.
+
+**Buttons beside their panel** (same day, user request: "add a show all/show none to the barplot"). The money in
+and out panel's *Show all* and *Show none* sat above the chart, two panels away from the bars. They are now below
+the chart, at the bars; the markets buttons stay above it.
+
 **PNG.** `retirement_markets.png` per strategy draws the same lines for the path nearest median ending wealth,
 with each series' CAGR, volatility and worst drawdown in the legend. `ledger.png` and `retirement_flows.png`
 already cover that path's balances and flows.
@@ -104,6 +115,8 @@ already cover that path's balances and flows.
 - The markets panel shows returns in today's dollars, like the other panels; the table gives growth before and
   after inflation.
 - Leveraged tickers swing far more than the portfolio even on a log scale. They can be hidden from the legend.
+- The combined portfolio's split is fixed on the first day and then drifts with returns. The household's actual
+  split also moves with contributions, drawdowns and the pension transfer, which the combined line leaves out.
 - The portfolio lines are the entered portfolios at their target weights. The ledger's actual holdings also reflect
   contributions, sales and the cash buffer, so wealth does not move exactly with the portfolio line.
 - The sampled returns are USD histories used as an AUD proxy, as everywhere in the planner.
@@ -121,7 +134,8 @@ already cover that path's balances and flows.
   `ui/theme.py` (`draw`, `with_views`); `reporting/plan.py` (`write_path_markets_plot`); `retirement/run_plan.py`.
 - **Methodology:** [plan-and-app.md](../methodology/plan-and-app.md).
 - **Tests:** `tests/test_path_markets.py` checks rebalancing on the first observation of a calendar year, agreement
-  with the portfolio analysis for the same path, each ticker's compounding, that identical portfolios are one
+  with the portfolio analysis for the same path (the combined portfolio included, and that it is the two portfolios
+  at their opening shares), each ticker's compounding, that identical portfolios are one
   series, that a group of one path reproduces that path, and that a group's statistics are medians of its paths'; `tests/test_plan.py::test_browser_app_runs_with_tickers_and_interactive_results` opens the view and its
   other tabs and checks the PNG is written.
 - **Browser check** on 12 November 2026: the three panels line up, the hairline and its tooltips follow the

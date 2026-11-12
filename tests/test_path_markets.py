@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from financial_simulations.retirement.path_markets import ONE_PORTFOLIO, compound, group_markets, path_markets, real_growth
+from financial_simulations.retirement.path_markets import COMBINED_PORTFOLIO, ONE_PORTFOLIO, compound, group_markets, path_markets, real_growth
 from financial_simulations.retirement.plan import build_inputs, future_observations, normalize_plan
 from financial_simulations.retirement.analysis import analyse_portfolios
 from financial_simulations.data.plan_markets import load_plan_markets
@@ -38,8 +38,13 @@ def test_path_markets_matches_the_portfolio_analysis_for_the_same_path(monkeypat
     # The portfolios agree with the analysis that produced the plan's portfolio outcomes.
     outcomes = portfolios.outcomes.loc[portfolios.outcomes["Path"] == path].set_index("Portfolio")
     names = [n for n in by_series.index if by_series.loc[n, "Kind"] == "Portfolio"]
+    # Different portfolios: a combined one leads, the two held at their opening shares of the invested balances.
+    assert names == [COMBINED_PORTFOLIO, "Outside super portfolio", "Inside super portfolio"]
+    shares = portfolios.combined_shares
+    assert growth[COMBINED_PORTFOLIO].to_numpy() == pytest.approx(
+        (shares["Outside super"] * growth["Outside super portfolio"] + shares["Inside super"] * growth["Inside super portfolio"]).to_numpy())
     for name in names:
-        expected = outcomes.loc["Outside super" if name in (ONE_PORTFOLIO, "Outside super portfolio") else "Inside super"]
+        expected = outcomes.loc[{COMBINED_PORTFOLIO: "Combined", "Outside super portfolio": "Outside super"}.get(name, "Inside super")]
         assert by_series.loc[name, "CAGR after inflation"] == pytest.approx(expected["Annualised growth"])
         assert by_series.loc[name, "Volatility"] == pytest.approx(expected["Annualised volatility"])
         assert by_series.loc[name, "Worst drawdown"] == pytest.approx(expected["Maximum drawdown"])

@@ -8,12 +8,13 @@ statistics here equal that path's row in ``PortfolioAnalysis.outcomes``.
 import numpy as np
 import pandas as pd
 
-from financial_simulations.retirement.analysis import PORTFOLIOS, _month_ends, _simulate
+from financial_simulations.retirement.analysis import COMBINED, PORTFOLIOS, _month_ends, _simulate
 from financial_simulations.retirement.real import stock_deflator
 
 
 PORTFOLIO, ASSET = "Portfolio", "Ticker"
 ONE_PORTFOLIO = "Your portfolio"
+COMBINED_PORTFOLIO = "Combined portfolio"
 TRADING_DAYS = 252  # the annualising convention of the portfolio analysis
 
 
@@ -34,14 +35,20 @@ def compound(returns: np.ndarray, dates, weights: np.ndarray, rebalance: bool) -
     return values
 
 
-def _portfolios(plan: dict, tickers) -> tuple[dict, dict]:
-    """The entered portfolios as ``(weights, rebalance)`` by title, and the series drawn for them (one if alike)."""
+def _portfolios(plan: dict, tickers, shares: dict) -> tuple[dict, dict, dict]:
+    """The entered portfolios as ``(weights, rebalance)`` by title, the series drawn for them, and the combined mix.
+
+    Alike portfolios are one series, which is also their combination. Otherwise the last value maps each drawn
+    portfolio to its opening share of the combined portfolio (``PortfolioAnalysis.combined_shares``: the opening
+    outside investments and super balances), or is empty when both balances are zero.
+    """
     entered = {title: (np.array([plan[section]["weights"].get(t, 0.0) for t in tickers]),
                        plan[section]["rebalance"] == "annual") for title, section in PORTFOLIOS}
     (first, a), (second, b) = entered.items()
     if np.allclose(a[0], b[0]) and a[1] == b[1]:
-        return entered, {ONE_PORTFOLIO: a}
-    return entered, {f"{first} portfolio": a, f"{second} portfolio": b}
+        return entered, {ONE_PORTFOLIO: a}, {}
+    return (entered, {f"{first} portfolio": a, f"{second} portfolio": b},
+            {f"{title} portfolio": share for title, share in (shares or {}).items()})
 
 
 def group_markets(plan: dict, market, portfolios, members) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -55,12 +62,15 @@ def group_markets(plan: dict, market, portfolios, members) -> tuple[pd.DataFrame
     """
     dates = tuple(portfolios.dates)
     tickers = tuple(market.path.assets)
-    entered, shown = _portfolios(plan, tickers)
+    entered, shown, mix = _portfolios(plan, tickers, portfolios.combined_shares)
     accounts = dict(shown)
     for column, ticker in enumerate(tickers):
         accounts[ticker] = (np.eye(len(tickers))[column], False)
     marks = _month_ends(dates)
-    series = _simulate(market.path.returns, portfolios.indices[np.asarray(list(members), dtype=int)], dates, accounts, {}, marks)
+    series = _simulate(market.path.returns, portfolios.indices[np.asarray(list(members), dtype=int)], dates, accounts, mix, marks)
+    if mix:  # the combined portfolio leads
+        series = {COMBINED_PORTFOLIO: series.pop(COMBINED), **series}
+        shown = {COMBINED_PORTFOLIO: None, **shown}
     months = pd.DatetimeIndex([dates[position] for position in marks], name="Date")
     growth = pd.DataFrame({name: np.median(s.snapshots, axis=0) / 100 for name, s in series.items()}, index=months)
     years = (months[-1] - months[0]).days / 365.25
@@ -84,16 +94,21 @@ def path_markets(plan: dict, market, portfolios, path: int) -> tuple[pd.DataFram
 
     The growth frame is nominal, indexed by date, with a column per series: the entered portfolios first, then
     each ticker. When the outside and super portfolios hold the same weights and rebalance alike they are one
-    series. Statistics: nominal CAGR, CAGR after the plan's CPI assumption, annualised volatility of daily returns
+    series; when they differ a combined portfolio leads: the two held side by side from their opening shares of the
+    plan's invested balances and never rebalanced between each other, as in the portfolio analysis. Statistics:
+    nominal CAGR, CAGR after the plan's CPI assumption, annualised volatility of daily returns
     (sample standard deviation times the square root of 252), the deepest fall below a previous high, and the
     ending value of $1 in today's dollars.
     """
     returns = portfolios.returns_for(market, path)
     dates = tuple(portfolios.dates)
     tickers = tuple(market.path.assets)
-    entered, shown = _portfolios(plan, tickers)
+    entered, shown, mix = _portfolios(plan, tickers, portfolios.combined_shares)
     growth = pd.DataFrame({name: compound(returns, dates, weights, rebalance) for name, (weights, rebalance) in shown.items()},
                           index=pd.DatetimeIndex(dates, name="Date"))
+    if mix:  # the combined portfolio leads
+        growth.insert(0, COMBINED_PORTFOLIO, sum(share * growth[name] for name, share in mix.items()))
+        shown = {COMBINED_PORTFOLIO: None, **shown}
     for column, ticker in enumerate(tickers):
         growth[ticker] = np.concatenate(([1.0], np.cumprod(1 + returns[:, column])))
     years = (growth.index[-1] - growth.index[0]).days / 365.25
