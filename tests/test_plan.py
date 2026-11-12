@@ -175,6 +175,7 @@ def test_browser_app_runs_with_tickers_and_interactive_results(tmp_path, monkeyp
     assert app.session_state.plan["person"]["retirement_age"] == 57
     folder = tmp_path / "output" / "plans" / "example-early-retirement"
     assert (folder / "portfolio_future.png").exists() and (folder / "retirement_outcomes.png").exists()
+    assert (folder / "retirement_markets.png").exists()
     assert app.session_state.plan["outside"]["rebalance"] == "annual"
     # A finished run opens the Outcomes page; only its open tab (Wealth) is drawn.
     assert app.session_state.page == "Outcomes"
@@ -188,6 +189,13 @@ def test_browser_app_runs_with_tickers_and_interactive_results(tmp_path, monkeyp
         app.session_state["page"] = page
         app.run()
         assert not app.exception, page
+    # One path opens on its markets, balances and flows stacked in one chart, under the market statistics table.
+    assert [t.label for t in app.tabs] == ["Markets, wealth and money", "Transfers between accounts", "Year by year", "Event log"]
+    assert len(app.get("vega_lite_chart")) == 1 and "CAGR" in app.dataframe[0].value
+    for tab in ("Transfers between accounts", "Year by year", "Event log"):
+        app.session_state["path_tabs__0"] = tab
+        app.run()
+        assert not app.exception, tab
     picker = app.selectbox(key="ledger_path__0")
     everyone = next(option for option in picker.options if option.startswith("Group: all paths"))
     assert picker.options.index(everyone) == 1  # straight after the median path

@@ -8,7 +8,7 @@ matplotlib.use("Agg")
 
 import matplotlib.dates as mdates
 from matplotlib.figure import Figure
-from matplotlib.ticker import FuncFormatter
+from matplotlib.ticker import FuncFormatter, LogLocator, NullFormatter
 import numpy as np
 import pandas as pd
 
@@ -192,6 +192,44 @@ def write_retirement_plots(output: Path, plan, retirement_paths, retirement_band
         fig.subplots_adjust(bottom=0.26)
         ax.legend(frameon=False, ncol=4, fontsize=8, loc="upper center", bbox_to_anchor=(0.5, -0.1))
         fig.savefig(output / "retirement_flows.png")
+
+
+def write_path_markets_plot(output: Path, plan, growth, stats, path):
+    """Write the representative path's markets: growth of $1 for each portfolio and ticker, with its statistics.
+
+    The same lines and figures as the top panel and table of the app's single-path view (ADR 0049). ``growth`` and
+    ``stats`` come from ``path_markets``.
+    """
+    from financial_simulations.reporting.palette import INK, MUTED, SERIES
+    from financial_simulations.retirement.path_markets import PORTFOLIO, real_growth
+
+    real = real_growth(growth, plan["assumptions"]["cpi_annual"])
+    tickers = {t: SERIES[i % len(SERIES)] for i, t in enumerate(plan["assets"])}
+    portfolio_colours = iter((INK, MUTED))
+    with matplotlib.rc_context({"font.family": "DejaVu Sans"}):
+        fig, ax = _figure("Markets on the path nearest median ending wealth",
+                          f"Path {path}: growth of $1 invested on the first day, today's dollars, log scale\n"
+                          "Legend: growth per year before inflation (CAGR) · volatility of daily returns, annualised "
+                          "· worst drawdown")
+        for row in stats.to_dict("records"):
+            portfolio = row["Kind"] == PORTFOLIO
+            ax.plot(real.index, real[row["Series"]], color=next(portfolio_colours) if portfolio else tickers[row["Series"]],
+                    linewidth=2.2 if portfolio else 1.0, zorder=3 if portfolio else 2,
+                    label=f"{row['Series']}: {row['CAGR']:.1%} · {row['Volatility']:.0%} · {row['Worst drawdown']:.0%}")
+        ax.axhline(1, color="#5f6b73", linewidth=0.8, linestyle=":")
+        ax.set_yscale("log")
+        ax.yaxis.set_major_locator(LogLocator(base=10, subs=(1, 2, 5)))
+        ax.yaxis.set_minor_formatter(NullFormatter())
+        ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"${v:,.0f}" if v >= 1 else f"${v:g}"))
+        ax.set_ylabel("Growth of $1, today's dollars (log scale)")
+        _years(ax, list(real.index))
+        for _, mark in milestones(plan, real.index[0].date(), real.index[-1].date()).iterrows():
+            ax.axvline(mark["Date"], color="#5f6b73", linestyle="--", linewidth=1)
+            ax.text(mark["Date"], ax.get_ylim()[1], " " + mark["Event"], fontsize=8, color="#3c474d", va="top")
+        ax.xaxis.grid(True, alpha=0.22)
+        fig.subplots_adjust(bottom=0.27)
+        ax.legend(frameon=False, ncol=3, fontsize=8, loc="upper center", bbox_to_anchor=(0.5, -0.09))
+        fig.savefig(Path(output) / "retirement_markets.png")
 
 
 def write_outcome_plot(output: Path, plan, retirement_paths, retirement_annual):

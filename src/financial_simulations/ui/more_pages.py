@@ -307,7 +307,8 @@ repeat and join bad stretches, so a path can contain longer or deeper losses tha
                 for rule in strategies:
                     own = run.folder / "strategies" / rule if nested else run.folder
                     files += [(own / name, f"{STRATEGY_NAMES[rule]}: " if nested else "")
-                              for name in ("retirement_outcomes.png", "retirement_range.png", "retirement_flows.png", "ledger.png")]
+                              for name in ("retirement_outcomes.png", "retirement_range.png", "retirement_markets.png",
+                                           "retirement_flows.png", "ledger.png")]
                 for file, prefix in files:
                     if file.exists():
                         st.image(str(file), caption=prefix + file.name.replace("_", " ").replace(".png", ""))

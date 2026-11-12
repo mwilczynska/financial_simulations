@@ -54,6 +54,7 @@ Decision records preserve why Financial Simulations makes a material modelling o
 | [0046](0046-one-tab-per-strategy.md) | 2026-11-02 | Accepted; its tabs superseded by 0047 | One tracked results tab per compared strategy, drawn only when open, keeping each tab's choices |
 | [0047](0047-app-layout-and-one-visual-system.md) | 2026-11-10 | Accepted; implemented and tested | No sidebar: a top bar with pages, plan menu and Run; one page drawn at a time; fewer, smaller charts; one palette for the app and PNGs; taxes drawn as one flow |
 | [0048](0048-outcome-tiers-and-average-retirement-spending.md) | 2026-11-10 | Accepted; implemented and tested | Each path's outcome tier (self-funded, part Age Pension, full Age Pension, ran out), yearly states, and average retired-year spending by path and group |
+| [0049](0049-single-path-markets-wealth-and-money.md) | 2026-11-12 | Accepted; implemented and tested | One path's markets (growth of $1 with CAGR, volatility and drawdown), balances and money in and out as three panels on one date axis |
 
 ## When to write a record
 

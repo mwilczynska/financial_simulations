@@ -5,6 +5,7 @@ dollars; dashed vertical lines mark retirement, super access and the pension sta
 """
 
 from datetime import date
+import warnings
 
 import altair as alt
 import numpy as np
@@ -173,8 +174,11 @@ def band_chart(frame, title, *, log=False, symlog=False, color=BLUE, percent=Fal
     return chart
 
 
-def balances_chart(daily, height=MEDIUM):
-    """Stacked month-end balances by account, in a fixed account order and colour."""
+def balances_chart(daily, height=MEDIUM, x=None, zoom=True, **axis):
+    """Stacked month-end balances by account, in a fixed account order and colour.
+
+    ``x`` replaces the date encoding and ``zoom=False`` leaves zooming to the caller, for a panel of a stacked chart.
+    """
     labels = [v[0] for v in ACCOUNT_COLOURS.values()]
     monthly = daily[list(ACCOUNT_COLOURS)].resample("ME").last().reset_index()
     long = monthly.melt("Date", var_name="account", value_name="balance")
@@ -183,9 +187,9 @@ def balances_chart(daily, height=MEDIUM):
     long["Total"] = long.groupby("Date")["balance"].transform("sum")
     long["Share"] = long["balance"] / long["Total"].where(long["Total"] > 0)
     long = add_age(long)
-    return zoomable(alt.Chart(long).mark_area(stroke=SURFACE, strokeWidth=1).encode(
-        x=alt.X("Date:T", title=None, axis=year_axis(long)),
-        y=alt.Y("balance:Q", stack="zero", title="Today's dollars", axis=money_axis()),
+    return (zoomable if zoom else lambda chart: chart)(alt.Chart(long).mark_area(stroke=SURFACE, strokeWidth=1).encode(
+        x=x if x is not None else alt.X("Date:T", title=None, axis=year_axis(long)),
+        y=alt.Y("balance:Q", stack="zero", title="Today's dollars", axis=money_axis(**axis)),
         color=alt.Color("Account:N", sort=labels, scale=alt.Scale(domain=labels, range=[v[1] for v in ACCOUNT_COLOURS.values()])),
         order=alt.Order("order:Q"),
         tooltip=[alt.Tooltip("Date:T", format="%b %Y"), *age_tooltip(long), "Account:N",
@@ -447,7 +451,11 @@ def hideable(chart, field, names, state, key):
     # hidden items fade; each click toggles one item in or out. The count in the name makes each reset a new spec.
     # Show none selects a placeholder rather than nothing: an empty selection would leave the legend unfaded.
     shown = [n for n in names if n not in state["hidden"]] or ["(none)"]
-    visible = alt.selection_point(name=f"show_{key}_{state['count']}", fields=[field], bind="legend", toggle="true",
+    # Only clicks on this field's own legend count. Vega-Lite's plain legend binding listens to every click in the
+    # chart, so in a chart with two such legends a click on one would toggle the other's last item back.
+    clicks = alt.LegendStreamBinding(
+        legend=f"click[event.item && event.item.mark.name && indexof(event.item.mark.name, '{field}_legend') === 0]")
+    visible = alt.selection_point(name=f"show_{key}_{state['count']}", fields=[field], bind=clicks, toggle="true",
                                   empty=False, clear=False, value=[{field: n} for n in shown])
     return chart.add_params(visible).transform_filter(visible), visible
 
@@ -459,6 +467,148 @@ def flow_bars(frame, x, value, title, items, *, domain=None, tooltip=(), size=14
         x=x, y=alt.Y(f"{value}:Q", stack=True, title=title, axis=money_axis(), scale=scale),
         color=flow_colour(items), order=alt.Order("Flow:N"),
         tooltip=[alt.Tooltip("Period:N", title="Year"), "Flow:N", *tooltip])
+
+
+def cursor_layers(frame, x, cursor, tooltip):
+    """A vertical hairline at the month nearest the pointer, with that month's figures as the tooltip.
+
+    The same ``cursor`` selection in several panels moves the hairline in all of them at once.
+    """
+    targets = (alt.Chart(frame).mark_point(opacity=0, size=1).encode(x=x, tooltip=tooltip).add_params(cursor)
+               .properties(name="cursor_targets_0"))
+    line = alt.Chart(frame).mark_rule(color=INK_SECONDARY, strokeWidth=1).encode(x=x).transform_filter(cursor)
+    return [targets, line]
+
+
+def flow_items(household, additions):
+    """The flows with any money on this path, in their fixed order, and the legend items (the two lines included)."""
+    largest = household.groupby("Flow")["AUD"].apply(lambda v: v.abs().max())
+    order = [f for f in FLOW_COLOURS if largest.get(f, 0.0) > 1e-6]
+    return order, order + [NET_LABEL] + ([ADDED_LABEL] if (additions["AUD"].abs() > 1e-6).any() else [])
+
+
+def fy_span(end_year, first, last, inset=0.16):
+    """A financial year's bar on a date axis: its start and end inside the plotted dates, inset, and its midpoint."""
+    start, end = max(pd.Timestamp(int(end_year) - 1, 7, 1), first), min(pd.Timestamp(int(end_year), 6, 30), last)
+    pad = (end - start) * inset
+    return start + pad, end - pad, start + (end - start) / 2
+
+
+def path_story(growth, kinds, colours, daily, household, additions, marks, states, heights=(300, 250, 330)):
+    """One path in three panels on one date axis: markets, balances by account, and money in and out.
+
+    ``growth`` is the path's growth of $1 in today's dollars by series (``kinds`` names each a portfolio or a
+    ticker); ``daily`` the ledger in today's dollars; ``household`` the yearly flows with taxes folded;
+    ``additions`` the yearly amounts added to outside investments. ``states`` holds the legend state of the markets
+    and flows panels. The panels share the x scale, so a drag or Shift+scroll moves all three, and one hairline
+    follows the pointer through all three.
+
+    Returns the chart and, by selection name, the name prefixes of the views each selection belongs to. Altair
+    lists every selection of a layered panel against every layer that has one, which defines some twice
+    ("Duplicate signal name"), so ``theme.draw`` writes the right lists into the specification. Prefixes, because
+    Altair renumbers the end of a view's name.
+    """
+    first, last = daily.index[0], daily.index[-1]
+    # Month ends, with the last one pulled back to the final day so the hairline stays on the plot.
+    months = pd.DatetimeIndex([min(m, last) for m in daily["total"].resample("ME").last().index], name="Date")
+    stamp = pd.DataFrame({"Date": months})
+    span_frame = pd.DataFrame({"Date": [first, last]})
+    axis = year_axis(span_frame)
+
+    def x(field="Date"):
+        return alt.X(f"{field}:T", title=None, axis=axis, scale=alt.Scale(domain=[first.isoformat(), last.isoformat()]))
+
+    ZOOM_COUNT[0] += 1
+    zoom = alt.selection_interval(bind="scales", encodings=["x"], zoom="wheel![event.shiftKey]", name=f"zoom_{ZOOM_COUNT[0]}")
+    cursor = alt.selection_point(name=f"cursor_{ZOOM_COUNT[0]}", fields=["Date"], nearest=True, on="pointerover",
+                                 clear="pointerout", empty=False)
+    when = [alt.Tooltip("Date:T", title="Month", format="%b %Y")]
+    wide = 64  # the same room for every panel's y labels, so the plot areas line up
+
+    # Markets: weekly points draw every crash a monthly line would smooth, at a fifth of the daily rows.
+    names = list(growth.columns)
+    weekly = pd.concat([growth.iloc[:1], growth.resample("W").last().dropna(how="all")])
+    weekly = weekly.loc[~weekly.index.duplicated()].rename_axis("Date").reset_index()
+    long = weekly.melt("Date", var_name="Series", value_name="Growth")
+    long["Kind"] = long["Series"].map(kinds)
+    # A log axis draws a grid line at every 1-9 multiple; only the 1, 2 and 5 multiples are labelled.
+    money = ("indexof([1, 2, 5], round(datum.value / pow(10, floor(log(datum.value) / LN10 + 1e-9)))) < 0 ? '' : "
+             "'$' + (datum.value < 1 ? format(datum.value, '~g') : format(datum.value, ',.0f'))")
+    lines, visible = hideable(alt.Chart(long).mark_line(clip=True).encode(
+        x=x(), y=alt.Y("Growth:Q", scale=alt.Scale(type="log", nice=False, padding=10),
+                       title="Growth of $1, today's dollars · log scale", axis=alt.Axis(labelExpr=money, minExtent=wide)),
+        color=alt.Color("Series:N", sort=names, scale=alt.Scale(domain=names, range=[colours[n] for n in names]),
+                        legend=alt.Legend(symbolType="stroke", symbolStrokeWidth=3, symbolSize=260, columns=8)),
+        size=alt.Size("Kind:N", legend=None, scale=alt.Scale(domain=sorted(set(kinds.values())),
+                                                            range=[3 if k == "Portfolio" else 1.4 for k in sorted(set(kinds.values()))]))),
+        "Series", names, states["markets"], "path_markets")
+    lines = lines.add_params(zoom).properties(name="story_markets_0")
+    monthly = growth.reindex(months, method="ffill")
+    market_months = add_age(stamp.assign(**{f"s{i}": monthly[n].to_numpy() for i, n in enumerate(names)}))
+    start_line = alt.Chart(pd.DataFrame({"y": [1.0]})).mark_rule(color=AXIS, strokeDash=[2, 3]).encode(y="y:Q")
+    markets = alt.layer(lines, start_line, *milestone_layers(marks), *cursor_layers(
+        market_months, x(), cursor, [*when, *age_tooltip(market_months),
+                                     *[alt.Tooltip(f"s{i}:Q", title=n, format="$,.2f") for i, n in enumerate(names)]])
+    ).properties(height=heights[0])
+
+    # Wealth: the stacked balances.
+    accounts = daily[list(ACCOUNT_COLOURS)].reindex(months, method="ffill")
+    wealth_months = add_age(stamp.assign(Total=accounts.sum(axis=1).to_numpy(),
+                                         **{f"a{i}": accounts[a].to_numpy() for i, a in enumerate(ACCOUNT_COLOURS)}))
+    rules = milestone_layers(marks)[:1]
+    areas = balances_chart(daily, x=x(), zoom=False, minExtent=wide).add_params(zoom).properties(name="story_wealth_0")
+    wealth = alt.layer(areas, *rules, *cursor_layers(
+        wealth_months, x(), cursor, [*when, *age_tooltip(wealth_months),
+                                     alt.Tooltip("Total:Q", title="Total wealth", format="$,.0f"),
+                                     *[alt.Tooltip(f"a{i}:Q", title=v[0], format="$,.0f")
+                                       for i, v in enumerate(ACCOUNT_COLOURS.values())]])
+    ).properties(height=heights[1])
+
+    # Money in and out: one bar per financial year, as wide as the year on the date axis.
+    spans = {year: fy_span(year, first, last) for year in sorted(household["FY ending"].unique())}
+
+    def placed(frame):
+        return frame.assign(Start=frame["FY ending"].map(lambda y: spans[y][0]), End=frame["FY ending"].map(lambda y: spans[y][1]),
+                            Mid=frame["FY ending"].map(lambda y: spans[y][2]), Period=frame["FY ending"].map(period_label))
+
+    order, items = flow_items(household, additions)
+    shown = placed(household.loc[household["Flow"].isin(order)])
+    net = placed(household.drop_duplicates("FY ending")).assign(Flow=NET_LABEL)
+    additions = placed(additions).assign(Flow=ADDED_LABEL)
+    colour = flow_colour(items)
+    bars, showing = hideable(alt.Chart(shown).mark_bar(stroke=SURFACE, strokeWidth=0.6, clip=True).encode(
+        x=x("Start"), x2="End:T", y=alt.Y("sum(AUD):Q", title="Per year, today's dollars", axis=money_axis(minExtent=wide)),
+        color=colour, order=alt.Order("Flow:N")), "Flow", items, states["flows"], "path_flows")
+    bars = bars.add_params(zoom).properties(name="story_flows_0")
+    net_line = alt.Chart(net).mark_line(color=INK, strokeWidth=2, clip=True, point=alt.OverlayMarkDef(color=INK, size=30)).encode(
+        x=x("Mid"), y="Net change:Q", color=colour).transform_filter(showing)
+    added = additions_layer(additions, x("Mid"), color=colour)
+    table = shown.pivot_table(index="FY ending", columns="Flow", values="AUD", aggfunc="sum").reindex(columns=order).fillna(0.0)
+    year_of = months.year + (months.month >= 7)
+    by_year = net.set_index("FY ending")
+    flow_months = stamp.assign(Period=[period_label(y) for y in year_of],
+                               Net=by_year["Net change"].reindex(year_of).to_numpy(),
+                               Added=additions.set_index("FY ending")["AUD"].reindex(year_of).to_numpy(),
+                               **{f"f{i}": table[f].reindex(year_of).to_numpy() for i, f in enumerate(order)})
+    flows = alt.layer(bars, zero_rule(), net_line, *([added.transform_filter(showing)] if added is not None else []),
+                      *rules, *cursor_layers(flow_months, x(), cursor, [
+                          alt.Tooltip("Period:N", title="Year"),
+                          alt.Tooltip("Net:Q", title="Net change in wealth", format="$,.0f"),
+                          *[alt.Tooltip(f"f{i}:Q", title=f, format="$,.0f") for i, f in enumerate(order)],
+                          *([alt.Tooltip("Added:Q", title="Added to outside investments", format="$,.0f")]
+                            if ADDED_LABEL in items else [])])
+                      ).properties(height=heights[2])
+
+    def titled(panel, text):
+        return panel.properties(title=alt.Title(text, anchor="start", fontSize=13, fontWeight=600, color=INK, offset=6))
+
+    markets, wealth, flows = titled(markets, "Markets"), titled(wealth, "Wealth"), titled(flows, "Money in and out")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)  # Altair notes that the shared selections are merged, as intended
+        chart = (alt.vconcat(markets, wealth, flows, spacing=22)
+                 .resolve_scale(x="shared", color="independent", size="independent"))
+    panels = ("story_markets_", "story_wealth_", "story_flows_")
+    return chart, {zoom.name: panels, cursor.name: ("cursor_targets_",), visible.name: panels[:1], showing.name: panels[2:]}
 
 
 def allocation_pie(weights, tickers):

@@ -9,8 +9,9 @@ import pandas as pd
 
 from financial_simulations.data.plan_markets import load_plan_markets
 from financial_simulations.reporting.ledger import write_ledger_report
-from financial_simulations.reporting.plan import (write_comparison_plots, write_outcome_plot, write_portfolio_plots,
-                                                  write_retirement_plots)
+from financial_simulations.reporting.plan import (write_comparison_plots, write_outcome_plot, write_path_markets_plot,
+                                                  write_portfolio_plots, write_retirement_plots)
+from financial_simulations.retirement.path_markets import path_markets
 from financial_simulations.retirement.analysis import QUANTILES, analyse_portfolios, target_observations
 from financial_simulations.retirement.ledger import LedgerResult, run_ledger
 from financial_simulations.retirement.paths import SERIES, run_ledgers, worker_count
@@ -51,7 +52,8 @@ class PlanRun:
 # One strategy's output files. With several strategies they go in strategies/<rule>/ (ADR 0044), and the comparison
 # files sit in the plan folder (ADR 0045).
 STRATEGY_FILES = ("daily.csv", "events.csv", "annual.json", "ledger.png", "retirement_paths.csv", "retirement_bands.csv",
-                  "retirement_annual.csv", "retirement_range.png", "retirement_flows.png", "retirement_outcomes.png")
+                  "retirement_annual.csv", "retirement_range.png", "retirement_flows.png", "retirement_outcomes.png",
+                  "retirement_markets.png")
 COMPARISON_FILES = ("comparison_summary.csv", "comparison_wealth.png", "comparison_spending.png")
 
 
@@ -121,6 +123,8 @@ def _write_strategy(run: PlanRun, folder: Path, manifest: dict) -> None:
         frame.to_csv(folder / f"{name}.csv", index=False, lineterminator="\n")
     write_retirement_plots(folder, run.plan, run.retirement_paths, run.retirement_bands, run.result)
     write_outcome_plot(folder, run.plan, run.retirement_paths, run.retirement_annual)
+    write_path_markets_plot(folder, run.plan, *path_markets(run.plan, run.market, run.portfolios, run.representative_path),
+                            run.representative_path)
 
 
 def run_plan(plan: dict, output_root: str | Path | None = DEFAULT_ROOT, *, market=None, progress=None,

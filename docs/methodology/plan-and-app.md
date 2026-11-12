@@ -368,7 +368,7 @@ page is drawn, and a finished run opens Outcomes.
 | --- | --- |
 | Plan | The inputs, in tabs You, Investments, Retirement and Assumptions |
 | Outcomes | The outcome tiers and headline figures, then tabs *Wealth*, *Risk over time*, *Spending*, *Age Pension*, *Money in and out* and *Tables* (old section 4) |
-| Paths | One path's daily ledger or a group of paths, in tabs *Balances*, *Money in and out*, *Year by year* and *Event log* (old section 5) |
+| Paths | One path's daily ledger, in tabs *Markets, wealth and money*, *Transfers between accounts*, *Year by year* and *Event log*; or a group of paths, in tabs *Balances*, *Money in and out* and *Year by year* (old section 5) |
 | Compare | The compared strategies' statistics, wealth over time and yearly flows; shown when several strategies ran |
 | Markets | The portfolios, their history and the simulated futures (old sections 1 to 3) |
 | Method | How results are calculated, today's dollars, saved files and rule assumptions |
@@ -428,6 +428,61 @@ inherits the Age Pension model's scope (single person, no Rent Assistance). With
 handful of market sequences.
 
 **Validation.** `tests/test_outcomes.py` (tiers, the 95% boundary, yearly states, groups, the full rate).
+
+### One path: markets, wealth and money on one date axis
+
+[ADR 0049](../decisions/0049-single-path-markets-wealth-and-money.md); code in `retirement/path_markets.py` and
+`ui/charts.py` (`path_story`).
+
+**Purpose.** For one chosen path, show what markets did, what the accounts held and the money that came in and went
+out, lined up by date so that a market fall can be read down to its effect.
+
+**Inputs.** The path's sampled daily returns, `r[t, a]` for observation `t` and ticker `a`
+(`PortfolioAnalysis.returns_for`: the joint donor rows of the stationary bootstrap, the rows the path's ledger ran
+on); the observation dates `d[0..T]` (`d[0]` is the opening mark); the entered weights and rebalancing rule of the
+outside and super portfolios; the plan's CPI assumption.
+
+**Growth of $1.**
+
+```
+ticker a:     g_a[0] = 1,   g_a[t] = g_a[t-1] × (1 + r[t, a])
+portfolio:    h[0] = w,     h[t] = h'[t-1] × (1 + r[t]),   G[t] = sum(h[t])
+              h'[t-1] = sum(h[t-1]) × w   if rebalanced yearly and d[t] is the first observation of a calendar year
+              h'[t-1] = h[t-1]            otherwise
+today's dollars:  g[t] / (1 + CPI) ** ((d[t] - d[0]).days / 365.25)
+```
+
+This is the portfolio analysis's compounding (`analysis._simulate`). When the two portfolios hold the same weights
+and rebalance alike they are one series.
+
+**Statistics**, per series, with `years = (d[T] - d[0]).days / 365.25`:
+
+```
+CAGR                  = g[T] ** (1 / years) - 1
+CAGR after inflation  = (g[T] / (1 + CPI) ** years) ** (1 / years) - 1
+Volatility            = sample standard deviation of (g[t] / g[t-1] - 1) × sqrt(252)
+Worst drawdown        = min over t of g[t] / max(g[0..t]) - 1
+```
+
+Volatility and drawdown use nominal daily returns, as the portfolio analysis does.
+
+**The chart.** Three panels share one date axis: the growth lines (weekly points, log scale, today's dollars), the
+month-end balances by account, and the yearly flows. A financial year's bar spans 1 July to 30 June, cut to the
+plotted dates and inset, with the net-change line at its midpoint. A hairline marks the month end nearest the
+pointer in every panel; the markets and wealth tooltips give that month's values and the flows tooltip that
+financial year's. `retirement_markets.png` draws the same lines and statistics for the path nearest median ending
+wealth.
+
+**Example** (12 November 2026; the example plan run for 40 years with fixed spending, path 37): outside super
+portfolio CAGR 13.4%, 10.6% after inflation, volatility 23.0%, worst drawdown 69.1%, $1 grew to $55.97 in today's
+dollars; `USLCAP3x` CAGR 6.5%, volatility 51.8%, worst drawdown 98.5%.
+
+**Limitations.** The portfolio lines are the entered portfolios at their target weights, not the ledger's holdings,
+which also reflect contributions, sales and the cash buffer. Returns are USD histories used as an AUD proxy. The
+factor 252 is a convention, not the sampled history's exact observations per year.
+
+**Validation.** `tests/test_path_markets.py`: rebalancing at the first observation of a calendar year; a portfolio's
+statistics equal the same path's row in the portfolio analysis's outcomes; identical portfolios are one series.
 
 ### Results: how each figure is defined
 

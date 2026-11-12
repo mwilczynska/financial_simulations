@@ -6,6 +6,7 @@ through ``draw``, which applies one configuration (type, grid, axes, legend) ins
 
 from html import escape
 
+import altair as alt
 import streamlit as st
 
 from financial_simulations.reporting.palette import (ACCENT, AXIS, GRID, INK, INK_SECONDARY, MUTED, NEUTRAL, PAGE, SURFACE,
@@ -38,6 +39,9 @@ CSS = f"""
   [data-testid="stMetric"] {{ border: 1px solid {GRID}; padding: 0.7rem 0.9rem; }}
   [data-testid="stMetricLabel"] p {{ color: {INK_SECONDARY}; font-size: 0.82rem; }}
   [data-testid="stMetricValue"] {{ letter-spacing: -0.01em; }}
+
+  /* Room for the y axis of a stacked chart, whose panels are each given the container's full width. */
+  .st-key-pathstorychart {{ padding-right: 104px; }}
 
   h1, h2, h3 {{ letter-spacing: -0.015em; }}
   .page-title {{ margin: 0.35rem 0 0.9rem; }}
@@ -140,8 +144,34 @@ def configure(chart):
             .configure_text(font=FONT, color=INK_SECONDARY))
 
 
-def draw(chart, **options):
-    st.altair_chart(configure(chart), theme=None, width="stretch", **options)
+def draw(chart, views=None, **options):
+    """Show a chart. ``views`` maps a selection's name to the name prefixes of the views it belongs to, replacing
+    Altair's own lists (see ``charts.path_story``)."""
+    if views is None:
+        st.altair_chart(configure(chart), theme=None, width="stretch", **options)
+        return
+    with alt.data_transformers.disable_max_rows():  # as st.altair_chart does: a 40-year weekly line is over the limit
+        spec = configure(chart).to_dict()
+    st.vega_lite_chart(with_views(spec, views), theme=None, width="stretch", **options)
+
+
+def with_views(spec, views):
+    """A chart specification with each named selection attached to the views whose names start with its prefixes."""
+    names = []
+
+    def walk(node):
+        if isinstance(node, dict):
+            if "mark" in node and "name" in node:
+                names.append(node["name"])
+            for part in ("layer", "vconcat", "hconcat", "concat"):
+                for child in node.get(part, []):
+                    walk(child)
+
+    walk(spec)
+    for param in spec.get("params", []):
+        if param["name"] in views:
+            param["views"] = [n for n in names if n.startswith(tuple(views[param["name"]]))]
+    return spec
 
 
 __all__ = ["ACCENT", "NEUTRAL", "TALL", "MEDIUM", "SHORT", "apply_styles", "card", "chart_title", "configure", "draw",

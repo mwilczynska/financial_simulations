@@ -7,9 +7,10 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from financial_simulations.reporting.palette import FLOW_COLOURS, INK, SERIES
+from financial_simulations.reporting.palette import FLOW_COLOURS, INK, MUTED, SERIES
 from financial_simulations.retirement.flows import account_flows, fold_taxes, household_flows
 from financial_simulations.retirement.outcomes import TIERS, ending_percentiles
+from financial_simulations.retirement.path_markets import PORTFOLIO, path_markets, real_growth
 from financial_simulations.retirement.plan import slug
 from financial_simulations.retirement.real import real_daily, real_events, year_deflator
 from financial_simulations.retirement.run_plan import ledger_for_path
@@ -159,66 +160,130 @@ def group_view(run, d, members, label):
                        "that year.")
 
 
-def legend_controls(name, names):
+def legend_controls(name, names, label=None):
     """Show all / Show none buttons for a chart whose legend hides and shows its items.
 
     Legend clicks are handled inside the chart, so they need no rerun. The buttons rebuild the chart with every
     item shown or hidden; the counter changes the chart spec each time so a repeated press still resets it.
+    ``label`` names the legend when one chart has several, in place of the hint.
     """
     state = st.session_state.get(f"{name}_legend", {"hidden": [], "count": 0})
     with st.container(horizontal=True, vertical_alignment="center"):
+        if label:
+            st.markdown(f"**{label}**", width="content")
         if st.button("Show all", key=f"{name}_all", type="tertiary", icon=":material/visibility:"):
             state = {"hidden": [], "count": state["count"] + 1}
         if st.button("Show none", key=f"{name}_none", type="tertiary", icon=":material/visibility_off:"):
             state = {"hidden": list(names), "count": state["count"] + 1}
-        st.caption("Click a legend item to hide or show it; the axis refits.")
+        if not label:
+            st.caption("Click a legend item to hide or show it; the axis refits.")
     st.session_state[f"{name}_legend"] = state
     return state
 
 
-@st.fragment
-def path_flows(run, d, result, daily, marks):
+def path_flow_frames(run, result, daily):
+    """One path's yearly household flows (taxes folded), account transfers and additions to outside investments."""
     start, cpi = daily.index[0], run.plan["assumptions"]["cpi_annual"]
     household = fold_taxes(household_flows(daily, inflation=True))
-    household["Period"] = household["FY ending"].map(charts.period_label)
-    shown = household.groupby("Flow").filter(lambda g: g["AUD"].abs().max() > 1e-6)
-    order = [f for f in FLOW_COLOURS if f in set(shown["Flow"])]
-    x = alt.X("FY ending:Q", axis=charts.fy_axis(household), scale=charts.fy_scale(household))
     moves = account_flows(daily, real_events(result.events, start, cpi))
-    additions = (moves.loc[moves["Flow"] == "Savings invested"].groupby("FY ending")["AUD"].sum()
-                 .reindex(sorted(household["FY ending"].unique()), fill_value=0.0).reset_index(name="AUD"))
-    additions["Period"] = additions["FY ending"].map(charts.period_label)
-    # No fixed y domain: it refits to whatever the legend leaves visible. The net-change and additions lines are
-    # legend items too, so hiding them lets the axis close in on the bars that remain.
-    net = household.drop_duplicates("FY ending").assign(Flow=charts.NET_LABEL)
-    additions["Flow"] = charts.ADDED_LABEL
-    items = order + [charts.NET_LABEL] + ([charts.ADDED_LABEL] if (additions["AUD"].abs() > 1e-6).any() else [])
-    colour = charts.flow_colour(items)
-    with card("pathflows"):
-        chart_title("Money in and out on this path", "Every dollar that changed total wealth each year: in above zero, "
-                                                     "out below. The bars add up to the net change.")
-        state = legend_controls("path_flows", items)
-        bars, visible = charts.hideable(alt.Chart(shown).mark_bar(size=14, stroke="#ffffff", strokeWidth=0.6).encode(
-            x=x, y=alt.Y("sum(AUD):Q", title="Per year, today's dollars", axis=charts.money_axis()),
-            color=colour, order=alt.Order("Flow:N"),
-            tooltip=[alt.Tooltip("Period:N", title="Year"), "Flow:N", alt.Tooltip("AUD:Q", format="$,.0f")]),
-            "Flow", items, state, "path_flows")
-        line = alt.Chart(net).mark_line(color=INK, strokeWidth=2, point=alt.OverlayMarkDef(color=INK, size=30)).encode(
-            x=x, y="Net change:Q", color=colour,
-            tooltip=[alt.Tooltip("Period:N", title="Year"), alt.Tooltip("Opening:Q", title="Wealth at start", format="$,.0f"),
-                     alt.Tooltip("Net change:Q", title="Net change in wealth", format="$,.0f"),
-                     alt.Tooltip("Closing:Q", title="Wealth at end", format="$,.0f")]).transform_filter(visible)
-        added = charts.additions_layer(additions, x, color=colour)
-        layers = [bars, charts.zero_rule(), line] + ([added.transform_filter(visible)] if added is not None else [])
-        draw(charts.with_milestones(alt.layer(*layers).properties(height=MEDIUM + 60), marks, "Position:Q"))
-        explain("Above zero: take-home salary, employer and salary-sacrifice contributions into super, the Age Pension "
-                "and investment returns in good years. Below zero: spending, tax (income tax, the 15% contributions "
-                "tax, super fund tax and Division 296 tax together), investment losses in bad years and inflation (the "
-                "buying power wealth lost that year). The black line is the net change in total wealth, which equals "
-                "the sum of the bars. The dashed line is what was **added to outside investments** that year, from "
-                "your pay or, after retirement, from unspent pension payments and other spare cash: it moves money "
-                "from cash into the portfolio, so it is a line rather than a bar.")
+    invested = moves.loc[moves["Flow"] == "Savings invested"] if not moves.empty else moves
+    additions = (invested.groupby("FY ending")["AUD"].sum() if not invested.empty else pd.Series(dtype=float, name="AUD"))
+    additions = additions.reindex(sorted(household["FY ending"].unique()), fill_value=0.0).rename_axis("FY ending").reset_index(name="AUD")
+    return household, moves, additions
+
+
+def selected_markets(run, path):
+    """One path's growth of $1 by series and its statistics, kept for this result."""
+    cache = st.session_state.setdefault("markets_cache", {})
+    if (id(run), path) not in cache:
+        if len(cache) > 24:
+            cache.clear()
+        cache[(id(run), path)] = path_markets(run.plan, run.market, run.portfolios, path)
+    return cache[(id(run), path)]
+
+
+def market_table(stats):
+    """Each series' growth and risk on this path, portfolios first."""
+    table = stats.drop(columns="Kind").copy()
+    weights = [c for c in table.columns if c.endswith(" weight")]
+    if (stats["Kind"] == PORTFOLIO).sum() == 1:  # one portfolio in both places: one weight column
+        table = table.drop(columns=weights[1:]).rename(columns={weights[0]: "Weight"})
+        weights = ["Weight"]
+    shares = ["CAGR", "CAGR after inflation", "Volatility", "Worst drawdown"]
+    table[shares] *= 100
+    for column in weights:  # text, so a portfolio's row is blank rather than "None"
+        table[column] = table[column].map(lambda w: "" if pd.isna(w) else f"{w:.0%}")
+    st.dataframe(table, width="stretch", hide_index=True, height=fit(table, 8),
+                 column_config={"Series": st.column_config.TextColumn("On this path", pinned=True),
+                                "CAGR": st.column_config.NumberColumn(
+                                    "Growth per year (CAGR)", format="%.1f%%",
+                                    help="Compound annual growth of $1 over the whole path, before inflation."),
+                                "CAGR after inflation": st.column_config.NumberColumn(
+                                    "CAGR after inflation", format="%.1f%%",
+                                    help="The same growth after the plan's inflation assumption: growth in buying power."),
+                                "Volatility": st.column_config.NumberColumn(
+                                    "Volatility (st. dev.)", format="%.1f%%",
+                                    help="Standard deviation of the path's daily returns, scaled to a year (times the "
+                                         "square root of 252)."),
+                                "Worst drawdown": st.column_config.NumberColumn(
+                                    format="%.1f%%", help="The deepest fall below a previous high on this path."),
+                                "Growth of $1 after inflation": st.column_config.NumberColumn(
+                                    "$1 grew to (today's dollars)", format="dollar",
+                                    help="What $1 invested on the first day is worth on the last, in today's dollars."),
+                                **{w: st.column_config.TextColumn(alignment="right") for w in weights}})
+
+
+@st.fragment
+def path_story(run, d, path, result, daily):
+    """Markets, balances and money in and out for one path, stacked on one date axis."""
+    cpi = run.plan["assumptions"]["cpi_annual"]
+    growth, stats = selected_markets(run, path)
+    household, _, additions = path_flow_frames(run, result, daily)
+    kinds = dict(zip(stats["Series"], stats["Kind"]))
+    tickers = charts.ticker_colours(run.plan["assets"])
+    portfolio_colours = iter((INK, MUTED))
+    colours = {name: next(portfolio_colours) if kind == PORTFOLIO else tickers[name] for name, kind in kinds.items()}
+    _, items = charts.flow_items(household, additions)
+    with card("pathstory"):
+        chart_title("Markets, wealth and money on this path",
+                    "Three views of the same years on one date axis: what markets did, what your accounts held, and "
+                    "the money that came in and went out.")
+        market_table(stats)
+        with st.container(horizontal=True, vertical_alignment="center"):
+            states = {"markets": legend_controls("path_markets", list(growth.columns), "Markets"),
+                      "flows": legend_controls("path_flows", items, "Money in and out")}
+        st.caption("Click a legend item to hide or show it; the axis refits. Drag any panel sideways to pan all three, "
+                   "Shift+scroll to zoom, double-click to reset.")
+        # Streamlit gives each stacked panel the container's full width and the y axis is drawn outside that, so
+        # this container is narrower by the axis's width (see the pathstorychart rule in theme.py).
+        with st.container(key="pathstorychart"):
+            draw(*charts.path_story(real_growth(growth, cpi), kinds, colours, daily, household, additions, d.marks, states))
+        explain("**Markets (top).** Each line is $1 invested on the first day, in today's dollars, on a log scale: a "
+                "steady slope is steady growth, and a crash is the same drop wherever it happens. The thick line is "
+                "your portfolio at its entered weights; the thin lines are its tickers. The table above gives each "
+                "line's growth per year, volatility and worst drawdown on this path, all worked out from the path's "
+                "daily returns. Leveraged tickers swing far more than the portfolio: hide them in the legend to look "
+                "closer.\n\n"
+                "**Wealth (middle).** Month-end balances by account, stacked. Outside money funds spending until super "
+                "becomes accessible, then super moves into the pension. Wealth follows the market line above, less what "
+                "you spend and pay in tax.\n\n"
+                "**Money in and out (bottom).** One bar per financial year (1 July to 30 June). Above zero: take-home "
+                "salary, super contributions, the Age Pension and investment returns in good years. Below zero: "
+                "spending, tax (income tax, the 15% contributions tax, super fund tax and Division 296 tax together), "
+                "investment losses in bad years and inflation (the buying power wealth lost that year). The black line "
+                "is the net change in total wealth, which equals the sum of the bars. The dashed line is what was "
+                "**added to outside investments**: it moves money from cash into the portfolio, so it is a line "
+                "rather than a bar.\n\n"
+                "The hairline marks the same month in all three panels, so a market fall can be read straight down "
+                "to its effect on wealth and on that year's investment returns.")
+
+
+@st.fragment
+def path_moves(run, d, result, daily, marks):
+    household, moves, _ = path_flow_frames(run, result, daily)
+    x = alt.X("FY ending:Q", axis=charts.fy_axis(household), scale=charts.fy_scale(household))
     if moves.empty:
+        st.caption("No money moved between accounts on this path.")
         return
     with card("pathmoves"):
         chart_title("Money moving into and out of each account", "Transfers only, excluding investment growth.")
@@ -314,15 +379,14 @@ def path_view(run, d, path, ranks):
     e.metric("Wealth when super becomes accessible", compact(outcome.get("Wealth when super accessible", np.nan)),
              help="Total wealth on the first day super can be withdrawn (preservation age and retirement), when that "
                   "is after the start.")
-    tabs = kept_tabs(result_key(run, "path_tabs"), ["Balances", "Money in and out", "Year by year", "Event log"])
+    tabs = kept_tabs(result_key(run, "path_tabs"), ["Markets, wealth and money", "Transfers between accounts",
+                                                    "Year by year", "Event log"])
     if tabs[0].open:
-        with tabs[0], card("pathbalances"):
-            chart_title("Balances by account", "Month-end balances, stacked. Outside money funds spending until super "
-                                               "becomes accessible, then super moves into the pension.")
-            draw(charts.with_milestones(charts.balances_chart(daily), d.marks))
+        with tabs[0]:
+            path_story(run, d, path, result, daily)
     if tabs[1].open:
         with tabs[1]:
-            path_flows(run, d, result, daily, d.marks)
+            path_moves(run, d, result, daily, d.marks)
     if tabs[2].open:
         with tabs[2]:
             yearly_table(run, d, result, start)
