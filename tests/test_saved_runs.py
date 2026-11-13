@@ -15,6 +15,7 @@ from financial_simulations.retirement.ledger_store import LedgerStore, ledger_pa
 from financial_simulations.retirement.plan import default_plan
 from financial_simulations.retirement.run_plan import ledger_for_path, run_plan
 from financial_simulations.retirement.saved_runs import (SavedRunError, estimate_bytes, list_saved_runs, load_run,
+                                                         saved_folder,
                                                          save_run)
 
 
@@ -43,6 +44,7 @@ def compared_run(processed_fixture):
 def test_saved_run_opens_with_identical_results_for_every_strategy(tmp_path, compared_run):
     run = compared_run
     folder = save_run(run, tmp_path, workers=1, label="test")
+    assert folder == tmp_path / "example-early-retirement"  # named after the plan, with no date
     assert not list(tmp_path.glob(".*"))  # no partial folder is left behind
     back = load_run(folder)
     assert list(back.strategies) == list(run.strategies) and back.strategies["fixed"] is back
@@ -150,3 +152,41 @@ def test_plan_menu_saves_results_with_the_plan_and_opens_them(tmp_path, monkeypa
     app.number_input(key=f"retirement_paths__{app.session_state.version}").set_value(4).run()
     app.run()  # the menu is drawn before the Plan page applies an edit, so it shows on the next rerun
     assert app.checkbox(key="save_results_too").disabled and not app.checkbox(key="save_results_too").value
+
+
+def test_saving_a_plans_results_again_replaces_the_earlier_save(tmp_path, compared_run):
+    tmp_path = tmp_path / "saved"  # beside the fixture's processed data
+    first = save_run(compared_run, tmp_path, full_ledgers=True, workers=1, label="first")
+    assert load_run(first).saved_ledgers is not None
+    again = save_run(compared_run, tmp_path, workers=1, label="second")
+    assert again == first == saved_folder("Example early retirement", tmp_path)
+    (row,) = list_saved_runs(tmp_path)
+    assert row["label"] == "second" and not row["full_ledgers"]
+    assert not (again / "strategies" / "fixed" / "ledgers").exists()  # nothing of the earlier save is left
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["example-early-retirement"]
+    assert load_run(again).saved_ledgers is None
+
+
+def test_an_interrupted_save_keeps_the_earlier_one(tmp_path, compared_run):
+    tmp_path = tmp_path / "saved"  # beside the fixture's processed data
+    folder = save_run(compared_run, tmp_path, workers=1, label="kept")
+
+    def stop(fraction, message):
+        if fraction >= 0.97:
+            raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        save_run(compared_run, tmp_path, workers=1, label="lost", progress=stop)
+    (row,) = list_saved_runs(tmp_path)
+    assert row["folder"] == folder and row["label"] == "kept"
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["example-early-retirement"]
+    load_run(folder)
+
+
+def test_a_folder_that_is_not_a_saved_run_is_never_replaced(tmp_path, compared_run):
+    folder = saved_folder("Example early retirement", tmp_path)
+    folder.mkdir()
+    (folder / "mine.txt").write_text("keep", encoding="utf-8")
+    with pytest.raises(SavedRunError):
+        save_run(compared_run, tmp_path, workers=1)
+    assert (folder / "mine.txt").read_text(encoding="utf-8") == "keep"

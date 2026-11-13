@@ -1,6 +1,6 @@
 """Save a finished plan run's results and open them again without re-running (ADR 0050).
 
-A saved run is one folder under ``output/saved_runs/``:
+A saved run is one folder per plan name, ``output/saved_runs/<plan-name>/``; saving again replaces it:
 
 | File | Contents |
 | --- | --- |
@@ -46,7 +46,7 @@ STRATEGY_FRAMES = ("retirement_paths", "retirement_annual", "account_bands", "pa
 
 
 class SavedRunError(ValueError):
-    """A folder that is not a saved run this version can open."""
+    """A folder that is not a saved run this version can open, or cannot be replaced by one."""
 
 
 def _parquet(frame: pd.DataFrame, file: Path) -> None:
@@ -69,12 +69,9 @@ def _json(value, file: Path) -> None:
     file.write_text(json.dumps(value, indent=2, default=str) + "\n", encoding="utf-8", newline="\n")
 
 
-def _folder_name(plan_name: str, when: datetime, root: Path) -> Path:
-    base = f"{slug(plan_name)}_{when:%Y-%m-%d_%H%M%S}"
-    folder, n = root / base, 2
-    while folder.exists() or (root / f".{folder.name}.partial").exists():
-        folder, n = root / f"{base}_{n}", n + 1
-    return folder
+def saved_folder(plan_name: str, root: str | Path = DEFAULT_ROOT) -> Path:
+    """Where the results of the plan called ``plan_name`` are saved: one folder per plan name, like plan files."""
+    return Path(root) / slug(plan_name)
 
 
 def save_run(run: PlanRun, root: str | Path = DEFAULT_ROOT, *, full_ledgers: bool = False, progress=None,
@@ -83,8 +80,11 @@ def save_run(run: PlanRun, root: str | Path = DEFAULT_ROOT, *, full_ledgers: boo
 
     With ``full_ledgers`` every calculated path's daily ledger is re-run on the run's own draws and stored too:
     about 1 MB per path per strategy for a 50-year plan; it can take longer than the run.
-    ``progress(fraction, message)`` reports the stages. The folder is written under a hidden partial name and
-    renamed when complete, so an interrupted save never looks like a saved run.
+    ``progress(fraction, message)`` reports the stages.
+
+    The folder is ``<root>/<plan-name>/``, so saving a plan's results again replaces its earlier save (ADR 0052). The
+    new save is written under a hidden partial name first and replaces the old one only when complete, so an
+    interrupted save leaves the earlier one as it was. A folder there that is not a saved run is never replaced.
     """
     tell = progress or (lambda fraction, message: None)
     root = Path(root)
@@ -92,8 +92,14 @@ def save_run(run: PlanRun, root: str | Path = DEFAULT_ROOT, *, full_ledgers: boo
     strategies = run.strategies or {run.rule: run}
     first = next(iter(strategies.values()))
     when = datetime.now().astimezone()
-    folder = _folder_name(first.plan["plan"]["name"], when, root)
-    partial = root / f".{folder.name}.partial"
+    folder = saved_folder(first.plan["plan"]["name"], root)
+    partial, old = root / f".{folder.name}.partial", root / f".{folder.name}.old"
+    if old.exists() and not folder.exists():  # a save stopped between its two renames: put the earlier one back
+        old.rename(folder)
+    if folder.exists() and not (folder / "run.json").is_file():
+        raise SavedRunError(f"{folder} exists but is not a saved run; move it before saving results there.")
+    for leftover in (partial, old):  # an unfinished new save, or an earlier save already replaced
+        shutil.rmtree(leftover, ignore_errors=True)
     partial.mkdir()
     try:
         tell(0.0, "Saving the market and portfolio results")
@@ -143,10 +149,15 @@ def save_run(run: PlanRun, root: str | Path = DEFAULT_ROOT, *, full_ledgers: boo
                "portfolios": {"combined_shares": portfolios.combined_shares,
                               "retirement_start": portfolios.retirement_start.isoformat()},
                "full_ledgers": bool(full_ledgers), "strategies": index}, partial / "run.json")
+        if folder.exists():
+            folder.rename(old)
         partial.rename(folder)
     except BaseException:
+        if old.exists() and not folder.exists():
+            old.rename(folder)
         shutil.rmtree(partial, ignore_errors=True)
         raise
+    shutil.rmtree(old, ignore_errors=True)
     tell(1.0, "Saved")
     return folder
 
@@ -183,7 +194,8 @@ def load_run(folder: str | Path) -> PlanRun:
     manifest = _manifest(folder)
     plan = manifest["plan"]
     returns = _read(folder / "market_returns.parquet")
-    draws = np.load(folder / "portfolio_draws.npz")
+    with np.load(folder / "portfolio_draws.npz") as stored:  # closed at once, so the folder can be replaced later
+        draws = {name: stored[name] for name in stored.files}
     dates = (date.fromordinal(int(draws["opening"])), *(d.date() if hasattr(d, "date") else d for d in returns["Date"]))
     assets = tuple(c for c in returns.columns if c != "Date")
     path = MarketPath(dates, assets, returns[list(assets)].to_numpy(dtype=float), manifest["market"]["currency"])

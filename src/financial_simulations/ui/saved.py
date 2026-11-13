@@ -2,11 +2,12 @@
 
 import copy
 from datetime import datetime
+from pathlib import Path
 
 import streamlit as st
 
 from financial_simulations.retirement.saved_runs import (DEFAULT_ROOT, SavedRunError, code_changed, estimate_bytes,
-                                                         list_saved_runs, load_run, save_run)
+                                                         list_saved_runs, load_run, save_run, saved_folder)
 from financial_simulations.retirement.strategy_results import STRATEGY_NAMES
 from financial_simulations.ui.state import calculation_cores, load_into_session, plural
 
@@ -45,12 +46,20 @@ def save_requested_results():
         bar.progress(min(max(fraction, 0.0), 1.0), text=f"{message} · {fraction:.0%}")
 
     try:
+        replacing = saved_folder(run.plan["plan"]["name"], DEFAULT_ROOT).exists()
         folder = save_run(run, DEFAULT_ROOT, full_ledgers=request["full"], label=request["label"], progress=progress,
                           workers=calculation_cores())
         plan_file = request.get("plan_file")
-        st.session_state.flash = (f"Saved {plan_file} and its results to {folder}." if plan_file
-                                  else f"Saved results to {folder}.")
-    except OSError as exc:
+        st.session_state.flash = ((f"Saved {plan_file} and its results to {folder.as_posix()}" if plan_file
+                                   else f"Saved results to {folder.as_posix()}")
+                                  + (", replacing the earlier save." if replacing else "."))
+        if run.saved_from is not None and Path(run.saved_from).resolve() == folder.resolve():
+            # The results on screen were opened from the folder just replaced: open the new save in their place, so
+            # stored ledgers are read from files that exist.
+            st.session_state.result = load_run(folder)
+            st.session_state.ledger_cache, st.session_state.derived = {}, {}
+            st.session_state.saved_code_changed = False
+    except (OSError, SavedRunError) as exc:
         st.error(f"The results could not be saved: {exc}")
         return
     finally:
@@ -97,7 +106,9 @@ def save_options(run, current):
                             f"the run itself, and adds about {size(ledgers)}. Without it, opening a path re-runs its "
                             "ledger in about a second.")
     if results:
-        st.caption(f"Results: about {size(base + (ledgers if full else 0))}.")
+        existing = saved_folder(run.plan["plan"]["name"], DEFAULT_ROOT)
+        st.caption(f"Results: about {size(base + (ledgers if full else 0))}, saved to `{existing.as_posix()}/`"
+                   + (", replacing the results saved there." if existing.exists() else "."))
     return results, full
 
 

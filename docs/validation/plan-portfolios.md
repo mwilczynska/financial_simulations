@@ -453,3 +453,14 @@ was no Results menu. After running the example plan, *Also save results* was ena
 disabled; ticking results enabled the ledger box and showed "Results: about 4.0 MB". **Save** wrote the plan and a
 second saved run, listed as *Open saved results (2 runs)*. No server errors. The app test found that opening saved
 results gave the editor the run's own plan object; it now gets a copy.
+
+## One saved run per plan name (2026-11-13)
+
+ADR 0052. `tests/test_saved_runs.py` (8 tests) passed, including a second save replacing the first and its stored
+ledgers, an interrupted second save leaving the first openable, and a folder that is not a saved run left untouched.
+
+The four existing dated saves were renamed. Two were of the example plan: the newer (09:53, without full ledgers)
+became `example-early-retirement/`, and the older (09:22, with full ledgers) was moved out of the project rather
+than deleted. The other two, of private plans, were renamed to their plan names. Each renamed save then opened with
+`load_run`: the two 1,000-path private saves in 2.7 s and 2.9 s, each reading back its 1,000 stored ledgers' last path (20,089 and 21,915
+days), and the example in 0.1 s.

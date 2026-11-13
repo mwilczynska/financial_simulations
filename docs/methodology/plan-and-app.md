@@ -329,7 +329,8 @@ In the *Plan* menu, **Also save results** makes **Save** save the results on scr
 [ADR 0051](../decisions/0051-save-results-from-the-plan-menu.md)). The box is greyed out when there are no results
 or the inputs have changed since the last run; **Also save every path's full daily ledger** is greyed out unless it
 is ticked, and off by default. A save writes
-`output/saved_runs/<plan-name>_<date>_<time>/` (git-ignored) with:
+`output/saved_runs/<plan-name>/` (git-ignored), replacing any earlier save of the same plan name
+([ADR 0052](../decisions/0052-one-saved-run-per-plan-name.md)), with:
 
 - `run.json` (format version, time, note, plan, rule, code and market manifests) and `plan.toml`;
 - the market's daily history returns and ticker statistics, and every market path's sampled history rows
@@ -353,7 +354,8 @@ Opening a saved run loads its plan and results together; nothing the run summari
 reads a path's ledger from the saved ledgers when present, otherwise re-runs it from the saved market and draws, so
 it is the ledger the run summarised. The plan editor gets a copy of the opened plan, so edits never change the
 opened results' plan. If the model's Python source has changed since the save, the menu says the
-results are those of the saving code. Saves are written to a hidden partial folder and renamed when complete.
+results are those of the saving code. Saves are written to a hidden partial folder and swapped with the
+earlier save only when complete; if that fails, the earlier save is put back.
 
 **Inflation.** Results are in today's dollars, the dollars of the plan's
 start date ([ADR 0026](../decisions/0026-results-in-todays-dollars.md)). The
