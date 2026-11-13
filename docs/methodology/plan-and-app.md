@@ -323,8 +323,11 @@ browser download sit in an expander.
 
 ### Saved results
 
-The *Results* menu in the top bar saves the results on screen and opens saved ones
-([ADR 0050](../decisions/0050-saved-run-results.md)). A save writes
+In the *Plan* menu, **Also save results** makes **Save** save the results on screen with the plan, and
+**Open saved results** opens them again ([ADR 0050](../decisions/0050-saved-run-results.md),
+[ADR 0051](../decisions/0051-save-results-from-the-plan-menu.md)). The box is greyed out when there are no results
+or the inputs have changed since the last run; **Also save every path's full daily ledger** is greyed out unless it
+is ticked, and off by default. A save writes
 `output/saved_runs/<plan-name>_<date>_<time>/` (git-ignored) with:
 
 - `run.json` (format version, time, note, plan, rule, code and market manifests) and `plan.toml`;
@@ -333,7 +336,7 @@ The *Results* menu in the top bar saves the results on screen and opens saved on
 - the portfolio results, and each strategy's path outcomes, yearly rows, account bands and month-end balances by
   path, as Parquet;
 - each strategy's median-path ledger in full;
-- only when *Also save every path's full daily ledger* is ticked (off by default), every calculated path's ledger.
+- only when *Also save every path's full daily ledger* is ticked, every calculated path's ledger.
 
 A ledger set is `daily.parquet` and `events.parquet` with a `path` column, one row group per path, and `years.json`
 holding each path's financial-year records and outstanding liabilities. For analysis,
@@ -347,7 +350,8 @@ per strategy per plan year for the results, plus about 21 kB per path per strate
 
 Opening a saved run loads its plan and results together; nothing the run summarised is recalculated. The Paths page
 reads a path's ledger from the saved ledgers when present, otherwise re-runs it from the saved market and draws, so
-it is the ledger the run summarised. If the model's Python source has changed since the save, the menu says the
+it is the ledger the run summarised. The plan editor gets a copy of the opened plan, so edits never change the
+opened results' plan. If the model's Python source has changed since the save, the menu says the
 results are those of the saving code. Saves are written to a hidden partial folder and renamed when complete.
 
 **Inflation.** Results are in today's dollars, the dollars of the plan's

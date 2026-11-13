@@ -444,3 +444,12 @@ off and an estimate of 4.0 MB (25.0 MB once ticked), and the save with every led
 bar and wrote 21 MB in 19 files. *Open* from the Plan page loaded the plan and results, opened the Outcomes page with
 the same figures and the status *Saved results opened*; a non-median path on the Paths page drew from the save.
 No console or server errors.
+
+## Saving results from the Plan menu (2026-11-13)
+
+ADR 0051. `tests/test_saved_runs.py` and `tests/test_plan.py` (40 tests) passed. In the in-app browser, before a
+run, the Plan menu's *Also save results* and *Also save every path's full daily ledger* were both disabled and there
+was no Results menu. After running the example plan, *Also save results* was enabled and the ledger box still
+disabled; ticking results enabled the ledger box and showed "Results: about 4.0 MB". **Save** wrote the plan and a
+second saved run, listed as *Open saved results (2 runs)*. No server errors. The app test found that opening saved
+results gave the editor the run's own plan object; it now gets a copy.

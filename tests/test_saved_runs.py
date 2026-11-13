@@ -107,7 +107,7 @@ def test_a_folder_without_a_manifest_is_not_a_saved_run(tmp_path):
 
 @pytest.mark.skipif("sandbox." in tempfile.gettempdir().lower(),
                     reason="Streamlit AppTest stalls in this managed Windows sandbox; the local browser is used for UI validation")
-def test_browser_app_saves_and_opens_results(tmp_path, monkeypatch, processed_fixture):
+def test_plan_menu_saves_results_with_the_plan_and_opens_them(tmp_path, monkeypatch, processed_fixture):
     pytest.importorskip("streamlit")
     from streamlit.testing.v1 import AppTest
 
@@ -117,14 +117,21 @@ def test_browser_app_saves_and_opens_results(tmp_path, monkeypatch, processed_fi
     app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "src" / "financial_simulations" / "ui" / "app.py"),
                             default_timeout=120)
     app.run()
+    # Before a run there are no results: both tick boxes are greyed out.
+    assert app.checkbox(key="save_results_too").disabled and app.checkbox(key="save_full_ledgers").disabled
     app.number_input(key="paths__0").set_value(16)
     app.number_input(key="retirement_paths__0").set_value(3).run()
     app.button(key="run_sidebar").click().run()
     assert not app.exception and app.session_state.result.saved_from is None
-    assert app.checkbox(key="save_full_ledgers").value is False  # every path's ledger is opt-in
-    app.checkbox(key="save_full_ledgers").check().run()
-    app.button(key="save_results").click().run()
+    results, ledgers = app.checkbox(key="save_results_too"), app.checkbox(key="save_full_ledgers")
+    assert not results.disabled and not results.value and ledgers.disabled  # every path's ledger needs results ticked
+    results.check().run()
+    ledgers = app.checkbox(key="save_full_ledgers")
+    assert not ledgers.disabled and ledgers.value is False  # every path's ledger is opt-in
+    ledgers.check().run()
+    app.button(key="save_plan").click().run()
     assert not app.exception and not app.error
+    assert (tmp_path / "plans" / "example-early-retirement.toml").exists()
     (row,) = list_saved_runs(tmp_path / "output" / "saved_runs")
     assert row["full_ledgers"] and row["retirement_paths"] == 3
     original = app.session_state.result
@@ -137,3 +144,9 @@ def test_browser_app_saves_and_opens_results(tmp_path, monkeypatch, processed_fi
     app.session_state["page"] = "Paths"
     app.run()
     assert not app.exception
+    # Changed inputs grey the results box out again: a plan file is never saved beside other inputs' results.
+    app.session_state["page"] = "Plan"
+    app.run()
+    app.number_input(key=f"retirement_paths__{app.session_state.version}").set_value(4).run()
+    app.run()  # the menu is drawn before the Plan page applies an edit, so it shows on the next rerun
+    assert app.checkbox(key="save_results_too").disabled and not app.checkbox(key="save_results_too").value

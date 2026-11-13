@@ -1,5 +1,6 @@
-"""The Results menu: save the current results, and open saved results without re-running (ADR 0050)."""
+"""Saving results with a plan, and opening saved results, from the Plan menu (ADRs 0050 and 0051)."""
 
+import copy
 from datetime import datetime
 
 import streamlit as st
@@ -28,8 +29,8 @@ def describe(row):
             + (" · every path's ledger" if row["full_ledgers"] else ""))
 
 
-def request_save(full, label):
-    st.session_state.save_requested = {"full": full, "label": label}
+def request_save(full, label="", plan_file=None):
+    st.session_state.save_requested = {"full": full, "label": label, "plan_file": plan_file}
 
 
 def save_requested_results():
@@ -46,18 +47,21 @@ def save_requested_results():
     try:
         folder = save_run(run, DEFAULT_ROOT, full_ledgers=request["full"], label=request["label"], progress=progress,
                           workers=calculation_cores())
-        st.session_state.flash = f"Saved results to {folder}."
+        plan_file = request.get("plan_file")
+        st.session_state.flash = (f"Saved {plan_file} and its results to {folder}." if plan_file
+                                  else f"Saved results to {folder}.")
     except OSError as exc:
         st.error(f"The results could not be saved: {exc}")
         return
     finally:
         bar.empty()
-    st.rerun()  # the Results menu was drawn before the save; draw it again with the new entry
+    st.rerun()  # the Plan menu was drawn before the save; draw it again with the new entry
 
 
 def open_saved(row):
     run = load_run(row["folder"])
-    load_into_session(run.plan, f"Opened saved results from {when(row['saved_at'])}.")
+    # The editor gets its own copy: edits must not change the plan the opened results belong to.
+    load_into_session(copy.deepcopy(run.plan), f"Opened saved results from {when(row['saved_at'])}.")
     st.session_state.plan_file = None
     st.session_state.result = run
     st.session_state.ledger_cache, st.session_state.derived = {}, {}
@@ -66,46 +70,62 @@ def open_saved(row):
     st.session_state.page = "Outcomes"
 
 
-def results_menu(run):
-    """Save the results on screen, or open saved ones."""
-    if run is not None and run.saved_from is not None:
-        st.markdown(f"**These results were opened from** `{run.saved_from.as_posix()}`.")
-        if run.saved_ledgers is not None:
-            st.caption("Every path's full daily ledger was saved, so opening a path reads it instead of re-running it.")
-        else:
-            st.caption("Opening a path other than the median one re-runs its daily ledger from the saved draws "
-                       "(about a second).")
-        if st.session_state.get("saved_code_changed"):
-            st.warning("The model's code has changed since these results were saved. They are the results of the "
-                       "code that saved them (recorded in run.json); run the plan again for current results.")
-    elif run is not None:
-        base, ledgers = estimate_bytes(run.plan)
-        st.markdown("**Save these results**")
-        label = st.text_input("Note (optional)", key="save_label", max_chars=80,
-                              help="Shown in the list of saved results, for example what this run tests.")
-        full = st.checkbox("Also save every path's full daily ledger", value=False, key="save_full_ledgers",
-                           help="Every calculated path's day-by-day balances, flows and event log, for each strategy. "
-                                f"It re-runs every path's ledger on the same draws and writes them, which can take "
-                                f"longer than the run itself, and adds about {size(ledgers)}. Without it, opening a path re-runs "
-                                "its ledger in about a second.")
-        st.caption(f"About {size(base + (ledgers if full else 0))}, saved to `{DEFAULT_ROOT.as_posix()}/` (git-ignored).")
-        st.button("Save results", width="stretch", key="save_results", icon=":material/save:", on_click=request_save,
-                  args=(full, label))
-    else:
-        st.caption("Run the plan to save its results.")
+RESULTS_BOX, LEDGERS_BOX = "save_results_too", "save_full_ledgers"
+
+
+def save_options(run, current):
+    """The Plan menu's tick boxes for saving the results with the plan. Returns (save results, every ledger).
+
+    ``current`` says the results on screen are those of the plan being saved. Otherwise both boxes are greyed out
+    and cleared, so a plan file is never saved beside results of different inputs.
+    """
+    possible = run is not None and current
+    if not possible:
+        st.session_state[RESULTS_BOX] = st.session_state[LEDGERS_BOX] = False
+    why = ("Run the plan first: there are no results to save." if run is None else
+           "The inputs have changed since the last run: run the plan again to save results that match it."
+           if not current else None)
+    base, ledgers = estimate_bytes(run.plan) if run is not None else (0, 0)
+    results = st.checkbox("Also save results", key=RESULTS_BOX, disabled=not possible,
+                          help=why or f"Saves the results on screen to `{DEFAULT_ROOT.as_posix()}/` (git-ignored), so they "
+                                      "open again without re-running.")
+    if not results:
+        st.session_state[LEDGERS_BOX] = False
+    full = st.checkbox("Also save every path's full daily ledger", key=LEDGERS_BOX, disabled=not results,
+                       help="Every calculated path's day-by-day balances, flows and event log, for each strategy. It "
+                            "re-runs every path's ledger on the same draws and writes them, which can take longer than "
+                            f"the run itself, and adds about {size(ledgers)}. Without it, opening a path re-runs its "
+                            "ledger in about a second.")
+    if results:
+        st.caption(f"Results: about {size(base + (ledgers if full else 0))}.")
+    return results, full
+
+
+def opened_note(run):
+    """Where results opened from a save came from, and whether the code has changed since."""
+    if run is None or run.saved_from is None:
+        return
+    st.caption(f"Results opened from `{run.saved_from.as_posix()}`" +
+               (", with every path's ledger." if run.saved_ledgers is not None else "."))
+    if st.session_state.get("saved_code_changed"):
+        st.warning("The model's code has changed since these results were saved. They are the results of the code "
+                   "that saved them (recorded in run.json); run the plan again for current results.")
+
+
+def open_saved_results():
+    """Pick a saved run and open its plan and results."""
     saved = list_saved_runs(DEFAULT_ROOT)
-    st.divider()
     if not saved:
-        st.caption(f"No saved results yet in `{DEFAULT_ROOT.as_posix()}/`.")
         return
     rows = {describe(row): row for row in saved}
-    choice = st.selectbox(f"Open saved results ({plural(len(saved), 'run')})", list(rows), key="saved_pick")
+    a, b = st.columns([2.2, 1], vertical_alignment="bottom")
+    choice = a.selectbox(f"Open saved results ({plural(len(saved), 'run')})", list(rows), key="saved_pick",
+                         help="Saved with **Also save results**. Opening one replaces the plan and results on screen.")
     row = rows[choice]
-    st.caption(f"{plural(row['files'], 'file')} in `{row['folder'].as_posix()}`.")
-    if st.button("Open", width="stretch", key="open_saved", icon=":material/folder_open:",
-                 help="Replaces the plan and results on screen with the saved ones."):
+    if b.button("Open", width="stretch", key="open_saved"):
         try:
             open_saved(row)
             st.rerun()
         except (SavedRunError, OSError, KeyError, ValueError) as exc:
             st.error(f"Could not open {row['folder']}: {exc}")
+    st.caption(f"{plural(row['files'], 'file')} in `{row['folder'].as_posix()}`.")

@@ -55,7 +55,8 @@ Decision records preserve why Financial Simulations makes a material modelling o
 | [0047](0047-app-layout-and-one-visual-system.md) | 2026-11-10 | Accepted; implemented and tested | No sidebar: a top bar with pages, plan menu and Run; one page drawn at a time; fewer, smaller charts; one palette for the app and PNGs; taxes drawn as one flow |
 | [0048](0048-outcome-tiers-and-average-retirement-spending.md) | 2026-11-10 | Accepted; implemented and tested | Each path's outcome tier (self-funded, part Age Pension, full Age Pension, ran out), yearly states, and average retired-year spending by path and group |
 | [0049](0049-single-path-markets-wealth-and-money.md) | 2026-11-12 | Accepted; implemented and tested | One path's markets (growth of $1 with CAGR, volatility and drawdown), balances and money in and out as three panels on one date axis, for a path or a group; legends that hide items; tabs that keep the scroll position |
-| [0050](0050-saved-run-results.md) | 2026-11-13 | Accepted; implemented and tested | Save a run's results as Parquet under `output/saved_runs/` and open them without re-running; every path's full ledger optional (tick box, off by default) |
+| [0050](0050-saved-run-results.md) | 2026-11-13 | Accepted; implemented and tested; its Results menu superseded by 0051 | Save a run's results as Parquet under `output/saved_runs/` and open them without re-running; every path's full ledger optional (tick box, off by default) |
+| [0051](0051-save-results-from-the-plan-menu.md) | 2026-11-13 | Accepted; implemented and tested | Results are saved by an *Also save results* tick box in the Plan menu (greyed out without matching results), with every path's ledger a second box; the Results menu is removed |
 
 ## When to write a record
 

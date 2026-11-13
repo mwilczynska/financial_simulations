@@ -2,7 +2,8 @@
 
 Date: 2026-11-13.
 
-Status: accepted; implemented and tested.
+Status: accepted; implemented and tested. Its Results menu is superseded by
+[ADR 0051](0051-save-results-from-the-plan-menu.md) (tick boxes in the Plan menu); the rest stands.
 
 ## Context
 
