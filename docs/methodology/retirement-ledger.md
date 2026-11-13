@@ -217,7 +217,7 @@ Details are in [investment-property.md](investment-property.md)
 **Home value, rent paid and moving in.** With `home`, the home's running costs fall due on the first of each month and
 are paid before spending; its value grows monthly and is in no wealth total. A renter's `rent_paid_weekly` is paid
 the same way. With `investment_property.move_in`, the property becomes the home on that day: its loan becomes the home
-loan, rent stops, and its value leaves total wealth through the `property_moved_in` flow
+loan, rent stops, and its value stays in total wealth as `home_in_wealth` (a transfer, not a flow)
 ([ADR 0055](../decisions/0055-home-value-rent-paid-and-moving-in.md)).
 
 The opening value plus market P&L, cash salary and employer contributions,

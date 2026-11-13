@@ -24,12 +24,12 @@ import numpy as np
 import pandas as pd
 
 
-STOCKS = ("cash", "outside_investments", "accumulation", "pension", "mortgage", "property_value", "property_loan", "home_value", "total",
+STOCKS = ("cash", "outside_investments", "accumulation", "pension", "mortgage", "property_value", "property_loan", "home_value", "home_in_wealth", "total",
           "spendable", "pending_contributions", "tax_liabilities")
 FLOWS = ("market_pnl", "salary", "employer_contributions", "contributions_tax", "spending_paid", "shortfall", "tax_paid",
          "tax_unpaid", "fund_tax", "distributions", "pension_payments", "lump_sums", "interest", "age_pension", "division_296",
          "mortgage_interest", "mortgage_repaid", "rent", "property_costs", "property_interest", "property_loan_repaid",
-         "property_growth", "home_costs", "home_growth", "rent_paid", "property_moved_in")
+         "property_growth", "home_costs", "home_growth", "rent_paid")
 
 
 def _fy_end(day) -> int:

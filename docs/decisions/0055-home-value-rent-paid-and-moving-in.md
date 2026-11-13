@@ -48,7 +48,10 @@ The user then asked for:
 
 **Moving in**
 
-- **Keep the property in total wealth after the move.** Rejected: inconsistent with a home being in no wealth total.
+- **Keep the property in total wealth after the move (chosen in the revision below).** First rejected as
+  inconsistent with an entered home being in no wealth total.
+- **Take the property out of total wealth on the move, as a flow (first implementation).** Superseded the same day:
+  the user saw the whole value drawn as a one-year loss in money in and out, and its wealth layer vanish.
 - **Leave the tenants' rent and the loan's deductibility unchanged.** Rejected: both change in law when the property
   becomes the main residence.
 - **Make it the home, following every home rule (chosen).**
@@ -80,9 +83,10 @@ home loan or home value, on a date after the start. On that day:
   not deductible.
 - **Running costs** switch to `home.running_costs` of the value, and the value keeps growing at the property's rate as
   `home_value`.
-- **Wealth:** the value leaves total wealth (flow `property_moved_in`, shown as "Became your home"). The loan's move
-  from investment loan to home loan leaves total wealth unchanged, but spendable wealth now deducts it, as for any home
-  loan.
+- **Wealth:** the move is a transfer, not a flow. The home stays in total wealth (daily `home_in_wealth`) and is drawn
+  as *Home you moved into* on the wealth charts. Its later growth is the *Property value growth* flow. The loan moves
+  from investment loan to home loan, so total wealth does not change on the day, but spendable wealth now deducts it,
+  as for any home loan. A home entered as `[home]` remains in no wealth total.
 - **Age Pension:** the property becomes an exempt home, and the homeowner limits apply.
 - **Tax:** rental income and deductions stop. A quarantined loss carried forward stays unused.
 
@@ -90,7 +94,7 @@ home loan or home value, on a date after the start. On that day:
 
 - Home value is an optional band.
 - *Home costs* and *Rent paid* are household flows. They are folded with *Mortgage interest* into one *Home* flow in
-  charts, and *Became your home* joins the *Investment property* flow.
+  charts. The move itself is not a flow.
 - Path outcomes add home costs, home value at the end, rent paid and the move-in date.
 - Withdrawal rates count home costs and rent paid as draws.
 
@@ -131,6 +135,13 @@ the move-in option.
 
 **Compatibility.** Plans without `[home]`, `weekly_rent` or `move_in_date` read as before; the schema version is
 unchanged.
+
+## Revision (2026-11-13)
+
+The first implementation took the property's value out of total wealth on the move day, through a `property_moved_in`
+flow. The user saw it drawn as a loss of about $1.6M in that year's money in and out, and its wealth layer vanished.
+They asked for the move to be a transfer and for the home's value to stay on the wealth graph. The home you move into
+now stays in total wealth.
 
 ## Implementation and validation
 

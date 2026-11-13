@@ -151,14 +151,16 @@ def group_story(run, d, members, label):
         return
     series = series.assign(Accumulation=series["Super and pension"] - series["Pension account"])
     # Runs saved before the home loan or the investment property have no such series.
-    optional = {"Mortgage owed": "mortgage", "Investment property": "property_value", "Investment loan owed": "property_loan"}
+    optional = {"Mortgage owed": "mortgage", "Investment property": "property_value", "Investment loan owed": "property_loan",
+                "Home you moved into": "home_in_wealth"}
     present = [name for name in optional if name in series]
     middle = series.groupby("Date")[["Outside super", "Accumulation", "Pension account", *present]].median()
     balances = pd.DataFrame({"cash": 0.0, "outside_investments": middle["Outside super"],
                              "accumulation": middle["Accumulation"], "pension": middle["Pension account"],
                              **{column: middle[name] if name in present else 0.0 for name, column in optional.items()}},
                             index=pd.DatetimeIndex(middle.index, name="Date"))
-    balances["total"] = (balances[["cash", "outside_investments", "accumulation", "pension", "property_value"]].sum(axis=1)
+    balances["total"] = (balances[["cash", "outside_investments", "accumulation", "pension", "property_value",
+                                   "home_in_wealth"]].sum(axis=1)
                          - balances["mortgage"] - balances["property_loan"])
     yearly = annual.groupby("FY ending")[flows + ["Net change in wealth", "Added to outside investments"]].mean().reset_index()
     household = yearly.melt("FY ending", value_vars=flows, var_name="Flow", value_name="AUD")

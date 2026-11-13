@@ -156,8 +156,8 @@ property becomes their home on that date:
 - the tenants' rent and the person's own rent stop;
 - the loan becomes the home loan, with the same repayment schedule and interest that is no longer deductible;
 - running costs become `home.running_costs` of the value (1% by default);
-- the value continues as `home_value`, growing at the property's rate, and leaves total wealth (flow
-  `property_moved_in`, *Became your home*);
+- the value continues as `home_value`, growing at the property's rate, and stays in total wealth as *Home you moved
+  into* (the move is a transfer, not a flow; later growth is *Property value growth*);
 - the Age Pension treats it as the exempt home and applies the homeowner limits.
 
 The year's rental result covers the months before the move. Any loss carried forward stays unused. Spendable wealth

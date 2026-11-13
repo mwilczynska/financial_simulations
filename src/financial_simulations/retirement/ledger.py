@@ -1031,16 +1031,16 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
                                   "lump_sums", "interest", "age_pension", "division_296", "mortgage_interest",
                                   "mortgage_repaid", "rent", "property_costs", "property_interest",
                                   "property_loan_repaid", "property_growth", "home_costs", "home_growth",
-                                  "rent_paid", "property_moved_in")}
+                                  "rent_paid")}
         if day == move_in:
-            # The investment property becomes the home: its loan is now the home loan, its value the home's value, and
-            # it leaves total wealth (a home is in no wealth total). Its rent and investment running costs stop.
+            # The investment property becomes the home: its loan is now the home loan and its value the home's value.
+            # It is a transfer, not a flow: the home stays in total wealth (unlike a home entered as ``home``), so
+            # wealth does not jump. Its rent and investment running costs stop.
             tenure.update(moved=True, homeowner=True)
             home, prop_loan = prop_loan, _Loan(None, start, end)
             home_terms = Home(estate["value"], prop.home_running_costs, prop.growth)
             home_growth = (1 + prop.growth) ** (1 / 12) - 1
             house["value"] = estate["value"]
-            flows["property_moved_in"] = estate["value"]
             log("property_moved_in", estate["value"], "outside", home_loan=home.owed())
             estate["value"], estate["costs_due"] = 0.0, []
         # Nothing changes overnight, so the opening value is the previous close (assets, before the loans).
@@ -1418,8 +1418,11 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
                 flows["property_growth"] = estate["value"] * monthly_growth
                 estate["value"] += flows["property_growth"]
             if home_terms:
-                flows["home_growth"] = house["value"] * home_growth
-                house["value"] += flows["home_growth"]
+                # A moved-in home is in total wealth, so its growth is a household flow like the property's was; an
+                # entered home's growth is in no total.
+                growth = "property_growth" if tenure["moved"] else "home_growth"
+                flows[growth] = house["value"] * home_growth
+                house["value"] += flows[growth]
         outside_value = _value(state.outside_units, state.prices)
         acc_value, pen_value = _value(state.super_acc, state.prices), _value(state.super_pen, state.prices)
         assets_total = state.cash + outside_value + acc_value + pen_value
@@ -1436,18 +1439,21 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
                 ("Investment loan", property_owed, opening_prop_debt, flows["property_interest"], flows["property_loan_repaid"])):
             if abs(now - (before + interest - repaid)) > 1e-6 + 1e-11 * abs(now):
                 raise ArithmeticError(f"{name} reconciliation failed on {day}: {now} != {before + interest - repaid}.")
-        if abs(estate["value"] - opening_value - flows["property_growth"]) > 1e-6 + 1e-11 * estate["value"]:
+        if (not tenure["moved"]
+                and abs(estate["value"] - opening_value - flows["property_growth"]) > 1e-6 + 1e-11 * estate["value"]):
             raise ArithmeticError(f"Property value reconciliation failed on {day}.")
         # Spendable wealth leaves out the investment property and its loan: this version never sells the property.
         spendable = assets_total - mortgage_owed
-        total = spendable + estate["value"] - property_owed
+        # A home you moved into stays in total wealth; its loan is now the home loan, already in ``spendable``.
+        home_in_wealth = house["value"] if tenure["moved"] else 0.0
+        total = spendable + estate["value"] - property_owed + home_in_wealth
         closing, closing_assets = spendable, assets_total
         if rule_state["fy_open"] is None:
             rule_state["fy_open"] = spendable  # opening wealth for the first year's return
         rows.append({"date": day, "is_observation": observation is not None, "cash": state.cash,
                      "outside_investments": outside_value, "accumulation": acc_value, "pension": pen_value,
                      "mortgage": mortgage_owed, "property_value": estate["value"], "property_loan": property_owed,
-                     "home_value": house["value"], "total": total, "spendable": spendable, "super_accessible": day >= access, **flows,
+                     "home_value": house["value"], "home_in_wealth": home_in_wealth, "total": total, "spendable": spendable, "super_accessible": day >= access, **flows,
                      "pending_contributions": sum(p[1] for p in state.pending),
                      "tax_liabilities": sum(l["amount"] for l in state.liabilities)})
         day += timedelta(days=1)

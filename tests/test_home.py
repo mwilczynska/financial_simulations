@@ -70,8 +70,16 @@ def test_moving_into_the_investment_property_makes_it_the_home():
     # 26 fortnightly repayments in all: as the investment loan before the move, as the home loan after.
     kinds = events.loc[events["event"].isin(("property_loan_repayment", "mortgage_repayment")), "event"]
     assert len(kinds) == 26 and (kinds == "mortgage_repayment").sum() == 12
-    # The home leaves total wealth on the move, and money in and out still adds up.
-    assert daily.loc[moved, "property_moved_in"] == pytest.approx(daily.loc[moved, "home_value"])
+    # The move is a transfer: the home stays in total wealth, so wealth does not jump, and money in and out adds up.
+    assert daily.loc[moved, "home_in_wealth"] == pytest.approx(daily.loc[moved, "home_value"])
+    assert before["home_in_wealth"].max() == 0
+    day_before = daily.loc[moved - pd.Timedelta(days=1)]
+    # The day's only changes are its spending, the first month's home costs and a day's loan interest.
+    paid = daily.loc[moved, ["spending_paid", "home_costs", "mortgage_interest"]].sum()
+    assert daily.loc[moved, "total"] - day_before["total"] == pytest.approx(-paid, abs=1)
+    assert daily["total"].to_numpy() == pytest.approx(
+        (daily["spendable"] + daily["property_value"] - daily["property_loan"] + daily["home_in_wealth"]).to_numpy())
+    assert after["property_growth"].sum() > 0 and after["home_growth"].sum() == 0
     reconciles(result)
 
 

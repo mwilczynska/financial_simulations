@@ -124,8 +124,9 @@ def wealth_tab(run):
             return (bands_all.loc[bands_all["Series"] == name].select_dtypes("number").to_numpy() > 0.005).any()
 
         # Spendable wealth differs from total wealth only with an investment property.
-        names = [n for n in dict.fromkeys(bands_all["Series"]) if n not in OPTIONAL_SERIES
-                 or present("Investment property" if n == "Spendable wealth" else n)]
+        # The home you moved into is already in the Home value band.
+        names = [n for n in dict.fromkeys(bands_all["Series"]) if n != "Home you moved into"
+                 and (n not in OPTIONAL_SERIES or present("Investment property" if n == "Spendable wealth" else n))]
         chart_title("Range of outcomes", "Median, middle half and 90% of paths at each month end.")
         left, right = st.columns([4, 1], vertical_alignment="center")
         with left:

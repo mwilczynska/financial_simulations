@@ -25,12 +25,12 @@ HOUSEHOLD = (("salary", "Take-home salary", 1), ("employer_contributions", "Supe
              ("mortgage_interest", "Mortgage interest", -1), ("home_costs", "Home costs", -1), ("rent_paid", "Rent paid", -1),
              ("rent", "Rent", 1),
              ("property_costs", "Property costs", -1), ("property_interest", "Investment loan interest", -1),
-             ("property_growth", "Property value growth", 1), ("property_moved_in", "Became your home", -1))
+             ("property_growth", "Property value growth", 1))
 
 
 TAXES = ("Income tax", "Contributions tax", "Super fund tax", "Division 296 tax")
 TAX = "Tax"
-PROPERTY_FLOWS = ("Rent", "Property costs", "Investment loan interest", "Property value growth", "Became your home")
+PROPERTY_FLOWS = ("Rent", "Property costs", "Investment loan interest", "Property value growth")
 PROPERTY = "Investment property"
 HOME_FLOWS = ("Mortgage interest", "Home costs", "Rent paid")
 HOME = "Home"

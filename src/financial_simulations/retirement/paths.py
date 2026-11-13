@@ -32,9 +32,11 @@ SERIES = (("Total wealth", ("total",)),
           ("Mortgage owed", ("mortgage",)),
           ("Investment property", ("property_value",)),
           ("Investment loan owed", ("property_loan",)),
-          ("Home value", ("home_value",)))
+          ("Home value", ("home_value",)),
+          ("Home you moved into", ("home_in_wealth",)))
 # Series shown only when some path has something in them. The home's value is in no wealth total.
-OPTIONAL_SERIES = ("Spendable wealth", "Mortgage owed", "Investment property", "Investment loan owed", "Home value")
+OPTIONAL_SERIES = ("Spendable wealth", "Mortgage owed", "Investment property", "Investment loan owed", "Home value",
+                   "Home you moved into")
 
 
 def _fy_start(day: date) -> date:
@@ -152,8 +154,8 @@ def _summarise(path: int, result: LedgerResult, retire: date, cpi: float):
                "Home costs": float(daily["home_costs"].sum()),
                "Home value at end": float(daily["home_value"].iloc[-1]),
                "Rent paid": float(daily["rent_paid"].sum()),
-               "Moved into the property": (str(daily.index[daily["property_moved_in"] > 0][0].date())
-                                           if (daily["property_moved_in"] > 0).any() else ""),
+               "Moved into the property": (str(daily.index[daily["home_in_wealth"] > 0][0].date())
+                                           if (daily["home_in_wealth"] > 0).any() else ""),
                "Property value at end": float(daily["property_value"].iloc[-1]),
                "Investment loan owed at end": float(daily["property_loan"].iloc[-1]),
                "Investment loan paid off": _paid_off(daily["property_loan"]),

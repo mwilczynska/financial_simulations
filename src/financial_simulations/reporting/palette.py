@@ -24,6 +24,8 @@ ACCOUNT_COLOURS = {"cash": ("Cash", YELLOW), "outside_investments": ("Outside in
 MORTGAGE_COLOUR = ("Mortgage owed", RED)
 # An investment property's value is drawn above the accounts and its loan below zero, only on paths that have one.
 PROPERTY_COLOUR, PROPERTY_LOAN_COLOUR = ("Investment property", GREEN), ("Investment loan owed", VIOLET)
+# A former investment property you moved into stays in total wealth as your home: the property's brown flow hue.
+MOVED_HOME_COLOUR = ("Home you moved into", "#8a5a1c")
 
 # Money in and out, in stacking order. The four taxes are drawn as one "Tax" flow, and an investment property's rent,
 # costs, loan interest and value growth as one "Investment property" flow, and mortgage interest and the home's running
