@@ -105,14 +105,48 @@ def inputs_you(plan):
         with card("pay"):
             work_summary(plan)
         with card("mortgage"):
-            mortgage_inputs(plan)
+            home_inputs(plan)
         with card("investment_property"):
             property_inputs(plan)
 
 
-def mortgage_inputs(plan):
-    """The home loan still owed (ADR 0052)."""
-    st.subheader("Home loan")
+def home_inputs(plan):
+    """The home you live in: whether you own it, its value and running costs (ADR 0055) and its loan (ADR 0052), or
+    the rent you pay."""
+    st.subheader("Your home")
+    person, house = plan["person"], plan["home"]
+    person["homeowner"] = st.checkbox(
+        "I own the home I live in", person["homeowner"], key=key("homeowner"),
+        help="Only the home you live in, not a property you rent out (that goes in the Investment property card). Your "
+             "home is exempt from the Age Pension assets test, and homeowners have a lower assets limit ($333,000 "
+             "instead of $600,000 for a full pension).")
+    if not person["homeowner"]:
+        person["weekly_rent"] = float(st.number_input(
+            "Rent you pay where you live, weekly (0 = none)", 0.0, 1e5, float(person["weekly_rent"]), 10.0,
+            key=key("rent_paid"), format="%.0f",
+            help="Paid monthly before spending and rising with CPI, so a spending rule never cuts it. Leave it out of "
+                 "spending. It stops if you move into your investment property."))
+        plan["mortgage"]["balance"], house["value"] = 0.0, 0.0
+        st.caption("Rent Assistance is not modelled.")
+        return
+    person["weekly_rent"] = 0.0
+    house["value"] = money("Home value today (0 = not modelled)", house["value"], "home_value",
+                           help="Optional. With a value, the home's running costs are paid separately from spending and "
+                                "grow with its value; take rates, insurance and repairs out of spending. The home is not "
+                                "counted in total wealth or the Age Pension assets test.")
+    if house["value"] > 0:
+        with st.expander("More: running costs and growth"):
+            c, d = st.columns(2)
+            with c:
+                house["running_costs"] = percent("Running costs, % of value a year", house["running_costs"],
+                                                 "home_costs", low=0, high=10, step=0.1,
+                                                 help="Repairs, council rates and insurance. Paid monthly, before "
+                                                      "spending.")
+            with d:
+                house["growth"] = percent("Value growth, % a year", house["growth"], "home_growth", low=-10, high=20,
+                                          help="Applied monthly, the same on every market path.")
+        st.caption(f"Running costs about {dollars(house['running_costs'] * house['value'], escape=True)} in the first "
+                   "year, paid before spending. Take them out of spending.")
     loan = plan["mortgage"]
     loan["balance"] = money("Loan on your home, still owed today (0 = none)", loan["balance"], "mortgage_balance",
                             help="The balance owing on the loan for the home you live in, from your latest statement. A "
@@ -121,8 +155,6 @@ def mortgage_inputs(plan):
     if loan["balance"] <= 0:
         st.caption("No home loan.")
         return
-    if not plan["person"]["homeowner"]:
-        st.warning("A home loan needs “I own my home” ticked on the Retirement tab.")
     a, b = st.columns(2)
     with a:
         loan["interest_rate"] = percent("Interest rate, % a year", loan["interest_rate"], "mortgage_rate", low=0, high=30,
@@ -176,8 +208,9 @@ def property_inputs(plan):
     st.subheader("Investment property")
     estate = plan["investment_property"]
     estate["value"] = money("Property value today (0 = none)", estate["value"], "property_value",
-                            help="A home you let to tenants. Leave its costs and repayments out of spending, and leave the "
-                                 "property out of other assets for the Age Pension: the planner counts them separately.")
+                            help="A home you let to tenants, not the one you live in (that is the Your home card). Leave "
+                                 "its costs and repayments out of spending, and leave the property out of other assets "
+                                 "for the Age Pension: the planner counts them separately.")
     if estate["value"] <= 0:
         st.caption("No investment property.")
         return
@@ -213,6 +246,24 @@ def property_inputs(plan):
                 help="Only for a property you held before 7.30 pm AEST on 12 May 2026, or a new build. Otherwise, from "
                      "1 July 2027 a rental loss cannot reduce tax on other income: it is carried forward against later "
                      "rent. Unticked, the planner carries losses forward in every year.")
+    if not plan["person"]["homeowner"]:
+        moving = st.checkbox("I'll move into it", estate["move_in_date"] is not None, key=key("property_move"),
+                             help="From that day it is your home: the rent from tenants and any rent you pay stop, its "
+                                  "loan becomes a home loan (no tax deduction), its running costs become the home "
+                                  "rate, and the Age Pension treats it as your exempt home. It then leaves total wealth, "
+                                  "like any home.")
+        if moving:
+            start = date.fromisoformat(plan["plan"]["start_date"])
+            current = (date.fromisoformat(estate["move_in_date"]) if estate["move_in_date"]
+                       else date(start.year + 5, start.month, start.day))
+            estate["move_in_date"] = date_fields("Move-in date", current, "property_move_date", start.year,
+                                                 start.year + 80)
+            if estate["move_in_date"] <= plan["plan"]["start_date"]:
+                st.warning("The move-in date must be after the plan's start date.")
+        else:
+            estate["move_in_date"] = None
+    else:
+        estate["move_in_date"] = None
     if estate["loan"] > 0 and estate["interest_only_years"] >= estate["years"]:
         st.warning("Interest-only years must be shorter than the loan's years left.")
         return
@@ -254,8 +305,9 @@ def work_summary(plan):
         repayments = 26 * (loan["balance"] / n if rate == 0 else loan["balance"] * rate / (1 - (1 + rate) ** -n))
     estate = plan["investment_property"]
     property_net = property_first_year(estate)["net"] if estate["value"] > 0 else 0.0
+    housing = plan["person"]["weekly_rent"] * 52 + plan["home"]["running_costs"] * plan["home"]["value"]
     surplus = (salary - sacrifice - tax.net_tax - tax.division_293_tax - plan["spending"]["annual"] - repayments
-               + property_net)
+               + property_net - housing)
     fixed = plan["outside"]["saving"] == "fixed"
     invested = min(plan["outside"]["contribution_per_year"], max(surplus, 0)) if fixed else max(surplus, 0)
     extra = invested * loan["extra_share"] if loan["balance"] > 0 else 0.0
@@ -275,6 +327,9 @@ def work_summary(plan):
     if repayments:
         st.caption(f"Home loan: \\${repayments:,.0f} a year of required repayments"
                    + (f" and about \\${extra:,.0f} of extra repayments" if extra > 1 else "") + " in the first year.")
+    if housing:
+        st.caption(f"Your home: about \\${housing:,.0f} a year of "
+                   + ("rent" if plan["person"]["weekly_rent"] else "running costs") + ", paid before spending.")
     if property_net:
         st.caption(f"Investment property: about \\${abs(property_net):,.0f} a year "
                    + ("added from rent after its costs and repayments." if property_net > 0
@@ -533,9 +588,9 @@ def inputs_retirement(plan):
         with card("agepension"):
             st.subheader("Age Pension")
             person = plan["person"]
-            person["homeowner"] = st.checkbox("I own my home", person["homeowner"], key=key("homeowner"),
-                                              help="Your home is exempt from the assets test. Non-homeowners have a higher "
-                                                   "assets limit ($600,000 instead of $333,000 for a full pension).")
+            st.caption(("You own the home you live in" if person["homeowner"] else "You do not own the home you live in")
+                       + " (set on the You tab), so the "
+                       + ("homeowner" if person["homeowner"] else "non-homeowner") + " assets limits apply.")
             person["other_assets"] = money("Other assessable assets (AUD)", person["other_assets"], "other_assets",
                                            help="Cars, caravans, home contents and other personal assets at what they would "
                                                 "sell for. They count in the assets test but are not invested.")

@@ -60,6 +60,7 @@ Decision records preserve why Financial Simulations makes a material modelling o
 | [0052](0052-home-loan-in-the-ledger.md) | 2026-11-13 | Accepted; implemented and tested | A fixed-rate home loan in the daily ledger: interest accrued daily and charged monthly, fortnightly annuity repayments before spending, a share of savings paid off instead of invested (redrawable), and total wealth net of the loan |
 | [0053](0053-one-saved-run-per-plan-name.md) | 2026-11-13 | Accepted; implemented and tested | Saved results go to `output/saved_runs/<plan-name>/` with no date; saving the same plan name again replaces the earlier save, swapped in only when complete |
 | [0054](0054-investment-property-in-the-ledger.md) | 2026-11-13 | Accepted; implemented and tested | An investment property in the daily ledger: monthly rent and running costs, a second loan (interest-only option), value growing at a fixed monthly rate, rental losses carried forward unless they may offset salary, and spending rules on wealth without the property's equity |
+| [0055](0055-home-value-rent-paid-and-moving-in.md) | 2026-11-13 | Accepted; implemented and tested | An optional home value whose running costs are paid before spending, rent paid by a renter, a renamed *I own the home I live in* tick box on the You tab, and moving into the investment property on a chosen date |
 
 ## When to write a record
 

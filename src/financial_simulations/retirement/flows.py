@@ -22,24 +22,28 @@ HOUSEHOLD = (("salary", "Take-home salary", 1), ("employer_contributions", "Supe
              ("spending_paid", "Spending", -1),
              ("tax_paid", "Income tax", -1), ("contributions_tax", "Contributions tax", -1),
              ("fund_tax", "Super fund tax", -1), ("division_296", "Division 296 tax", -1),
-             ("mortgage_interest", "Mortgage interest", -1), ("rent", "Rent", 1),
+             ("mortgage_interest", "Mortgage interest", -1), ("home_costs", "Home costs", -1), ("rent_paid", "Rent paid", -1),
+             ("rent", "Rent", 1),
              ("property_costs", "Property costs", -1), ("property_interest", "Investment loan interest", -1),
-             ("property_growth", "Property value growth", 1))
+             ("property_growth", "Property value growth", 1), ("property_moved_in", "Became your home", -1))
 
 
 TAXES = ("Income tax", "Contributions tax", "Super fund tax", "Division 296 tax")
 TAX = "Tax"
-PROPERTY_FLOWS = ("Rent", "Property costs", "Investment loan interest", "Property value growth")
+PROPERTY_FLOWS = ("Rent", "Property costs", "Investment loan interest", "Property value growth", "Became your home")
 PROPERTY = "Investment property"
+HOME_FLOWS = ("Mortgage interest", "Home costs", "Rent paid")
+HOME = "Home"
 # Flows drawn as one in charts: their combined effect on wealth is read together.
-FOLDS = ((TAXES, TAX), (PROPERTY_FLOWS, PROPERTY))
+FOLDS = ((TAXES, TAX), (PROPERTY_FLOWS, PROPERTY), (HOME_FLOWS, HOME))
 
 
 def fold_taxes(flows: pd.DataFrame) -> pd.DataFrame:
-    """``household_flows`` rows with the four taxes added into one ``Tax`` flow per year, and the investment
-    property's rent, costs, loan interest and value growth into one ``Investment property`` flow, for charts.
+    """``household_flows`` rows with the four taxes added into one ``Tax`` flow per year, the investment property's
+    rent, costs, loan interest and value growth into one ``Investment property`` flow, and mortgage interest and the
+    home's running costs into one ``Home`` flow, for charts.
 
-    Fifteen flows are too many colours to tell apart, and each group is read together. Sums are unchanged, so the
+    Sixteen flows are too many colours to tell apart, and each group is read together. Sums are unchanged, so the
     flows still add up to the net change in wealth; the yearly tables keep each flow.
     """
     for members, name in FOLDS:
@@ -53,8 +57,8 @@ def fold_taxes(flows: pd.DataFrame) -> pd.DataFrame:
 
 
 def fold_tax_columns(annual: pd.DataFrame) -> pd.DataFrame:
-    """A per-path yearly frame with its ``Flow: <tax>`` columns added into one ``Flow: Tax`` column, and its
-    property flows into ``Flow: Investment property``."""
+    """A per-path yearly frame with its ``Flow: <tax>`` columns added into one ``Flow: Tax`` column, its property
+    flows into ``Flow: Investment property`` and its home flows into ``Flow: Home``."""
     for members, name in FOLDS:
         columns = [f"Flow: {member}" for member in members if f"Flow: {member}" in annual]
         if columns:

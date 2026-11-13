@@ -31,9 +31,10 @@ SERIES = (("Total wealth", ("total",)),
           ("Pension account", ("pension",)),
           ("Mortgage owed", ("mortgage",)),
           ("Investment property", ("property_value",)),
-          ("Investment loan owed", ("property_loan",)))
-# Series shown only when some path has something in them.
-OPTIONAL_SERIES = ("Spendable wealth", "Mortgage owed", "Investment property", "Investment loan owed")
+          ("Investment loan owed", ("property_loan",)),
+          ("Home value", ("home_value",)))
+# Series shown only when some path has something in them. The home's value is in no wealth total.
+OPTIONAL_SERIES = ("Spendable wealth", "Mortgage owed", "Investment property", "Investment loan owed", "Home value")
 
 
 def _fy_start(day: date) -> date:
@@ -56,7 +57,7 @@ def _summarise(path: int, result: LedgerResult, retire: date, cpi: float):
     shortfall_days = daily.index[daily["shortfall"] > 0]
     depleted = daily.index[(outside <= 1.0) & (dates > first)]
     flow_columns = ["spending_paid", "tax_paid", "division_296", "shortfall", "pension_payments", "lump_sums", "age_pension",
-                    "mortgage_interest", "rent", "property_costs", "property_interest"]
+                    "mortgage_interest", "rent", "property_costs", "property_interest", "home_costs", "rent_paid"]
     flows = daily[flow_columns].resample("YE-JUN").sum()
     # Withdrawal rates use nominal flows over nominal wealth: today's-dollar flows are deflated in whole financial-year
     # steps but wealth by exact days, so their ratio would not be the nominal rate (review finding 14).
@@ -69,19 +70,22 @@ def _summarise(path: int, result: LedgerResult, retire: date, cpi: float):
         # Withdrawal rates are over spendable wealth: an investment property's equity is never sold (ADR 0054).
         opening_nominal = float(nominal["spendable"].iloc[0] if before.empty else nominal["spendable"].loc[before[-1]])
         retired = begin >= retire and end.date() <= last
-        # The draw on your own wealth: spending, tax (personal and Division 296), mortgage interest and an investment
+        # The draw on your own wealth: spending, tax (personal and Division 296), mortgage interest, the home's running
+        # costs, rent paid for it, and an investment
         # property's interest and running costs, less the Age Pension and rent that paid part of them. Loan principal
         # repaid moves wealth from assets to a loan, so it is not a draw.
         n = nominal_flows.loc[end]
         withdrawal = max(0.0, float(n["spending_paid"] + max(n["tax_paid"], 0.0) + n["division_296"]
-                                    + n["mortgage_interest"] + n["property_interest"] + n["property_costs"]
+                                    + n["mortgage_interest"] + n["home_costs"] + n["rent_paid"] + n["property_interest"]
+                                    + n["property_costs"]
                                     - n["age_pension"] - n["rent"]))
         rows.append({"Path": path, "Financial year": f"{begin.year}-{str(begin.year + 1)[2:]}", "FY ending": begin.year + 1,
                      "Full retired year": retired, "Wealth at 1 July": opening, "Spending paid": float(values["spending_paid"]),
                      "Tax paid": float(values["tax_paid"]), "Shortfall": float(values["shortfall"]),
                      "Pension payments": float(values["pension_payments"]), "Super lump sums": float(values["lump_sums"]),
                      "Age Pension": float(values["age_pension"]), "Division 296": float(values["division_296"]),
-                     "Mortgage interest": float(values["mortgage_interest"]), "Rent": float(values["rent"]),
+                     "Mortgage interest": float(values["mortgage_interest"]), "Home costs": float(values["home_costs"]),
+                     "Rent paid": float(values["rent_paid"]), "Rent": float(values["rent"]),
                      "Property costs": float(values["property_costs"]),
                      "Investment loan interest": float(values["property_interest"]),
                      "Withdrawal rate": withdrawal / opening_nominal if retired and opening_nominal > 1 else np.nan})
@@ -145,6 +149,11 @@ def _summarise(path: int, result: LedgerResult, retire: date, cpi: float):
                "Mortgage interest": float(daily["mortgage_interest"].sum()),
                "Mortgage owed at end": float(daily["mortgage"].iloc[-1]),
                "Mortgage paid off": _paid_off(daily["mortgage"]),
+               "Home costs": float(daily["home_costs"].sum()),
+               "Home value at end": float(daily["home_value"].iloc[-1]),
+               "Rent paid": float(daily["rent_paid"].sum()),
+               "Moved into the property": (str(daily.index[daily["property_moved_in"] > 0][0].date())
+                                           if (daily["property_moved_in"] > 0).any() else ""),
                "Property value at end": float(daily["property_value"].iloc[-1]),
                "Investment loan owed at end": float(daily["property_loan"].iloc[-1]),
                "Investment loan paid off": _paid_off(daily["property_loan"]),

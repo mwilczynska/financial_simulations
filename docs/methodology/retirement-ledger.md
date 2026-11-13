@@ -214,6 +214,12 @@ repaid are outflows; the property loan and the value reconcile separately.
 Details are in [investment-property.md](investment-property.md)
 ([ADR 0054](../decisions/0054-investment-property-in-the-ledger.md)).
 
+**Home value, rent paid and moving in.** With `home`, the home's running costs fall due on the first of each month and
+are paid before spending; its value grows monthly and is in no wealth total. A renter's `rent_paid_weekly` is paid
+the same way. With `investment_property.move_in`, the property becomes the home on that day: its loan becomes the home
+loan, rent stops, and its value leaves total wealth through the `property_moved_in` flow
+([ADR 0055](../decisions/0055-home-value-rent-paid-and-moving-in.md)).
+
 The opening value plus market P&L, cash salary and employer contributions,
 less contributions tax, spending paid, tax paid and fund tax, must equal
 total wealth at the close of every calendar day (`rtol=1e-11, atol=1e-6`).
@@ -343,4 +349,4 @@ only for complete periods (ADR 0034); fund tax accrued with each accumulation di
 an unassessed final period (ADR 0035); opening year-to-date position required for a start after 1 July (ADR 0036);
 bring-forward counted once per dollar and the age-75 acceptance deadline (ADR 0037); gross wages and the Work Bonus
 starting credit, and order-independent distributions (ADR 0038). 2026-11-13, home loan, with total wealth net
-of it (ADR 0052); investment property, with spending rules on spendable wealth (ADR 0054).
+of it (ADR 0052); investment property, with spending rules on spendable wealth (ADR 0054); home value, rent paid and moving in (ADR 0055).

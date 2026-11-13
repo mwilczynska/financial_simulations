@@ -93,6 +93,29 @@ Repaying the loan in full closes it and its redraw.
 - **You tab.** The *Home loan* card shows the required repayment. *Where your pay goes* deducts it, and the extra
   repayments, from the first-year estimate.
 
+## Home value and running costs
+
+ADR 0055. Optional: `[home]` `value` (0 means not modelled), `running_costs` (1% of value a year, an assumption) and
+`growth` (4% a year, an assumption).
+
+With a value:
+
+- **Running costs:** on the first of each month `running_costs × value / 12` falls due. It is paid on an observation
+  day before spending, through the needs waterfall, and may use the redraw. Spending rules never cut it.
+- **Value:** it grows by `(1 + growth)^(1/12)` on each month's last day (daily `home_value` column).
+- **Wealth:** the home is in neither `total` nor `spendable` wealth. It is shown as the optional *Home value* band.
+- **Age Pension:** the home stays exempt.
+- **Tax:** none; the costs are private.
+
+`spending.annual` should then exclude rates, insurance and repairs.
+
+## Rent paid
+
+ADR 0055. A person who does not own the home they live in can enter `person.weekly_rent`. Each month
+`weekly_rent × 52 / 12`, rising with CPI each 1 July, is paid before spending, and spending rules never cut it.
+`spending.annual` should then exclude it. It stops when the person moves into their investment property
+([investment-property.md](investment-property.md)). Rent Assistance is not modelled.
+
 ## Examples
 
 **Annuity.** $500,000 at 6% over 25 years: `r = 0.06 / 26`, `n = 650`, so `P = $1,485.99` a fortnight
@@ -148,4 +171,4 @@ different `extra_share` values compares the two.
 - Department of Social Services, *Social Security Guide*, 4.6.3 (assessing the principal home). Not re-read for this
   record; see ADR 0052.
 
-Revision history: 2026-11-13, first implementation.
+Revision history: 2026-11-13, first implementation; home value, running costs and rent paid (ADR 0055).

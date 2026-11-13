@@ -148,6 +148,21 @@ deductions. This model has no depreciation, so its net rent fits that rule. The 
 against other income was not confirmed. The model does not let a loss reduce other assessed income (a cautious
 choice).
 
+## Moving in
+
+ADR 0055. With `move_in_date`, for a person who does not own the home they live in (no home loan or home value), the
+property becomes their home on that date:
+
+- the tenants' rent and the person's own rent stop;
+- the loan becomes the home loan, with the same repayment schedule and interest that is no longer deductible;
+- running costs become `home.running_costs` of the value (1% by default);
+- the value continues as `home_value`, growing at the property's rate, and leaves total wealth (flow
+  `property_moved_in`, *Became your home*);
+- the Age Pension treats it as the exempt home and applies the homeowner limits.
+
+The year's rental result covers the months before the move. Any loss carried forward stays unused. Spendable wealth
+now deducts the loan, as for any home loan.
+
 ## Spending rules and running out of money
 
 **Spending rules.** All of these use `spendable` wealth, not `total`:
@@ -238,7 +253,8 @@ Tax:
   settings apply to the whole run. Rebate income and Division 293 income do not add back a rental loss.
 - **Age Pension:** current net rent is used, not the Services Australia annual estimate. A rental loss does not offset
   other income.
-- **Ownership:** one property and one owner. No joint ownership and no change of use.
+- **Ownership:** one property and one owner. No joint ownership. The only change of use is one move-in (ADR 0055):
+  no moving out, and no CGT main-residence apportionment.
 
 ## References
 
@@ -248,4 +264,4 @@ Tax:
 - Department of Social Services, *Social Security Guide*, 4.3.8.30 (real estate income), seen in a search excerpt on
   13 November 2026; the full page was not read.
 
-Revision history: 2026-11-13, first implementation.
+Revision history: 2026-11-13, first implementation; moving in (ADR 0055).

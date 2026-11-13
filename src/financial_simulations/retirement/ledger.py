@@ -55,6 +55,8 @@ Scope and conventions (see docs/methodology/retirement-ledger.md):
   a fixed fortnightly repayment before spending, and receives ``extra_share``
   of new investment as redrawable extra repayments. ``total`` is net of the
   amount owed; the Age Pension means test uses assets (docs/methodology/home-loan.md).
+* With ``home``, the home's running costs are paid monthly before spending and
+  its value grows monthly; the home is in no wealth total (``home_value`` column).
 * With ``investment_property``, rent arrives monthly, running costs and a
   second loan's repayments are paid before spending, the value grows at a fixed
   monthly rate, and net rent is taxed with losses quarantined unless they may
@@ -280,6 +282,28 @@ class Mortgage:
 
 
 @dataclass(frozen=True)
+class Home:
+    """The home the person lives in, when its value is entered (docs/methodology/home-loan.md).
+
+    ``value`` grows by ``(1 + growth) ** (1 / 12)`` on the last day of each month. Running costs (repairs, council
+    rates, insurance) of ``running_costs`` of the value a year fall due on the first of each month and are paid before
+    spending, so spending rules never cut them. The home is not in ``total`` or ``spendable`` wealth, and the Age
+    Pension assets test exempts it.
+    """
+
+    value: float
+    running_costs: float = 0.01
+    growth: float = 0.04
+
+    def __post_init__(self):
+        _money(self.value, "Home value", positive=True)
+        if not 0 <= self.running_costs < 1:
+            raise ValueError("Home running costs must be a share of value below 1.")
+        if not -0.5 < self.growth < 1:
+            raise ValueError("Home value growth must be an annual rate between -50% and 100%.")
+
+
+@dataclass(frozen=True)
 class InvestmentProperty:
     """A residential property let to tenants, with an optional loan (docs/methodology/investment-property.md).
 
@@ -299,8 +323,16 @@ class InvestmentProperty:
     rent_kept: float = 0.90
     rent_growth: float = 0.0
     losses_offset_other_income: bool = False
+    # The day the person moves in, or None. From then it is their home: rent stops, its loan becomes the home loan, its
+    # running costs are ``home_running_costs`` of the value and it leaves every wealth total, like any home.
+    move_in: date | None = None
+    home_running_costs: float = 0.01
 
     def __post_init__(self):
+        if self.move_in is not None:
+            object.__setattr__(self, "move_in", as_date(self.move_in))
+        if not 0 <= self.home_running_costs < 1:
+            raise ValueError("Home running costs must be a share of value below 1.")
         _money(self.value, "Property value", positive=True)
         _money(self.weekly_rent, "Weekly rent")
         if not -0.5 < self.growth < 1 or not -0.5 < self.rent_growth < 1:
@@ -392,6 +424,12 @@ class LedgerScenario:
     # An investment property, or None. Its equity counts in ``total`` but not in ``spendable``, the wealth spending
     # rules use.
     investment_property: InvestmentProperty | None = None
+    # The home's value and running costs, or None (its costs are then inside spending). Not part of any wealth total.
+    home: Home | None = None
+    # Rent the person pays for the home they live in, weekly in opening-year dollars, rising by ``rent_paid_growth``
+    # each 1 July. Paid monthly before spending; it stops when they move into their investment property.
+    rent_paid_weekly: float = 0.0
+    rent_paid_growth: float = 0.0
 
 
 class _Loan:
@@ -553,6 +591,21 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
     # Property value, and the rental loss carried forward under quarantining (nominal dollars).
     estate = {"value": prop.value if prop else 0.0, "carried": 0.0, "costs_due": []}
     monthly_growth = (1 + prop.growth) ** (1 / 12) - 1 if prop else 0.0
+    home_terms = scenario.home
+    if home_terms and not person.homeowner:
+        raise ValueError("A home value needs a homeowner.")
+    _money(scenario.rent_paid_weekly, "Rent paid")
+    if scenario.rent_paid_weekly and person.homeowner:
+        raise ValueError("A homeowner pays no rent for the home they live in.")
+    move_in = prop.move_in if prop else None
+    if move_in is not None and (person.homeowner or home_terms or (mortgage and mortgage.balance > 0)
+                                or not start < move_in):
+        raise ValueError("Moving into the investment property needs a person who does not own their home, no home "
+                         "loan or home value, and a date after the start.")
+    # ``moved``: the person lives in the investment property; ``homeowner`` for the Age Pension changes with it.
+    tenure = {"moved": False, "homeowner": person.homeowner}
+    house = {"value": home_terms.value if home_terms else 0.0, "costs_due": [], "rent_due": []}
+    home_growth = (1 + home_terms.growth) ** (1 / 12) - 1 if home_terms else 0.0
 
     def owed():
         return home.owed()
@@ -812,9 +865,10 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
         paid = min(state.cash, need)
         state.cash -= paid
         rules = state.fy["rules"]
-        if paid < need - TOLERANCE and kind in ("spending", "tax") and home.redraw > TOLERANCE:
-            # Extra repayments can be drawn back for spending and tax, adding to the loan; loan repayments and property
-            # costs cannot be met this way.
+        if (paid < need - TOLERANCE and kind in ("spending", "tax", "home_costs", "rent_paid")
+                and home.redraw > TOLERANCE):
+            # Extra repayments can be drawn back for spending, tax and the home's running costs, adding to the loan;
+            # loan repayments and investment property costs cannot be met this way.
             drawn = min(need - paid, home.redraw)
             home.redraw -= drawn
             home.balance += drawn
@@ -976,7 +1030,19 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
                                   "shortfall", "tax_paid", "tax_unpaid", "fund_tax", "distributions", "pension_payments",
                                   "lump_sums", "interest", "age_pension", "division_296", "mortgage_interest",
                                   "mortgage_repaid", "rent", "property_costs", "property_interest",
-                                  "property_loan_repaid", "property_growth")}
+                                  "property_loan_repaid", "property_growth", "home_costs", "home_growth",
+                                  "rent_paid", "property_moved_in")}
+        if day == move_in:
+            # The investment property becomes the home: its loan is now the home loan, its value the home's value, and
+            # it leaves total wealth (a home is in no wealth total). Its rent and investment running costs stop.
+            tenure.update(moved=True, homeowner=True)
+            home, prop_loan = prop_loan, _Loan(None, start, end)
+            home_terms = Home(estate["value"], prop.home_running_costs, prop.growth)
+            home_growth = (1 + prop.growth) ** (1 / 12) - 1
+            house["value"] = estate["value"]
+            flows["property_moved_in"] = estate["value"]
+            log("property_moved_in", estate["value"], "outside", home_loan=home.owed())
+            estate["value"], estate["costs_due"] = 0.0, []
         # Nothing changes overnight, so the opening value is the previous close (assets, before the loans).
         opening = closing_assets if closing_assets is not None else (
             state.cash + _value(state.outside_units, state.prices) + _value(state.super_acc, state.prices)
@@ -1090,12 +1156,12 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
             # An investment property counts at its value less the loan secured on it (both at the previous close), and
             # its net rent (rent less interest and running costs at the current rates, not below nil) is income.
             property_assets = property_income = 0.0
-            if prop:
+            if prop and not tenure["moved"]:
                 property_assets = max(0.0, opening_value - opening_prop_debt)
                 property_income = max(0.0, 12 * monthly_rent(day) - prop.running_costs * opening_value
                                       - opening_prop_debt * (prop.loan.annual_rate if prop.loan else 0.0)) / 26
             rate = fortnightly_rate(financial + person.other_assets + property_assets, financial, employment, rules,
-                                    homeowner=person.homeowner, other_income=property_income)
+                                    homeowner=tenure["homeowner"], other_income=property_income)
             if rate.amount > 0:
                 state.cash += rate.amount
                 flows["age_pension"] += rate.amount
@@ -1160,7 +1226,7 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
             base = scenario.retirement_spending if retired and scenario.retirement_spending is not None else scenario.annual_spending
             factor = rule_state["factor"] if retired else 1.0
             spending_due.append((day, base * (1 + scenario.spending_growth) ** _years_since(start, day) * factor / 12))
-            if prop:
+            if prop and not tenure["moved"]:
                 # The month's rent arrives in cash; its running costs fall due and are paid on an observation day.
                 rent = monthly_rent(day)
                 state.cash += rent
@@ -1168,6 +1234,11 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
                 state.fy["rent"] += rent
                 log("rent", rent, "outside")
                 estate["costs_due"].append(prop.running_costs * estate["value"] / 12)
+            if home_terms:
+                house["costs_due"].append(home_terms.running_costs * house["value"] / 12)
+            if scenario.rent_paid_weekly and not tenure["moved"]:
+                house["rent_due"].append(scenario.rent_paid_weekly * 52 / 12
+                                         * (1 + scenario.rent_paid_growth) ** _years_since(start, day))
         for loan, kind, repaid in ((home, "mortgage", "mortgage_repaid"), (prop_loan, "property_loan", "property_loan_repaid")):
             if day in loan.days and loan.owed() > TOLERANCE:
                 loan.due += loan.days[day]
@@ -1183,6 +1254,17 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
                 state.fy["shortfall"] += short
                 log(f"{kind}_repayment", paid, "outside", requested=need, balance=loan.owed())
                 loan.due = 0.0
+        if observation is not None and (house["costs_due"] or house["rent_due"]):
+            # Rent for the home you live in and the home's running costs come before spending, so a spending rule
+            # never cuts them.
+            for kind, due in (("rent_paid", house["rent_due"]), ("home_costs", house["costs_due"])):
+                for need in due:
+                    paid, short = pay_need(need, kind)
+                    flows[kind] += paid
+                    flows["shortfall"] += short
+                    state.fy["shortfall"] += short
+                    log(kind, paid, "outside", requested=need)
+            house["costs_due"], house["rent_due"] = [], []
         if observation is not None and estate["costs_due"]:
             for need in estate["costs_due"]:
                 paid, short = pay_need(need, "property_costs")
@@ -1332,9 +1414,12 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
             # Interest accrued over the month is charged to each loan on its last day, and the property's value grows.
             home.charge_month()
             prop_loan.charge_month()
-            if prop:
+            if prop and not tenure["moved"]:
                 flows["property_growth"] = estate["value"] * monthly_growth
                 estate["value"] += flows["property_growth"]
+            if home_terms:
+                flows["home_growth"] = house["value"] * home_growth
+                house["value"] += flows["home_growth"]
         outside_value = _value(state.outside_units, state.prices)
         acc_value, pen_value = _value(state.super_acc, state.prices), _value(state.super_pen, state.prices)
         assets_total = state.cash + outside_value + acc_value + pen_value
@@ -1342,7 +1427,7 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
                     + flows["age_pension"] + flows["rent"]
                     - flows["contributions_tax"] - flows["spending_paid"] - flows["tax_paid"] - flows["fund_tax"]
                     - flows["division_296"] - flows["mortgage_repaid"] - flows["property_costs"]
-                    - flows["property_loan_repaid"])
+                    - flows["property_loan_repaid"] - flows["home_costs"] - flows["rent_paid"])
         if abs(assets_total - expected) > 1e-6 + 1e-11 * abs(expected):
             raise ArithmeticError(f"Ledger reconciliation failed on {day}: {assets_total} != {expected}.")
         mortgage_owed, property_owed = owed(), prop_loan.owed()
@@ -1362,7 +1447,7 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
         rows.append({"date": day, "is_observation": observation is not None, "cash": state.cash,
                      "outside_investments": outside_value, "accumulation": acc_value, "pension": pen_value,
                      "mortgage": mortgage_owed, "property_value": estate["value"], "property_loan": property_owed,
-                     "total": total, "spendable": spendable, "super_accessible": day >= access, **flows,
+                     "home_value": house["value"], "total": total, "spendable": spendable, "super_accessible": day >= access, **flows,
                      "pending_contributions": sum(p[1] for p in state.pending),
                      "tax_liabilities": sum(l["amount"] for l in state.liabilities)})
         day += timedelta(days=1)

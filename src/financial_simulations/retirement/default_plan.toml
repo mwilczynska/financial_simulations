@@ -63,6 +63,15 @@ compare = ["fixed"]
 minimum = 0.0
 maximum = 0.0
 
+[home]
+# The home you live in (0 value = not modelled: its rates, insurance and repairs stay inside spending above). With a
+# value, running_costs of it a year are paid monthly before spending, so take those costs out of spending. The value
+# grows at growth a year, applied monthly. The home is exempt from the Age Pension assets test and is not in total
+# wealth.
+value = 0.0
+running_costs = 0.01
+growth = 0.04
+
 [mortgage]
 # Home loan still owed today (0 = none). Spending above excludes its repayments. Interest accrues daily and is charged
 # monthly; the required repayment is the fortnightly amount that clears the balance in `years` at `interest_rate`,
