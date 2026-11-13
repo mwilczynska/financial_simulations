@@ -114,9 +114,10 @@ def mortgage_inputs(plan):
     """The home loan still owed (ADR 0052)."""
     st.subheader("Home loan")
     loan = plan["mortgage"]
-    loan["balance"] = money("Mortgage still owed today (0 = none)", loan["balance"], "mortgage_balance",
-                            help="The loan on the home you live in. Leave your repayments out of spending: the planner "
-                                 "pays them separately.")
+    loan["balance"] = money("Loan on your home, still owed today (0 = none)", loan["balance"], "mortgage_balance",
+                            help="The balance owing on the loan for the home you live in, from your latest statement. A "
+                                 "loan on a property you rent out goes in the Investment property card instead. Leave "
+                                 "your repayments out of spending: the planner pays them separately.")
     if loan["balance"] <= 0:
         st.caption("No home loan.")
         return
@@ -180,13 +181,13 @@ def property_inputs(plan):
     if estate["value"] <= 0:
         st.caption("No investment property.")
         return
-    a, b = st.columns(2)
-    estate["weekly_rent"] = float(a.number_input("Weekly rent", 0.0, 1e5, float(estate["weekly_rent"]), 10.0,
-                                                 key=key("property_rent"), format="%.0f",
-                                                 help=f"Rises with CPI each 1 July. {1 - RENT_KEPT:.0%} is allowed for "
-                                                      "vacancy and the property manager."))
-    with b:
-        estate["loan"] = money("Loan owed today", estate["loan"], "property_loan")
+    estate["weekly_rent"] = float(st.number_input("Weekly rent", 0.0, 1e5, float(estate["weekly_rent"]), 10.0,
+                                                  key=key("property_rent"), format="%.0f",
+                                                  help=f"Rises with CPI each 1 July. {1 - RENT_KEPT:.0%} is allowed for "
+                                                       "vacancy and the property manager."))
+    estate["loan"] = money("Loan on this property, still owed today (0 = none)", estate["loan"], "property_loan",
+                           help="The balance owing on the loan for this rental property, from your latest statement. "
+                                "A loan on the home you live in goes in the Home loan card instead.")
     with st.expander("More: growth, loan terms, running costs and tax"):
         c, d = st.columns(2)
         with c:
