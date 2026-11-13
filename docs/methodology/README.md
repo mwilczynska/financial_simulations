@@ -28,6 +28,7 @@ stochastic planner pass are implemented within their documented limits.
 | Australian personal tax | [Australian rules](australian-rules.md): 2026-27 rules implemented; ledger timing planned | Dated rules, income components, AUD cost bases, gains/losses, credits and payment timing |
 | Super accumulation and contributions | [Australian rules](australian-rules.md): 2026-27 caps, SG and fund tax implemented | Eligibility, contribution history, caps, fund-return conventions and costs |
 | Age Pension and SAPTO | [Age Pension](age-pension.md): implemented for a single person | Means test, deeming, Work Bonus, tax treatment, SAPTO, senior Medicare thresholds and projection |
+| Home loan | [Home loan](home-loan.md): implemented (fixed rate, one borrower) | Required repayments, extra repayments and redraw, net wealth, tax and Age Pension treatment |
 | Single-person retirement ledger | [Retirement ledger](retirement-ledger.md): implemented for 2026-27 | Daily accounts, distributions, CGT parcels, contributions timing, pensions, annual assessment and shortfalls |
 | Ticker plans and browser app | [Plan and app](plan-and-app.md): schema v2 implemented and locally validated | Local processed ticker provenance, two portfolio mixes, joint daily resampling, interactive and PNG results, consolidated outputs |
 | Super access and retirement pensions | [Australian rules](australian-rules.md): access dates, minimum payments and transfer balance implemented | Release conditions, access dates, transfer records, minimum payments and mixed withdrawals |

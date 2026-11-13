@@ -63,6 +63,15 @@ compare = ["fixed"]
 minimum = 0.0
 maximum = 0.0
 
+[mortgage]
+# Home loan still owed today (0 = none). Spending above excludes its repayments. Interest accrues daily and is charged
+# monthly; the required repayment is the fortnightly amount that clears the balance in `years` at `interest_rate`,
+# fixed in dollars. extra_share of what would be invested outside super pays the loan down instead (0 to 1).
+balance = 0.0
+interest_rate = 0.06
+years = 25.0
+extra_share = 0.0
+
 [pension]
 start_age = 60
 transfer_all = true

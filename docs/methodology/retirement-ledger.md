@@ -190,6 +190,16 @@ Asset unit prices start at 1. On each day:
     - Check that the pension minimum was met, unless the pension is
       exhausted.
 
+**Home loan.** With `mortgage`, interest accrues before step 0 each day and is
+charged at month end. The required repayment is paid before spending (step 7)
+through the same waterfall. Spending and tax may redraw extra repayments after
+cash and before sales, and an extra repayment takes `extra_share` of the new
+investment in step 10. Details are in [home-loan.md](home-loan.md)
+([ADR 0052](../decisions/0052-home-loan-in-the-ledger.md)). The daily `total`
+is then net of the amount owed (`mortgage` column), and the identity below is
+checked on assets, with principal repaid net of redraws as an outflow. A second
+identity checks the loan.
+
 The opening value plus market P&L, cash salary and employer contributions,
 less contributions tax, spending paid, tax paid and fund tax, must equal
 total wealth at the close of every calendar day (`rtol=1e-11, atol=1e-6`).
@@ -318,4 +328,5 @@ the minimum tax on capital gains (ADR 0033); accounting end separate from the la
 only for complete periods (ADR 0034); fund tax accrued with each accumulation distribution and an estimated tax on
 an unassessed final period (ADR 0035); opening year-to-date position required for a start after 1 July (ADR 0036);
 bring-forward counted once per dollar and the age-75 acceptance deadline (ADR 0037); gross wages and the Work Bonus
-starting credit, and order-independent distributions (ADR 0038).
+starting credit, and order-independent distributions (ADR 0038). 2026-11-13, home loan, with total wealth net
+of it (ADR 0052).

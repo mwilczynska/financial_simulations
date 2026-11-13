@@ -117,7 +117,10 @@ def wealth_tab(run):
                   "and see its outcome, ending wealth, average retirement spending and Age Pension; open its number on "
                   "the Paths page for the full ledger. Drag to pan, Shift+scroll to zoom, double-click to reset.")
     with card("bands"):
-        names = list(dict.fromkeys(run.account_bands["Series"]))
+        bands_all = run.account_bands
+        # The mortgage band only when some path owes something on it.
+        owing = bands_all.loc[bands_all["Series"] == "Mortgage owed"].select_dtypes("number").to_numpy()
+        names = [n for n in dict.fromkeys(bands_all["Series"]) if n != "Mortgage owed" or (owing > 0.005).any()]
         chart_title("Range of outcomes", "Median, middle half and 90% of paths at each month end.")
         left, right = st.columns([4, 1], vertical_alignment="center")
         with left:

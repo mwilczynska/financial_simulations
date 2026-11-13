@@ -21,7 +21,8 @@ HOUSEHOLD = (("salary", "Take-home salary", 1), ("employer_contributions", "Supe
              ("market_pnl", "Investment returns", 1), ("interest", "Interest on cash", 1), ("age_pension", "Age Pension", 1),
              ("spending_paid", "Spending", -1),
              ("tax_paid", "Income tax", -1), ("contributions_tax", "Contributions tax", -1),
-             ("fund_tax", "Super fund tax", -1), ("division_296", "Division 296 tax", -1))
+             ("fund_tax", "Super fund tax", -1), ("division_296", "Division 296 tax", -1),
+             ("mortgage_interest", "Mortgage interest", -1))
 
 
 TAXES = ("Income tax", "Contributions tax", "Super fund tax", "Division 296 tax")
@@ -106,6 +107,11 @@ def account_flows(daily: pd.DataFrame, events: pd.DataFrame) -> pd.DataFrame:
         add(d, "Account-based pension", "Pension payments", -values["pension_payments"])
         if "division_296" in values:
             add(d, "Super (accumulation)", "Division 296 tax released", -values["division_296"])
+        if "mortgage_repaid" in values:
+            # The loan as an account: interest adds to what is owed; repayments (required and extra, less any redrawn)
+            # reduce it.
+            add(d, "Mortgage", "Interest charged", values["mortgage_interest"])
+            add(d, "Mortgage", "Repaid, net of redraws", -values["mortgage_repaid"])
     if not events.empty:
         purpose = events["purpose"] if "purpose" in events else pd.Series("", index=events.index)
         kind = events["event"]

@@ -103,6 +103,46 @@ def inputs_you(plan):
     with right:
         with card("pay"):
             work_summary(plan)
+        with card("mortgage"):
+            mortgage_inputs(plan)
+
+
+def mortgage_inputs(plan):
+    """The home loan still owed (ADR 0052)."""
+    st.subheader("Home loan")
+    loan = plan["mortgage"]
+    loan["balance"] = money("Mortgage still owed today (0 = none)", loan["balance"], "mortgage_balance",
+                            help="The loan on the home you live in. Leave your repayments out of spending: the planner "
+                                 "pays them separately.")
+    if loan["balance"] <= 0:
+        st.caption("No home loan.")
+        return
+    if not plan["person"]["homeowner"]:
+        st.warning("A home loan needs “I own my home” ticked on the Retirement tab.")
+    a, b = st.columns(2)
+    with a:
+        loan["interest_rate"] = percent("Interest rate, % a year", loan["interest_rate"], "mortgage_rate", low=0, high=30,
+                                        step=0.05, help="Fixed for the whole run. Interest is worked out daily and "
+                                                        "charged monthly, as Australian lenders do.")
+    loan["years"] = float(b.number_input("Years left on the loan", 0.5, 40.0, float(loan["years"]), 0.5,
+                                         key=key("mortgage_years"),
+                                         help="Sets the required repayment: the fortnightly amount that clears the "
+                                              "balance in this many years."))
+    share = st.slider("Of the money you would invest, % paid off the loan instead", 0, 100,
+                      int(round(loan["extra_share"] * 100)), 5, key=key("mortgage_extra"),
+                      help="0 pays only the required repayments and invests the rest. 100 puts every spare dollar into "
+                           "the loan until it is gone, then invests. In between splits each dollar.")
+    loan["extra_share"] = share / 100
+    rate, n = loan["interest_rate"] / 26, max(1, round(loan["years"] * 26))
+    repayment = loan["balance"] / n if rate == 0 else loan["balance"] * rate / (1 - (1 + rate) ** -n)
+    st.metric("Required repayment", f"${repayment:,.0f} a fortnight", help=f"${repayment * 26:,.0f} a year, fixed in "
+              "dollars until the loan is repaid. It comes before spending and saving.")
+    explain("Each fortnight on payday the required repayment is paid from cash (or, if cash runs short, from sales of "
+            "outside investments and then accessible super; anything still unpaid is a shortfall and stays on the "
+            "loan). Then your chosen share of whatever would be invested goes off the loan instead. Extra repayments can "
+            "be redrawn: when cash runs short for spending or tax, they are drawn back before any investments are "
+            "sold. Total wealth is shown net of the loan. Interest is not tax deductible, and the loan does not reduce assets for the Age "
+            "Pension, because your home is not counted either.", "How the home loan is modelled")
 
 
 def work_summary(plan):
@@ -120,9 +160,16 @@ def work_summary(plan):
     tax = assess(IncomeYear(labour_income=salary - sacrifice, reportable_employer_super=sacrifice,
                             low_tax_contributions=concessional,
                             private_hospital_cover=plan["person"]["private_hospital_cover"]), rules)
-    surplus = salary - sacrifice - tax.net_tax - tax.division_293_tax - plan["spending"]["annual"]
+    loan = plan["mortgage"]
+    repayments = 0.0
+    if loan["balance"] > 0:
+        rate, n = loan["interest_rate"] / 26, max(1, round(loan["years"] * 26))
+        repayments = 26 * (loan["balance"] / n if rate == 0 else loan["balance"] * rate / (1 - (1 + rate) ** -n))
+    surplus = salary - sacrifice - tax.net_tax - tax.division_293_tax - plan["spending"]["annual"] - repayments
     fixed = plan["outside"]["saving"] == "fixed"
     invested = min(plan["outside"]["contribution_per_year"], max(surplus, 0)) if fixed else max(surplus, 0)
+    extra = invested * loan["extra_share"] if loan["balance"] > 0 else 0.0
+    invested -= extra
     st.caption("First-year estimate under the 2026-27 rules, before investment income.")
     a, b = st.columns(2)
     a.metric("Into super per year", f"${concessional:,.0f}",
@@ -135,8 +182,11 @@ def work_summary(plan):
              help=("Your fixed contribution, limited to what is left after tax and spending." if fixed else
                    "Take-home pay less tax and spending, all invested.") + " Set this on the Investments tab; contributions "
                   "from pay stop at retirement, after which spare cash above the buffer is reinvested.")
-    if fixed and surplus > invested + 1:
-        st.caption(f"About ${surplus - invested:,.0f} a year of leftover pay stays in cash, earning the cash interest rate.")
+    if repayments:
+        st.caption(f"Home loan: ${repayments:,.0f} a year of required repayments"
+                   + (f" and about ${extra:,.0f} of extra repayments" if extra > 1 else "") + " in the first year.")
+    if fixed and surplus > invested + extra + 1:
+        st.caption(f"About ${surplus - invested - extra:,.0f} a year of leftover pay stays in cash, earning the cash interest rate.")
     if fixed and plan["outside"]["contribution_per_year"] > max(surplus, 0) + 1:
         st.warning("The fixed outside contribution is more than is left after tax and spending; only what is available "
                    "above the cash buffer is invested each payday.")

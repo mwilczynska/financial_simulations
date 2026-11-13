@@ -20,11 +20,14 @@ ACCENT = "#1c5cab"  # buttons, links and the selected state: a darker step of th
 PORTFOLIO_COLOURS = {"Outside super": BLUE, "Inside super": ORANGE, "Combined": AQUA}
 ACCOUNT_COLOURS = {"cash": ("Cash", YELLOW), "outside_investments": ("Outside investments", BLUE),
                    "accumulation": ("Super (accumulation)", ORANGE), "pension": ("Account-based pension", AQUA)}
+# A home loan is drawn below zero under the accounts, only on paths that have one.
+MORTGAGE_COLOUR = ("Mortgage owed", RED)
 
 # Money in and out, in stacking order. The four taxes are drawn as one "Tax" flow (``flows.fold_taxes``): eleven
 # hues cannot be told apart, and the yearly tables keep each tax.
 FLOW_COLOURS = {"Take-home salary": BLUE, "Super contributions": ORANGE, "Investment returns": AQUA,
                 "Interest on cash": GREEN, "Age Pension": YELLOW, "Spending": MAGENTA, "Tax": VIOLET,
+                "Mortgage interest": RED,
                 "Inflation": NEUTRAL}
 NET_COLOUR, ADDED_COLOUR = INK, "#104281"
 

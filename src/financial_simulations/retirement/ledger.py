@@ -51,6 +51,10 @@ Scope and conventions (see docs/methodology/retirement-ledger.md):
   30 September 15 months after the income year ends (30 September 2028 for
   2026-27): an assumed date, as the ATO requests fund reports from the April
   after the following 30 June and tax is due 84 days after its notice.
+* With ``mortgage``, a home loan accrues interest daily (charged monthly), takes
+  a fixed fortnightly repayment before spending, and receives ``extra_share``
+  of new investment as redrawable extra repayments. ``total`` is net of the
+  amount owed; the Age Pension means test uses assets (docs/methodology/home-loan.md).
 """
 
 from dataclasses import dataclass, field
@@ -222,6 +226,40 @@ class SpendingRule:
 
 
 @dataclass(frozen=True)
+class Mortgage:
+    """A principal-and-interest home loan (owner-occupied, so its interest is not deductible).
+
+    Interest accrues daily at ``annual_rate / 365`` on the balance and is added to the balance on the last day of
+    each month. The required repayment is the fortnightly annuity that clears ``balance`` in ``years`` at
+    ``annual_rate``; it is paid every 14 days from ``first_repayment`` until nothing is owed. ``extra_share`` of every
+    dollar that would otherwise be invested outside super is paid off the loan instead, shortening its life.
+    """
+
+    balance: float
+    annual_rate: float
+    years: float
+    first_repayment: date
+    extra_share: float = 0.0
+
+    def __post_init__(self):
+        object.__setattr__(self, "first_repayment", as_date(self.first_repayment))
+        _money(self.balance, "Mortgage balance")
+        if not 0 <= self.annual_rate < 1:
+            raise ValueError("Mortgage interest rate must be an annual rate between 0% and 100%.")
+        if not 0 < self.years <= 50:
+            raise ValueError("Mortgage term must be more than 0 and at most 50 years.")
+        if not 0 <= self.extra_share <= 1:
+            raise ValueError("The share of savings paid off the mortgage must be between 0 and 1.")
+
+    @property
+    def repayment(self) -> float:
+        """Required fortnightly repayment: the annuity over ``round(years * 26)`` fortnights."""
+        n = max(1, round(self.years * 26))
+        r = self.annual_rate / 26
+        return self.balance / n if r == 0 else self.balance * r / (1 - (1 + r) ** -n)
+
+
+@dataclass(frozen=True)
 class OpeningYear:
     """The opening position for the financial year a run starts in: activity from 1 July to the day before the
     start, and amounts in flight. Amounts are AUD.
@@ -297,6 +335,8 @@ class LedgerScenario:
     # Work Bonus bank of a person already receiving the Age Pension at the start; a person whose first payment falls
     # in the run starts with the legislated starting credit instead.
     work_bonus_balance: float = 0.0
+    # Home loan, or None. ``total`` wealth is net of what is owed on it; the Age Pension tests use assets alone.
+    mortgage: Mortgage | None = None
 
 
 @dataclass
@@ -408,6 +448,33 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
             if payday >= start:
                 pension_paydays.add(payday)
             payday += timedelta(days=14)
+    # Home loan: ``balance`` includes interest already charged; ``accrued`` is this month's interest not yet charged.
+    mortgage = scenario.mortgage
+    # ``redraw`` is extra repaid and not yet drawn back: a needs payment may redraw it before investments are sold.
+    debt = {"balance": mortgage.balance if mortgage else 0.0, "accrued": 0.0, "redraw": 0.0}
+    loan_daily_rate = mortgage.annual_rate / 365 if mortgage else 0.0
+    loan_repayment = mortgage.repayment if mortgage else 0.0
+    loan_due, loan_days = 0.0, set()
+    if mortgage and mortgage.balance > 0:
+        if mortgage.first_repayment < start:
+            raise ValueError("The first mortgage repayment must fall on or after the opening date.")
+        repay = mortgage.first_repayment
+        while repay <= end:
+            loan_days.add(repay)
+            repay += timedelta(days=14)
+
+    def owed():
+        return debt["balance"] + debt["accrued"]
+
+    def reduce_debt(amount):
+        """Apply a repayment: interest accrued this month first, then the balance."""
+        against_interest = min(amount, debt["accrued"])
+        debt["accrued"] -= against_interest
+        debt["balance"] -= amount - against_interest
+        if debt["balance"] < TOLERANCE and debt["accrued"] < TOLERANCE:
+            # Repaid in full: the loan closes, and with it the redraw.
+            debt["balance"], debt["accrued"], debt["redraw"] = 0.0, 0.0, 0.0
+
     work_bonus = {"balance": 0.0, "earned": 0.0, "started": False}
     nonconcessional = {}
     for when, amount in scenario.non_concessional:
@@ -639,10 +706,18 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
         return amount
 
     def pay_need(need, kind):
-        """Waterfall: cash, outside sales, accessible accumulation, then extra pension payments."""
+        """Waterfall: cash, mortgage redraw, outside sales, accessible accumulation, then extra pension payments."""
         paid = min(state.cash, need)
         state.cash -= paid
         rules = state.fy["rules"]
+        if paid < need - TOLERANCE and kind != "mortgage" and debt["redraw"] > TOLERANCE:
+            # Extra repayments can be drawn back, adding to the loan; required repayments cannot be met this way.
+            drawn = min(need - paid, debt["redraw"])
+            debt["redraw"] -= drawn
+            debt["balance"] += drawn
+            flows["mortgage_repaid"] -= drawn  # principal repaid is net of redraws
+            log("mortgage_redraw", drawn, "outside", purpose=kind, balance=owed())
+            paid += drawn
         if paid < need - TOLERANCE:
             proceeds = sell_outside(need - paid)
             paid += proceeds
@@ -780,7 +855,8 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
         state.pending += [(when, amount, sacrifice) for when, amount, sacrifice in opening_year.pending_contributions]
         state.liabilities += [{"due": when, "amount": amount, "financial_year": fy}
                               for when, amount, fy in opening_year.tax_due]
-    closing, rules = None, None
+    # ``closing`` is net wealth (assets less the mortgage); ``closing_assets`` is assets alone.
+    closing, closing_assets, rules = None, None, None
     while day <= end:
         if rules is None or (day.month, day.day) == (7, 1):  # the rule set changes only on 1 July
             rules = rules_by_year[financial_year_of(day)]
@@ -794,10 +870,18 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
             log("cgt_reform_valuation", sum(p.reform_value or 0.0 for p in state.parcels), "outside")
         flows = {k: 0.0 for k in ("market_pnl", "salary", "employer_contributions", "contributions_tax", "spending_paid",
                                   "shortfall", "tax_paid", "tax_unpaid", "fund_tax", "distributions", "pension_payments",
-                                  "lump_sums", "interest", "age_pension", "division_296")}
-        # Nothing changes overnight, so the opening value is the previous close.
-        opening = closing if closing is not None else (state.cash + _value(state.outside_units, state.prices)
-                                                       + _value(state.super_acc, state.prices) + _value(state.super_pen, state.prices))
+                                  "lump_sums", "interest", "age_pension", "division_296", "mortgage_interest",
+                                  "mortgage_repaid")}
+        # Nothing changes overnight, so the opening value is the previous close (assets, before the mortgage).
+        opening = closing_assets if closing_assets is not None else (
+            state.cash + _value(state.outside_units, state.prices) + _value(state.super_acc, state.prices)
+            + _value(state.super_pen, state.prices))
+        opening_debt = owed()
+        if debt["balance"] > 0:
+            # Interest on the previous close's balance accrues every calendar day and is charged at month end.
+            charge = debt["balance"] * loan_daily_rate
+            debt["accrued"] += charge
+            flows["mortgage_interest"] = charge
         if daily_interest and state.cash > 0:
             # Interest on the previous close's cash, credited every calendar day.
             interest = state.cash * daily_interest
@@ -960,10 +1044,23 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
         if day == start or day.day == 1:
             retired = person.retirement_date is not None and day >= person.retirement_date
             if retired and rule_state["rate0"] is None:
-                begin_retirement(day, closing if closing is not None else opening)
+                begin_retirement(day, closing if closing is not None else opening - opening_debt)
             base = scenario.retirement_spending if retired and scenario.retirement_spending is not None else scenario.annual_spending
             factor = rule_state["factor"] if retired else 1.0
             spending_due.append((day, base * (1 + scenario.spending_growth) ** _years_since(start, day) * factor / 12))
+        if day in loan_days and owed() > TOLERANCE:
+            loan_due += loan_repayment
+        if observation is not None and loan_due > TOLERANCE:
+            # The required repayment comes before spending; it needs a sale day when cash is short.
+            need = min(loan_due, owed())
+            paid, short = pay_need(need, "mortgage")
+            reduce_debt(paid)
+            flows["mortgage_repaid"] += paid
+            # A missed repayment is a shortfall like unpaid spending; the arrears stay on the loan and accrue interest.
+            flows["shortfall"] += short
+            state.fy["shortfall"] += short
+            log("mortgage_repayment", paid, "outside", requested=need, balance=owed())
+            loan_due = 0.0
         if observation is not None:
             for when, need in [s for s in spending_due if s[1] > 0]:
                 paid, short = pay_need(need, "spending")
@@ -1016,6 +1113,16 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
             amount = (available if retired or scenario.outside_contribution_per_payday is None
                       else min(saving_due, available))
             saving_due = 0.0
+            if amount > TOLERANCE and mortgage and mortgage.extra_share > 0 and owed() > TOLERANCE:
+                # The chosen share of what would be invested pays the loan down instead, while anything is owed.
+                extra = min(amount * mortgage.extra_share, owed())
+                state.cash -= extra
+                reduce_debt(extra)
+                if owed() > 0:
+                    debt["redraw"] += extra
+                flows["mortgage_repaid"] += extra
+                log("mortgage_extra_repayment", extra, "outside", balance=owed())
+                amount -= extra
             if amount > TOLERANCE:
                 state.cash -= amount
                 buy_outside(amount)
@@ -1084,21 +1191,30 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
                            "transfer_balance": state.tba.balance if state.tba else None})
             log("assessment", assessment.net_tax, "outside", financial_year=rules.financial_year,
                 taxable_income=assessment.taxable_income, division_293=assessment.division_293_tax)
+        if debt["accrued"] and (day + timedelta(days=1)).day == 1:
+            # Interest accrued over the month is charged to the loan on its last day.
+            debt["balance"] += debt["accrued"]
+            debt["accrued"] = 0.0
         outside_value = _value(state.outside_units, state.prices)
         acc_value, pen_value = _value(state.super_acc, state.prices), _value(state.super_pen, state.prices)
-        total = state.cash + outside_value + acc_value + pen_value
+        assets_total = state.cash + outside_value + acc_value + pen_value
         expected = (opening + flows["market_pnl"] + flows["salary"] + flows["employer_contributions"] + flows["interest"]
                     + flows["age_pension"]
                     - flows["contributions_tax"] - flows["spending_paid"] - flows["tax_paid"] - flows["fund_tax"]
-                    - flows["division_296"])
-        if abs(total - expected) > 1e-6 + 1e-11 * abs(expected):
-            raise ArithmeticError(f"Ledger reconciliation failed on {day}: {total} != {expected}.")
-        closing = total
+                    - flows["division_296"] - flows["mortgage_repaid"])
+        if abs(assets_total - expected) > 1e-6 + 1e-11 * abs(expected):
+            raise ArithmeticError(f"Ledger reconciliation failed on {day}: {assets_total} != {expected}.")
+        mortgage_owed = owed()
+        expected_debt = opening_debt + flows["mortgage_interest"] - flows["mortgage_repaid"]
+        if abs(mortgage_owed - expected_debt) > 1e-6 + 1e-11 * abs(expected_debt):
+            raise ArithmeticError(f"Mortgage reconciliation failed on {day}: {mortgage_owed} != {expected_debt}.")
+        total = assets_total - mortgage_owed
+        closing, closing_assets = total, assets_total
         if rule_state["fy_open"] is None:
             rule_state["fy_open"] = total  # opening wealth for the first year's return
         rows.append({"date": day, "is_observation": observation is not None, "cash": state.cash,
                      "outside_investments": outside_value, "accumulation": acc_value, "pension": pen_value,
-                     "total": total, "super_accessible": day >= access, **flows,
+                     "mortgage": mortgage_owed, "total": total, "super_accessible": day >= access, **flows,
                      "pending_contributions": sum(p[1] for p in state.pending),
                      "tax_liabilities": sum(l["amount"] for l in state.liabilities)})
         day += timedelta(days=1)
@@ -1125,6 +1241,7 @@ def run_ledger(path: MarketPath, scenario: LedgerScenario, rules_by_year: dict) 
                    "unassessed_year": unassessed,
                    "pending_contributions": [{"due": str(d), "amount": a} for d, a, _ in state.pending],
                    "unscheduled_spending": [{"scheduled": str(d), "amount": a} for d, a in spending_due if a > 0],
+                   "mortgage": owed(),
                    "capital_losses_carried_forward": losses_bf, "unused_concessional": unused,
                    "total_super_balance_30_june": tsb_prior}
     return LedgerResult(daily, pd.DataFrame(events), annual, outstanding)

@@ -59,7 +59,8 @@ birthday) the ledger computes:
 
 ```
 maximum          = basic rate + pension supplement + energy supplement
-financial assets = cash + outside investments + accumulation super + account-based pension   (previous close)
+financial assets = cash + outside investments + accumulation super + account-based pension   (previous close; a home
+                   loan is not deducted, see home-loan.md)
 assessed assets  = financial assets + other assets                                          (home exempt)
 assets reduction = max(0, assessed assets - limit) / 1000 * 3           limit: homeowner or non-homeowner
 deemed income    = (min(F, T) * lower_rate + max(0, F - T) * upper_rate) / 26     F = financial assets, T = threshold

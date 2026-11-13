@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from financial_simulations.reporting.palette import (ACCOUNT_COLOURS, ADDED_COLOUR, AXIS, BLUE, FLOW_COLOURS, INK,
+from financial_simulations.reporting.palette import (ACCOUNT_COLOURS, MORTGAGE_COLOUR, ADDED_COLOUR, AXIS, BLUE, FLOW_COLOURS, INK,
                                                      INK_SECONDARY, MUTED, NET_COLOUR, PORTFOLIO_COLOURS, SERIES, SURFACE,
                                                      TIER_COLOURS)
 from financial_simulations.retirement.outcomes import TIERS
@@ -174,23 +174,38 @@ def band_chart(frame, title, *, log=False, symlog=False, color=BLUE, percent=Fal
     return chart
 
 
+def accounts(daily):
+    """Balances by account in a fixed order, with any mortgage as a negative balance, and their labels and colours.
+
+    The accounts are assets; the mortgage column appears only when something is owed on the path, so the sum of a
+    row is total wealth net of the loan.
+    """
+    colours = dict(ACCOUNT_COLOURS)
+    frame = daily[list(ACCOUNT_COLOURS)].copy()
+    if "mortgage" in daily and (daily["mortgage"] > 0.005).any():
+        colours["mortgage"] = MORTGAGE_COLOUR
+        frame["mortgage"] = -daily["mortgage"]
+    return frame, colours
+
+
 def balances_chart(daily, height=MEDIUM, x=None, zoom=True, **axis):
-    """Stacked month-end balances by account, in a fixed account order and colour.
+    """Stacked month-end balances by account, in a fixed account order and colour; a mortgage stacks below zero.
 
     ``x`` replaces the date encoding and ``zoom=False`` leaves zooming to the caller, for a panel of a stacked chart.
     """
-    labels = [v[0] for v in ACCOUNT_COLOURS.values()]
-    monthly = daily[list(ACCOUNT_COLOURS)].resample("ME").last().reset_index()
+    frame, colours = accounts(daily)
+    labels = [v[0] for v in colours.values()]
+    monthly = frame.resample("ME").last().reset_index()
     long = monthly.melt("Date", var_name="account", value_name="balance")
-    long["Account"] = long["account"].map(lambda a: ACCOUNT_COLOURS[a][0])
-    long["order"] = long["account"].map(list(ACCOUNT_COLOURS).index)
+    long["Account"] = long["account"].map(lambda a: colours[a][0])
+    long["order"] = long["account"].map(list(colours).index)
     long["Total"] = long.groupby("Date")["balance"].transform("sum")
     long["Share"] = long["balance"] / long["Total"].where(long["Total"] > 0)
     long = add_age(long)
     chart, _ = toggle(alt.Chart(long).mark_area(stroke=SURFACE, strokeWidth=1).encode(
         x=x if x is not None else alt.X("Date:T", title=None, axis=year_axis(long)),
         y=alt.Y("balance:Q", stack="zero", title="Today's dollars", axis=money_axis(**axis)),
-        color=alt.Color("Account:N", sort=labels, scale=alt.Scale(domain=labels, range=[v[1] for v in ACCOUNT_COLOURS.values()])),
+        color=alt.Color("Account:N", sort=labels, scale=alt.Scale(domain=labels, range=[v[1] for v in colours.values()])),
         order=alt.Order("order:Q"),
         tooltip=[alt.Tooltip("Date:T", format="%b %Y"), *age_tooltip(long), "Account:N",
                  alt.Tooltip("balance:Q", title="Balance", format="$,.0f"),
@@ -567,16 +582,17 @@ def path_story(growth, kinds, colours, daily, household, additions, marks, state
     ).properties(height=heights[0])
 
     # Wealth: the stacked balances.
-    accounts = daily[list(ACCOUNT_COLOURS)].reindex(months, method="ffill")
-    wealth_months = add_age(stamp.assign(Total=accounts.sum(axis=1).to_numpy(),
-                                         **{f"a{i}": accounts[a].to_numpy() for i, a in enumerate(ACCOUNT_COLOURS)}))
+    balances, colours = accounts(daily)
+    balances = balances.reindex(months, method="ffill")
+    wealth_months = add_age(stamp.assign(Total=balances.sum(axis=1).to_numpy(),
+                                         **{f"a{i}": balances[a].to_numpy() for i, a in enumerate(colours)}))
     rules = milestone_layers(marks)[:1]
     areas = balances_chart(daily, x=x(), zoom=False, minExtent=wide).add_params(zoom).properties(name="story_wealth_0")
     wealth = alt.layer(areas, *rules, *cursor_layers(
         wealth_months, x(), cursor, [*when, *age_tooltip(wealth_months),
                                      alt.Tooltip("Total:Q", title="Total wealth", format="$,.0f"),
                                      *[alt.Tooltip(f"a{i}:Q", title=v[0], format="$,.0f")
-                                       for i, v in enumerate(ACCOUNT_COLOURS.values())]])
+                                       for i, v in enumerate(colours.values())]])
     ).properties(height=heights[1])
 
     # Money in and out: one bar per financial year, as wide as the year on the date axis.
