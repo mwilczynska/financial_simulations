@@ -69,14 +69,15 @@ def maximum_rate(rules: RuleSet) -> float:
 
 
 def fortnightly_rate(assets: float, financial_assets: float, employment_income: float, rules: RuleSet, *,
-                     homeowner: bool = True) -> PensionRate:
-    """The fortnightly Age Pension for assessable ``assets``, ``financial_assets`` to deem and the fortnight's
-    ``employment_income`` already reduced by any Work Bonus."""
+                     homeowner: bool = True, other_income: float = 0.0) -> PensionRate:
+    """The fortnightly Age Pension for assessable ``assets``, ``financial_assets`` to deem, the fortnight's
+    ``employment_income`` already reduced by any Work Bonus, and ``other_income`` assessed as received (such as net
+    rent from real estate)."""
     rate, assets_test, income_test = rules["age_pension_rate"], rules["age_pension_assets_test"], rules["age_pension_income_test"]
     maximum = maximum_rate(rules)
     limit = assets_test["homeowner" if homeowner else "non_homeowner"]
     assets_reduction = max(0.0, assets - limit) / 1000 * assets_test["taper_per_1000"]
-    income = deemed_income(financial_assets, rules) / FORTNIGHTS + max(0.0, employment_income)
+    income = deemed_income(financial_assets, rules) / FORTNIGHTS + max(0.0, employment_income) + max(0.0, other_income)
     income_reduction = max(0.0, income - income_test["free_area"]) * income_test["taper"]
     amount = max(0.0, maximum - max(assets_reduction, income_reduction))
     taxable_share = (rate["basic"] + rate["supplement_taxable"]) / maximum

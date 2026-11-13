@@ -456,7 +456,7 @@ results gave the editor the run's own plan object; it now gets a copy.
 
 ## One saved run per plan name (2026-11-13)
 
-ADR 0052. `tests/test_saved_runs.py` (8 tests) passed, including a second save replacing the first and its stored
+ADR 0053 (first numbered 0052, which the home loan record also used). `tests/test_saved_runs.py` (8 tests) passed, including a second save replacing the first and its stored
 ledgers, an interrupted second save leaving the first openable, and a folder that is not a saved run left untouched.
 
 The four existing dated saves were renamed. Two were of the example plan: the newer (09:53, without full ledgers)
@@ -464,3 +464,13 @@ became `example-early-retirement/`, and the older (09:22, with full ledgers) was
 than deleted. The other two, of private plans, were renamed to their plan names. Each renamed save then opened with
 `load_run`: the two 1,000-path private saves in 2.7 s and 2.9 s, each reading back its 1,000 stored ledgers' last path (20,089 and 21,915
 days), and the example in 0.1 s.
+
+## Investment property (2026-11-13)
+
+ADR 0054. `tests/test_investment_property.py` (9 tests) passed, with the full suite (285 tests). The worked example
+in the methodology (a $750,000 property at $650 a week with $500,000 owed) was run through the ledger: net cash
+−$19,670.49, a $10,704.71 rental loss carried forward, and taxable income $159,000 by default or $148,295 with
+losses offset. In the browser app the *Investment property* card showed −$19,466 of first-year net cash (an estimate
+on the opening balances), and a 100-path run of the example plan with that property completed without server errors.
+The Outcomes bands offered *Spendable wealth* and *Investment property*; a path's wealth panel drew the property above
+the accounts and its loan below zero, and money in and out drew one *Investment property* flow.

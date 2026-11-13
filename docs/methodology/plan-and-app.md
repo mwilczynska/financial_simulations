@@ -87,6 +87,7 @@ Schema version 3 uses the fields below. Version 2 files, which name one `rule`, 
 | `[super]` | Balance, prior 30 June total super balance, `weights`, `rebalance`, `realised_gains` (share of the fund's unrealised gains realised each year; default 0.2, an assumption; ADR 0029) |
 | `[spending]`, `[pension]`, `[assumptions]` | `annual` (today's dollars), `real_change` (a year, on top of CPI; default 0), `retirement` (`same` default, `amount` with `retirement_annual`, or `percent` with `retirement_percent` of total wealth on the retirement date), `compare` (the spending strategies to compare, a list of `fixed` (default), `guyton_klinger`, `vanguard` and `percent`, kept in that order; anything but `["fixed"]` requires `retirement = "percent"`, so every compared strategy starts from the same spending; a version 2 `rule` loads as a one-item list), `minimum`, `maximum` (today's dollars, CPI-indexed), `guardrail_band`, `guardrail_step`, `ceiling`, `floor`; pension transfer; projected-rule assumptions. A `planning_age` in older files is accepted and ignored (ADR 0041). A legacy nominal `annual_growth` is read as `real_change = (1 + annual_growth) / (1 + cpi) - 1` (ADR 0025) |
 | `[mortgage]` | `balance` (0 = no loan), `interest_rate`, `years`, `extra_share` ([home loan](home-loan.md), ADR 0052); a loan needs `person.homeowner` |
+| `[investment_property]` | `value` (0 = none), `weekly_rent`, `loan`; with defaults `growth` (0.04), `interest_rate` (0.06), `years` (25), `interest_only_years` (0), `running_costs` (0.015 of value a year), `losses_offset_salary` (false) ([investment property](investment-property.md), ADR 0054) |
 | `[market]` | Portfolio path count, retirement path count, seed, mean block length |
 
 **Spending strategies** ([ADR 0043](../decisions/0043-compared-spending-strategies-in-the-plan.md)). A normalized
@@ -330,7 +331,7 @@ In the *Plan* menu, **Also save results** makes **Save** save the results on scr
 or the inputs have changed since the last run; **Also save every path's full daily ledger** is greyed out unless it
 is ticked, and off by default. A save writes
 `output/saved_runs/<plan-name>/` (git-ignored), replacing any earlier save of the same plan name
-([ADR 0052](../decisions/0052-one-saved-run-per-plan-name.md)), with:
+([ADR 0053](../decisions/0053-one-saved-run-per-plan-name.md)), with:
 
 - `run.json` (format version, time, note, plan, rule, code and market manifests) and `plan.toml`;
 - the market's daily history returns and ticker statistics, and every market path's sampled history rows

@@ -25,8 +25,8 @@ from financial_simulations.dates import as_date
 from financial_simulations.data.plan_markets import load_plan_markets, ticker_name
 from financial_simulations.markets.calendar import observation_calendar, observations_per_year
 from financial_simulations.markets.path import MarketPath
-from financial_simulations.retirement.ledger import (AssetIncome, Employment, LedgerScenario, Mortgage, OpeningYear, Parcel,
-                                                     Pension, Person, SpendingRule)
+from financial_simulations.retirement.ledger import (AssetIncome, Employment, InvestmentProperty, LedgerScenario, Mortgage,
+                                                     OpeningYear, Parcel, Pension, Person, SpendingRule)
 from financial_simulations.rules.au.parameters import financial_year_of, load_ruleset
 from financial_simulations.rules.au.projection import ProjectionAssumptions, project_rulesets
 from financial_simulations.rules.au.age_pension import maximum_rate
@@ -41,6 +41,8 @@ REBALANCE = ("annual", "none")
 SAVING = ("surplus", "fixed")
 SPENDING_RULES = ("fixed", "guyton_klinger", "vanguard", "percent")
 RETIREMENT_START = ("same", "amount", "percent")
+# Share of an investment property's rent kept after vacancy and management (engineering judgement, ADR 0054).
+RENT_KEPT = 0.90
 
 
 class PlanError(ValueError):
@@ -141,7 +143,7 @@ def normalize_plan(raw: dict) -> dict:
         raise PlanError(["plan: must be a table of sections"])
     c = _Checker()
     known = {"schema_version", "plan", "person", "employment", "assets", "outside", "super", "spending", "pension", "assumptions",
-             "market", "year_to_date", "mortgage"}
+             "market", "year_to_date", "mortgage", "investment_property"}
     c.problems += [f"{k}: unknown section" for k in raw if k not in known]
     if raw.get("schema_version", SCHEMA_VERSION) not in READABLE_VERSIONS:
         c.problems.append(f"schema_version: this tool reads versions {READABLE_VERSIONS[0]} and {READABLE_VERSIONS[-1]}; version 1 holdings need a reviewed conversion to portfolio balances and tax positions")
@@ -154,7 +156,7 @@ def normalize_plan(raw: dict) -> dict:
 
     meta, person, employment = section("plan"), section("person"), section("employment")
     outside, super_, spending, pension, assumptions, market = (section(n) for n in ("outside", "super", "spending", "pension", "assumptions", "market"))
-    year_to_date, mortgage = section("year_to_date"), section("mortgage")
+    year_to_date, mortgage, investment = section("year_to_date"), section("mortgage"), section("investment_property")
     allowed = {"plan": {"name", "start_date", "years"},
                "person": {"date_of_birth", "retirement_age", "private_hospital_cover", "homeowner", "other_assets"},
                "employment": {"annual_salary", "salary_sacrifice_per_year", "salary_sacrifice_percent", "salary_indexed",
@@ -169,11 +171,13 @@ def normalize_plan(raw: dict) -> dict:
                "assumptions": {"cpi_annual", "wage_growth_annual", "planning_age"},
                "market": {"paths", "retirement_paths", "seed", "block_length"},
                "year_to_date": {"entered", *YEAR_TO_DATE},
-               "mortgage": {"balance", "interest_rate", "years", "extra_share"}}
+               "mortgage": {"balance", "interest_rate", "years", "extra_share"},
+               "investment_property": {"value", "weekly_rent", "loan", "growth", "interest_rate", "years",
+                                       "interest_only_years", "running_costs", "losses_offset_salary"}}
     for name, table in (("plan", meta), ("person", person), ("employment", employment), ("outside", outside),
                         ("super", super_), ("spending", spending), ("pension", pension),
                         ("assumptions", assumptions), ("market", market), ("year_to_date", year_to_date),
-                        ("mortgage", mortgage)):
+                        ("mortgage", mortgage), ("investment_property", investment)):
         c.problems.extend(f"{name}.{key}: unknown field in schema version {SCHEMA_VERSION}"
                           for key in table if key not in allowed[name])
     plan = {"schema_version": SCHEMA_VERSION,
@@ -275,6 +279,23 @@ def normalize_plan(raw: dict) -> dict:
                         "extra_share": c.number(mortgage, "extra_share", "mortgage", 0.0, low=0, high=1)}
     if plan["mortgage"]["balance"] > 0 and not plan["person"]["homeowner"]:
         c.problems.append("mortgage.balance: a home loan needs person.homeowner = true (the loan is on your own home)")
+    # Investment property (ADR 0054): value, weekly rent and loan owed today; the rest has defaults. A zero value means
+    # no property.
+    plan["investment_property"] = {
+        "value": c.number(investment, "value", "investment_property", 0.0, low=0, high=1e8),
+        "weekly_rent": c.number(investment, "weekly_rent", "investment_property", 0.0, low=0, high=1e5),
+        "loan": c.number(investment, "loan", "investment_property", 0.0, low=0, high=1e8),
+        "growth": c.number(investment, "growth", "investment_property", 0.04, low=-0.1, high=0.2),
+        "interest_rate": c.number(investment, "interest_rate", "investment_property", 0.06, low=0, high=0.3),
+        "years": c.number(investment, "years", "investment_property", 25.0, low=0.5, high=40),
+        "interest_only_years": c.number(investment, "interest_only_years", "investment_property", 0.0, low=0, high=15),
+        "running_costs": c.number(investment, "running_costs", "investment_property", 0.015, low=0, high=0.1),
+        "losses_offset_salary": c.flag(investment, "losses_offset_salary", "investment_property", False)}
+    estate = plan["investment_property"]
+    if estate["value"] == 0 and (estate["loan"] > 0 or estate["weekly_rent"] > 0):
+        c.problems.append("investment_property.value: enter the property's value to model its rent and loan")
+    if estate["loan"] > 0 and estate["interest_only_years"] >= estate["years"]:
+        c.problems.append("investment_property.interest_only_years: must be shorter than the loan's years left")
     plan["pension"] = {"start_age": c.number(pension, "start_age", "pension", 0, low=0, high=80),
                        "transfer_all": c.flag(pension, "transfer_all", "pension", True),
                        "amount": c.number(pension, "amount", "pension", 0.0, low=0, high=1e9)}
@@ -353,8 +374,8 @@ def plan_to_toml(plan: dict) -> str:
     plan = normalize_plan(plan)
     lines = [f"# Retirement plan file, schema version {SCHEMA_VERSION}. Edit here or in the browser app.",
              f"schema_version = {SCHEMA_VERSION}", f"assets = {_toml_value(plan['assets'])}", ""]
-    for section in ("plan", "person", "employment", "outside", "super", "spending", "mortgage", "pension", "assumptions",
-                    "market", "year_to_date"):
+    for section in ("plan", "person", "employment", "outside", "super", "spending", "mortgage", "investment_property",
+                    "pension", "assumptions", "market", "year_to_date"):
         lines.append(f"[{section}]")
         for key, value in plan[section].items():
             if value is None:
@@ -452,16 +473,26 @@ def build_inputs(plan: dict, *, market=None, returns=None):
                          f"accessible on {access:%d %B %Y}. It starts on that day instead; a transition-to-retirement "
                          "pension while still working is not modelled.")
         pension = Pension(max(requested, access), None if plan["pension"]["transfer_all"] else plan["pension"]["amount"])
+    # Loans are repaid fortnightly on paydays, so pay arrives first; with no salary, every fortnight from the start.
+    first_repayment = start
+    if employment is not None:
+        first_repayment = employment.first_payday
+        while first_repayment < start:
+            first_repayment += timedelta(days=14)
     mortgage = None
     if plan["mortgage"]["balance"] > 0:
-        # Repaid fortnightly on paydays, so pay arrives first; with no salary, every fortnight from the start.
-        first_repayment = start
-        if employment is not None:
-            first_repayment = employment.first_payday
-            while first_repayment < start:
-                first_repayment += timedelta(days=14)
         mortgage = Mortgage(plan["mortgage"]["balance"], plan["mortgage"]["interest_rate"], plan["mortgage"]["years"],
                             first_repayment, plan["mortgage"]["extra_share"])
+    investment_property = None
+    estate = plan["investment_property"]
+    if estate["value"] > 0:
+        loan = (Mortgage(estate["loan"], estate["interest_rate"], estate["years"], first_repayment,
+                         interest_only_years=estate["interest_only_years"]) if estate["loan"] > 0 else None)
+        # Rent rises with CPI; 10% of it is lost to vacancy and management (ADR 0054).
+        investment_property = InvestmentProperty(estate["value"], estate["weekly_rent"], loan, growth=estate["growth"],
+                                                 running_costs=estate["running_costs"], rent_kept=RENT_KEPT,
+                                                 rent_growth=plan["assumptions"]["cpi_annual"],
+                                                 losses_offset_other_income=estate["losses_offset_salary"])
     scenario = LedgerScenario(
         person, outside_cash=plan["outside"]["cash"], cash_buffer=plan["outside"]["cash_buffer"],
         outside_parcels=tuple(Parcel(ticker, plan["outside"]["investment_balance"] * weight,
@@ -487,7 +518,7 @@ def build_inputs(plan: dict, *, market=None, returns=None):
         outside_contribution_growth=plan["assumptions"]["cpi_annual"] if plan["outside"]["contribution_indexed"] else 0.0,
         cash_interest=plan["outside"]["cash_interest"], payg_withholding=True,
         age_pension=True, super_realised_gains=plan["super"]["realised_gains"], end_date=end,
-        opening_year=opening, mortgage=mortgage)
+        opening_year=opening, mortgage=mortgage, investment_property=investment_property)
     return path, scenario, years, notes
 
 

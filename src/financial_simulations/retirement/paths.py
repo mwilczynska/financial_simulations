@@ -22,12 +22,18 @@ from financial_simulations.retirement.real import flow_deflator, real_daily, rea
 from financial_simulations.rules.au.parameters import UnsupportedRule
 
 
-# Total wealth is net of the mortgage (the ledger's ``total``); the accounts are assets.
+# Total wealth is net of the loans and includes an investment property (the ledger's ``total``); spendable wealth
+# leaves the property and its loan out. The accounts are assets.
 SERIES = (("Total wealth", ("total",)),
+          ("Spendable wealth", ("spendable",)),
           ("Outside super", ("cash", "outside_investments")),
           ("Super and pension", ("accumulation", "pension")),
           ("Pension account", ("pension",)),
-          ("Mortgage owed", ("mortgage",)))
+          ("Mortgage owed", ("mortgage",)),
+          ("Investment property", ("property_value",)),
+          ("Investment loan owed", ("property_loan",)))
+# Series shown only when some path has something in them.
+OPTIONAL_SERIES = ("Spendable wealth", "Mortgage owed", "Investment property", "Investment loan owed")
 
 
 def _fy_start(day: date) -> date:
@@ -50,7 +56,7 @@ def _summarise(path: int, result: LedgerResult, retire: date, cpi: float):
     shortfall_days = daily.index[daily["shortfall"] > 0]
     depleted = daily.index[(outside <= 1.0) & (dates > first)]
     flow_columns = ["spending_paid", "tax_paid", "division_296", "shortfall", "pension_payments", "lump_sums", "age_pension",
-                    "mortgage_interest"]
+                    "mortgage_interest", "rent", "property_costs", "property_interest"]
     flows = daily[flow_columns].resample("YE-JUN").sum()
     # Withdrawal rates use nominal flows over nominal wealth: today's-dollar flows are deflated in whole financial-year
     # steps but wealth by exact days, so their ratio would not be the nominal rate (review finding 14).
@@ -60,20 +66,24 @@ def _summarise(path: int, result: LedgerResult, retire: date, cpi: float):
         begin = _fy_start(end.date())
         before = daily.index[dates < begin]
         opening = float(daily["total"].iloc[0] if before.empty else daily["total"].loc[before[-1]])
-        opening_nominal = float(nominal["total"].iloc[0] if before.empty else nominal["total"].loc[before[-1]])
+        # Withdrawal rates are over spendable wealth: an investment property's equity is never sold (ADR 0054).
+        opening_nominal = float(nominal["spendable"].iloc[0] if before.empty else nominal["spendable"].loc[before[-1]])
         retired = begin >= retire and end.date() <= last
-        # The draw on your own wealth: spending, tax (personal and Division 296) and mortgage interest, less the Age
-        # Pension that paid part of them. Mortgage principal repaid moves wealth from assets to the loan, so it is not
-        # a draw.
+        # The draw on your own wealth: spending, tax (personal and Division 296), mortgage interest and an investment
+        # property's interest and running costs, less the Age Pension and rent that paid part of them. Loan principal
+        # repaid moves wealth from assets to a loan, so it is not a draw.
         n = nominal_flows.loc[end]
         withdrawal = max(0.0, float(n["spending_paid"] + max(n["tax_paid"], 0.0) + n["division_296"]
-                                    + n["mortgage_interest"] - n["age_pension"]))
+                                    + n["mortgage_interest"] + n["property_interest"] + n["property_costs"]
+                                    - n["age_pension"] - n["rent"]))
         rows.append({"Path": path, "Financial year": f"{begin.year}-{str(begin.year + 1)[2:]}", "FY ending": begin.year + 1,
                      "Full retired year": retired, "Wealth at 1 July": opening, "Spending paid": float(values["spending_paid"]),
                      "Tax paid": float(values["tax_paid"]), "Shortfall": float(values["shortfall"]),
                      "Pension payments": float(values["pension_payments"]), "Super lump sums": float(values["lump_sums"]),
                      "Age Pension": float(values["age_pension"]), "Division 296": float(values["division_296"]),
-                     "Mortgage interest": float(values["mortgage_interest"]),
+                     "Mortgage interest": float(values["mortgage_interest"]), "Rent": float(values["rent"]),
+                     "Property costs": float(values["property_costs"]),
+                     "Investment loan interest": float(values["property_interest"]),
                      "Withdrawal rate": withdrawal / opening_nominal if retired and opening_nominal > 1 else np.nan})
     # Each year's money in and out on this path, so the app can show medians across paths.
     yearly = household_flows(daily, inflation=True)
@@ -135,6 +145,17 @@ def _summarise(path: int, result: LedgerResult, retire: date, cpi: float):
                "Mortgage interest": float(daily["mortgage_interest"].sum()),
                "Mortgage owed at end": float(daily["mortgage"].iloc[-1]),
                "Mortgage paid off": _paid_off(daily["mortgage"]),
+               "Property value at end": float(daily["property_value"].iloc[-1]),
+               "Investment loan owed at end": float(daily["property_loan"].iloc[-1]),
+               "Investment loan paid off": _paid_off(daily["property_loan"]),
+               "Rent received": float(daily["rent"].sum()),
+               "Property costs": float(daily["property_costs"].sum()),
+               "Investment loan interest": float(daily["property_interest"].sum()),
+               "Rental loss carried forward at end": owed["rental_loss_carried_forward"] / end_price,
+               # The property is never sold; this shows what selling it could have covered when money first ran out.
+               "Property equity when money ran out": (
+                   float(daily["property_value"].loc[shortfall_days[0]] - daily["property_loan"].loc[shortfall_days[0]])
+                   if len(shortfall_days) and daily["property_value"].iloc[0] > 0 else np.nan),
                "Pension payments": float(daily["pension_payments"].sum()),
                "Pension balance at start": float(daily["pension"].loc[pension_start[0]]) if len(pension_start) else 0.0,
                "Age Pension received": float(daily["age_pension"].sum()),
@@ -158,7 +179,7 @@ def _retirement_spending(result, nominal, rows, retire, first, cpi):
     """How retirement spending started and how low it went, in today's dollars.
 
     The starting amount is twelve times the first monthly spending need on or after the retirement date, and the
-    starting rate is that annual amount over total wealth the day before. The lowest year is the smallest spending
+    starting rate is that annual amount over spendable wealth the day before. The lowest year is the smallest spending
     actually paid in a full retired financial year (shortfalls lower it).
     """
     empty = {"Starting retirement spending": np.nan, "Starting withdrawal rate": np.nan,
@@ -173,8 +194,8 @@ def _retirement_spending(result, nominal, rows, retire, first, cpi):
         return empty
     when = pd.Timestamp(after["scheduled"].iloc[0])
     annual = 12 * float(after["requested"].iloc[0])
-    before = nominal.loc[nominal.index < when, "total"]
-    wealth = float(before.iloc[-1]) if len(before) else float(nominal["total"].iloc[0])
+    before = nominal.loc[nominal.index < when, "spendable"]
+    wealth = float(before.iloc[-1]) if len(before) else float(nominal["spendable"].iloc[0])
     start = annual / float(flow_deflator([when], first, cpi)[0])
     retired = [r["Spending paid"] for r in rows if r["Full retired year"]]
     lowest = min(retired) if retired else np.nan

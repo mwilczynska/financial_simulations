@@ -22,12 +22,16 @@ ACCOUNT_COLOURS = {"cash": ("Cash", YELLOW), "outside_investments": ("Outside in
                    "accumulation": ("Super (accumulation)", ORANGE), "pension": ("Account-based pension", AQUA)}
 # A home loan is drawn below zero under the accounts, only on paths that have one.
 MORTGAGE_COLOUR = ("Mortgage owed", RED)
+# An investment property's value is drawn above the accounts and its loan below zero, only on paths that have one.
+PROPERTY_COLOUR, PROPERTY_LOAN_COLOUR = ("Investment property", GREEN), ("Investment loan owed", VIOLET)
 
-# Money in and out, in stacking order. The four taxes are drawn as one "Tax" flow (``flows.fold_taxes``): eleven
-# hues cannot be told apart, and the yearly tables keep each tax.
+# Money in and out, in stacking order. The four taxes are drawn as one "Tax" flow, and an investment property's rent,
+# costs, loan interest and value growth as one "Investment property" flow (``flows.fold_taxes``): fifteen hues cannot be
+# told apart, and the yearly tables keep each flow. The property's brown is outside the eight series hues (all in use
+# here); like yellow it is drawn with a legend and a table.
 FLOW_COLOURS = {"Take-home salary": BLUE, "Super contributions": ORANGE, "Investment returns": AQUA,
                 "Interest on cash": GREEN, "Age Pension": YELLOW, "Spending": MAGENTA, "Tax": VIOLET,
-                "Mortgage interest": RED,
+                "Mortgage interest": RED, "Investment property": "#8a5a1c",
                 "Inflation": NEUTRAL}
 NET_COLOUR, ADDED_COLOUR = INK, "#104281"
 

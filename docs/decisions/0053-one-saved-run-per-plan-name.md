@@ -1,4 +1,4 @@
-# ADR 0052: one saved run per plan name
+# ADR 0053: one saved run per plan name
 
 Date: 2026-11-13.
 

@@ -8,6 +8,7 @@ import pandas as pd
 import streamlit as st
 
 from financial_simulations.reporting.palette import BLUE, FLOW_COLOURS, INK, MAGENTA, TIER_COLOURS, YELLOW
+from financial_simulations.retirement.paths import OPTIONAL_SERIES
 from financial_simulations.retirement.outcomes import FULL_RATE_SHARE, TIERS, ending_percentiles, group_spending, tier_shares
 from financial_simulations.retirement.strategy_results import STRATEGY_NAMES
 from financial_simulations.rules.au.superannuation import age_on
@@ -118,9 +119,13 @@ def wealth_tab(run):
                   "the Paths page for the full ledger. Drag to pan, Shift+scroll to zoom, double-click to reset.")
     with card("bands"):
         bands_all = run.account_bands
-        # The mortgage band only when some path owes something on it.
-        owing = bands_all.loc[bands_all["Series"] == "Mortgage owed"].select_dtypes("number").to_numpy()
-        names = [n for n in dict.fromkeys(bands_all["Series"]) if n != "Mortgage owed" or (owing > 0.005).any()]
+        # The loan and property bands only when some path has something in them.
+        def present(name):
+            return (bands_all.loc[bands_all["Series"] == name].select_dtypes("number").to_numpy() > 0.005).any()
+
+        # Spendable wealth differs from total wealth only with an investment property.
+        names = [n for n in dict.fromkeys(bands_all["Series"]) if n not in OPTIONAL_SERIES
+                 or present("Investment property" if n == "Spendable wealth" else n)]
         chart_title("Range of outcomes", "Median, middle half and 90% of paths at each month end.")
         left, right = st.columns([4, 1], vertical_alignment="center")
         with left:

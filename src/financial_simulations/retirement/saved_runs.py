@@ -82,7 +82,7 @@ def save_run(run: PlanRun, root: str | Path = DEFAULT_ROOT, *, full_ledgers: boo
     about 1 MB per path per strategy for a 50-year plan; it can take longer than the run.
     ``progress(fraction, message)`` reports the stages.
 
-    The folder is ``<root>/<plan-name>/``, so saving a plan's results again replaces its earlier save (ADR 0052). The
+    The folder is ``<root>/<plan-name>/``, so saving a plan's results again replaces its earlier save (ADR 0053). The
     new save is written under a hidden partial name first and replaces the old one only when complete, so an
     interrupted save leaves the earlier one as it was. A folder there that is not a saved run is never replaced.
     """

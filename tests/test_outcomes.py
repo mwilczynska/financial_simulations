@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 
 from financial_simulations.reporting.palette import FLOW_COLOURS, STREAMLIT_THEME, TIER_COLOURS
-from financial_simulations.retirement.flows import HOUSEHOLD, TAXES, fold_tax_columns, fold_taxes
+from financial_simulations.retirement.flows import HOUSEHOLD, PROPERTY_FLOWS, TAXES, fold_tax_columns, fold_taxes
 from financial_simulations.retirement.outcomes import (FULL_RATE_SHARE, TIERS, full_age_pension_by_year, group_spending,
                                                        path_groups, path_outcomes, state_shares, tier_shares, yearly_states)
 from financial_simulations.retirement.plan import default_plan
@@ -91,11 +91,15 @@ def test_folded_taxes_keep_every_years_total():
                            "Net change": 1.0, "Days": 250} for year in (2030, 2031)
                           for i, (_, label, sign) in enumerate(HOUSEHOLD)])
     folded = fold_taxes(flows)
-    assert set(folded["Flow"]) == {label for _, label, _ in HOUSEHOLD if label not in TAXES} | {"Tax"}
+    assert set(folded["Flow"]) == ({label for _, label, _ in HOUSEHOLD if label not in TAXES + PROPERTY_FLOWS}
+                                   | {"Tax", "Investment property"})
     assert folded.groupby("FY ending")["AUD"].sum().tolist() == pytest.approx(flows.groupby("FY ending")["AUD"].sum().tolist())
     assert set(folded["Flow"]) <= set(FLOW_COLOURS)  # every drawn flow has a colour
     wide = pd.DataFrame({"Path": [0], "Flow: Spending": [-5.0], **{f"Flow: {name}": [-1.0] for name in TAXES}})
     assert fold_tax_columns(wide).to_dict("records") == [{"Path": 0, "Flow: Spending": -5.0, "Flow: Tax": -4.0}]
+    wide = wide.assign(**{"Flow: Rent": [30.0], "Flow: Property costs": [-10.0]})
+    assert fold_tax_columns(wide).to_dict("records") == [{"Path": 0, "Flow: Spending": -5.0, "Flow: Tax": -4.0,
+                                                          "Flow: Investment property": 20.0}]
 
 
 def test_the_streamlit_config_file_repeats_the_palette_theme():

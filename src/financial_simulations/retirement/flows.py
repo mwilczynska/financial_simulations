@@ -22,33 +22,44 @@ HOUSEHOLD = (("salary", "Take-home salary", 1), ("employer_contributions", "Supe
              ("spending_paid", "Spending", -1),
              ("tax_paid", "Income tax", -1), ("contributions_tax", "Contributions tax", -1),
              ("fund_tax", "Super fund tax", -1), ("division_296", "Division 296 tax", -1),
-             ("mortgage_interest", "Mortgage interest", -1))
+             ("mortgage_interest", "Mortgage interest", -1), ("rent", "Rent", 1),
+             ("property_costs", "Property costs", -1), ("property_interest", "Investment loan interest", -1),
+             ("property_growth", "Property value growth", 1))
 
 
 TAXES = ("Income tax", "Contributions tax", "Super fund tax", "Division 296 tax")
 TAX = "Tax"
+PROPERTY_FLOWS = ("Rent", "Property costs", "Investment loan interest", "Property value growth")
+PROPERTY = "Investment property"
+# Flows drawn as one in charts: their combined effect on wealth is read together.
+FOLDS = ((TAXES, TAX), (PROPERTY_FLOWS, PROPERTY))
 
 
 def fold_taxes(flows: pd.DataFrame) -> pd.DataFrame:
-    """``household_flows`` rows with the four taxes added into one ``Tax`` flow per year, for charts.
+    """``household_flows`` rows with the four taxes added into one ``Tax`` flow per year, and the investment
+    property's rent, costs, loan interest and value growth into one ``Investment property`` flow, for charts.
 
-    Eleven flows are too many colours to tell apart, and the taxes are read together. Sums are unchanged, so the
-    flows still add up to the net change in wealth; the yearly tables keep each tax.
+    Fifteen flows are too many colours to tell apart, and each group is read together. Sums are unchanged, so the
+    flows still add up to the net change in wealth; the yearly tables keep each flow.
     """
-    tax = flows["Flow"].isin(TAXES)
-    if not tax.any():
-        return flows
-    keys = [c for c in flows.columns if c not in ("Flow", "AUD")]
-    folded = flows.loc[tax].groupby(keys, as_index=False, sort=False)["AUD"].sum().assign(Flow=TAX)
-    return pd.concat([flows.loc[~tax], folded[flows.columns]], ignore_index=True)
+    for members, name in FOLDS:
+        chosen = flows["Flow"].isin(members)
+        if not chosen.any():
+            continue
+        keys = [c for c in flows.columns if c not in ("Flow", "AUD")]
+        folded = flows.loc[chosen].groupby(keys, as_index=False, sort=False)["AUD"].sum().assign(Flow=name)
+        flows = pd.concat([flows.loc[~chosen], folded[flows.columns]], ignore_index=True)
+    return flows
 
 
 def fold_tax_columns(annual: pd.DataFrame) -> pd.DataFrame:
-    """A per-path yearly frame with its ``Flow: <tax>`` columns added into one ``Flow: Tax`` column."""
-    taxes = [f"Flow: {name}" for name in TAXES if f"Flow: {name}" in annual]
-    if not taxes:
-        return annual
-    return annual.drop(columns=taxes).assign(**{f"Flow: {TAX}": annual[taxes].sum(axis=1)})
+    """A per-path yearly frame with its ``Flow: <tax>`` columns added into one ``Flow: Tax`` column, and its
+    property flows into ``Flow: Investment property``."""
+    for members, name in FOLDS:
+        columns = [f"Flow: {member}" for member in members if f"Flow: {member}" in annual]
+        if columns:
+            annual = annual.drop(columns=columns).assign(**{f"Flow: {name}": annual[columns].sum(axis=1)})
+    return annual
 
 
 def financial_year_end(day) -> int:
@@ -112,6 +123,10 @@ def account_flows(daily: pd.DataFrame, events: pd.DataFrame) -> pd.DataFrame:
             # reduce it.
             add(d, "Mortgage", "Interest charged", values["mortgage_interest"])
             add(d, "Mortgage", "Repaid, net of redraws", -values["mortgage_repaid"])
+        if "property_loan_repaid" in values:
+            add(d, "Investment loan", "Interest charged", values["property_interest"])
+            add(d, "Investment loan", "Repaid", -values["property_loan_repaid"])
+            add(d, "Investment property", "Value growth", values["property_growth"])
     if not events.empty:
         purpose = events["purpose"] if "purpose" in events else pd.Series("", index=events.index)
         kind = events["event"]

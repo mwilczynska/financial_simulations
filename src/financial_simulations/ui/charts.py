@@ -12,7 +12,8 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from financial_simulations.reporting.palette import (ACCOUNT_COLOURS, MORTGAGE_COLOUR, ADDED_COLOUR, AXIS, BLUE, FLOW_COLOURS, INK,
+from financial_simulations.reporting.palette import (ACCOUNT_COLOURS, MORTGAGE_COLOUR, PROPERTY_COLOUR,
+                                                     PROPERTY_LOAN_COLOUR, ADDED_COLOUR, AXIS, BLUE, FLOW_COLOURS, INK,
                                                      INK_SECONDARY, MUTED, NET_COLOUR, PORTFOLIO_COLOURS, SERIES, SURFACE,
                                                      TIER_COLOURS)
 from financial_simulations.retirement.outcomes import TIERS
@@ -175,16 +176,20 @@ def band_chart(frame, title, *, log=False, symlog=False, color=BLUE, percent=Fal
 
 
 def accounts(daily):
-    """Balances by account in a fixed order, with any mortgage as a negative balance, and their labels and colours.
+    """Balances by account in a fixed order, with any loans as negative balances, and their labels and colours.
 
-    The accounts are assets; the mortgage column appears only when something is owed on the path, so the sum of a
-    row is total wealth net of the loan.
+    The accounts are assets, then an investment property's value; each loan column appears only when something is
+    owed on the path, so the sum of a row is total wealth net of the loans.
     """
     colours = dict(ACCOUNT_COLOURS)
     frame = daily[list(ACCOUNT_COLOURS)].copy()
-    if "mortgage" in daily and (daily["mortgage"] > 0.005).any():
-        colours["mortgage"] = MORTGAGE_COLOUR
-        frame["mortgage"] = -daily["mortgage"]
+    if "property_value" in daily and (daily["property_value"] > 0.005).any():
+        colours["property_value"] = PROPERTY_COLOUR
+        frame["property_value"] = daily["property_value"]
+    for column, colour in (("mortgage", MORTGAGE_COLOUR), ("property_loan", PROPERTY_LOAN_COLOUR)):
+        if column in daily and (daily[column] > 0.005).any():
+            colours[column] = colour
+            frame[column] = -daily[column]
     return frame, colours
 
 

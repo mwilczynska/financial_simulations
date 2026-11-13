@@ -72,6 +72,23 @@ interest_rate = 0.06
 years = 25.0
 extra_share = 0.0
 
+[investment_property]
+# A residential property you let out (0 value = none). Enter its value, weekly rent and the loan owed today; spending
+# above and person.other_assets exclude it. Rent rises with CPI, less 10% for vacancy and management. Running costs
+# (repairs, rates, insurance, strata, land tax) are running_costs of the value a year. The value grows at growth a year,
+# applied monthly, on every market path. A net rental loss is carried forward against later rent unless
+# losses_offset_salary is true (a property held before 7.30 pm AEST 12 May 2026, or a new build). The property is never
+# sold, so spending rules use wealth without its equity.
+value = 0.0
+weekly_rent = 0.0
+loan = 0.0
+growth = 0.04
+interest_rate = 0.06
+years = 25.0
+interest_only_years = 0.0
+running_costs = 0.015
+losses_offset_salary = false
+
 [pension]
 start_age = 60
 transfer_all = true

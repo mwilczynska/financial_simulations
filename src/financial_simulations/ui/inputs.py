@@ -8,7 +8,8 @@ import streamlit as st
 
 from financial_simulations.data.plan_markets import CUSTOM_TICKERS, TICKERS
 from financial_simulations.retirement.paths import CPU_HEADROOM, automatic_workers
-from financial_simulations.retirement.plan import sacrifice_per_year
+from financial_simulations.retirement.ledger import Mortgage
+from financial_simulations.retirement.plan import RENT_KEPT, sacrifice_per_year
 from financial_simulations.rules.au.parameters import load_ruleset
 from financial_simulations.rules.au.tax import IncomeYear, assess
 from financial_simulations.ui.state import cached_market, calculation_cores, key
@@ -105,6 +106,8 @@ def inputs_you(plan):
             work_summary(plan)
         with card("mortgage"):
             mortgage_inputs(plan)
+        with card("investment_property"):
+            property_inputs(plan)
 
 
 def mortgage_inputs(plan):
@@ -145,6 +148,89 @@ def mortgage_inputs(plan):
             "Pension, because your home is not counted either.", "How the home loan is modelled")
 
 
+def dollars(amount, escape=False):
+    """Whole dollars with a true minus sign; ``escape`` for Markdown, where a bare $ starts maths."""
+    sign = "−" if amount < -0.5 else ""
+    return f"{sign}{'\\$' if escape else '$'}{abs(amount):,.0f}"
+
+
+def property_first_year(estate):
+    """First-year estimate for an investment property: rent kept, running costs, loan interest, required repayments
+    and net cash (rent less costs and repayments)."""
+    rent = estate["weekly_rent"] * 52 * RENT_KEPT
+    costs = estate["running_costs"] * estate["value"]
+    interest = repayments = 0.0
+    if estate["loan"] > 0:
+        loan = Mortgage(estate["loan"], estate["interest_rate"], estate["years"], date(2026, 7, 1),
+                        interest_only_years=min(estate["interest_only_years"], estate["years"] - 0.5))
+        io = min(26, loan.interest_only_fortnights)
+        repayments = io * loan.interest_only_repayment + (26 - io) * loan.repayment
+        interest = estate["loan"] * estate["interest_rate"]  # about a year's interest on the opening balance
+    return {"rent": rent, "costs": costs, "interest": interest, "repayments": repayments,
+            "net": rent - costs - repayments, "profit": rent - costs - interest}
+
+
+def property_inputs(plan):
+    """An investment property, its rent and its loan (ADR 0054)."""
+    st.subheader("Investment property")
+    estate = plan["investment_property"]
+    estate["value"] = money("Property value today (0 = none)", estate["value"], "property_value",
+                            help="A home you let to tenants. Leave its costs and repayments out of spending, and leave the "
+                                 "property out of other assets for the Age Pension: the planner counts them separately.")
+    if estate["value"] <= 0:
+        st.caption("No investment property.")
+        return
+    a, b = st.columns(2)
+    estate["weekly_rent"] = float(a.number_input("Weekly rent", 0.0, 1e5, float(estate["weekly_rent"]), 10.0,
+                                                 key=key("property_rent"), format="%.0f",
+                                                 help=f"Rises with CPI each 1 July. {1 - RENT_KEPT:.0%} is allowed for "
+                                                      "vacancy and the property manager."))
+    with b:
+        estate["loan"] = money("Loan owed today", estate["loan"], "property_loan")
+    with st.expander("More: growth, loan terms, running costs and tax"):
+        c, d = st.columns(2)
+        with c:
+            estate["growth"] = percent("Value growth, % a year", estate["growth"], "property_growth", low=-10, high=20,
+                                       help="Applied monthly, the same on every market path: a fixed assumption, so the "
+                                            "property adds no market risk.")
+            estate["interest_rate"] = percent("Loan interest rate, % a year", estate["interest_rate"], "property_rate",
+                                              low=0, high=30, step=0.05, help="Fixed for the whole run.")
+            estate["interest_only_years"] = float(st.number_input(
+                "Interest-only years left", 0.0, 15.0, float(estate["interest_only_years"]), 0.5,
+                key=key("property_io"), help="Repayments cover only interest for this long, then the loan is repaid "
+                                             "over the rest of its years."))
+        with d:
+            estate["running_costs"] = percent(
+                "Running costs, % of value a year", estate["running_costs"], "property_costs", low=0, high=10,
+                step=0.1, help="Repairs (about 1%) plus council rates, insurance, strata and land tax (about 0.5%). "
+                               "Paid monthly and tax deductible.")
+            estate["years"] = float(st.number_input("Loan years left", 0.5, 40.0, float(estate["years"]), 0.5,
+                                                    key=key("property_years")))
+            st.markdown("&nbsp;")
+            estate["losses_offset_salary"] = st.checkbox(
+                "Losses reduce tax on salary", estate["losses_offset_salary"], key=key("property_offset"),
+                help="Only for a property you held before 7.30 pm AEST on 12 May 2026, or a new build. Otherwise, from "
+                     "1 July 2027 a rental loss cannot reduce tax on other income: it is carried forward against later "
+                     "rent. Unticked, the planner carries losses forward in every year.")
+    if estate["loan"] > 0 and estate["interest_only_years"] >= estate["years"]:
+        st.warning("Interest-only years must be shorter than the loan's years left.")
+        return
+    year = property_first_year(estate)
+    st.metric("Net cash, first year", dollars(year["net"]),
+              help=f"Rent kept ${year['rent']:,.0f} less running costs ${year['costs']:,.0f} and loan repayments "
+                   f"${year['repayments']:,.0f}. A negative amount is paid from your pay or savings before investing.")
+    st.caption(f"Taxable rental result about {dollars(year['profit'], escape=True)} in the first year (rent less costs "
+               f"and about \\${year['interest']:,.0f} of interest)."
+               + (" A loss is carried forward against later rent." if year["profit"] < 0 and not estate["losses_offset_salary"]
+                  else ""))
+    explain("Rent arrives monthly into cash; running costs and loan repayments are paid from cash before spending (then "
+            "from sales and accessible super, as for spending). Rent less interest and running costs is taxed each year. "
+            "The value grows at a fixed rate and counts in total wealth, net of the loan, but the property is never sold, "
+            "so a percentage-of-wealth spending rule leaves it out. If money runs out, the result shows the equity that "
+            "selling could have used. For the Age Pension, the value less the loan is an assessable asset and net rent is "
+            "income.", "How the investment property is modelled")
+
+
 def work_summary(plan):
     """First-year estimate of where pay goes, using the 2026-27 rules."""
     st.subheader("Where your pay goes")
@@ -165,7 +251,10 @@ def work_summary(plan):
     if loan["balance"] > 0:
         rate, n = loan["interest_rate"] / 26, max(1, round(loan["years"] * 26))
         repayments = 26 * (loan["balance"] / n if rate == 0 else loan["balance"] * rate / (1 - (1 + rate) ** -n))
-    surplus = salary - sacrifice - tax.net_tax - tax.division_293_tax - plan["spending"]["annual"] - repayments
+    estate = plan["investment_property"]
+    property_net = property_first_year(estate)["net"] if estate["value"] > 0 else 0.0
+    surplus = (salary - sacrifice - tax.net_tax - tax.division_293_tax - plan["spending"]["annual"] - repayments
+               + property_net)
     fixed = plan["outside"]["saving"] == "fixed"
     invested = min(plan["outside"]["contribution_per_year"], max(surplus, 0)) if fixed else max(surplus, 0)
     extra = invested * loan["extra_share"] if loan["balance"] > 0 else 0.0
@@ -183,8 +272,12 @@ def work_summary(plan):
                    "Take-home pay less tax and spending, all invested.") + " Set this on the Investments tab; contributions "
                   "from pay stop at retirement, after which spare cash above the buffer is reinvested.")
     if repayments:
-        st.caption(f"Home loan: ${repayments:,.0f} a year of required repayments"
-                   + (f" and about ${extra:,.0f} of extra repayments" if extra > 1 else "") + " in the first year.")
+        st.caption(f"Home loan: \\${repayments:,.0f} a year of required repayments"
+                   + (f" and about \\${extra:,.0f} of extra repayments" if extra > 1 else "") + " in the first year.")
+    if property_net:
+        st.caption(f"Investment property: about \\${abs(property_net):,.0f} a year "
+                   + ("added from rent after its costs and repayments." if property_net > 0
+                      else "of costs and repayments beyond its rent, paid from pay.") + " Tax on its rent is not included.")
     if fixed and surplus > invested + extra + 1:
         st.caption(f"About ${surplus - invested - extra:,.0f} a year of leftover pay stays in cash, earning the cash interest rate.")
     if fixed and plan["outside"]["contribution_per_year"] > max(surplus, 0) + 1:

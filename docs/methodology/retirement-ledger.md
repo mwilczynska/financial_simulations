@@ -97,14 +97,16 @@ Asset unit prices start at 1. On each day:
    (same base year, same growth).
    - **Percentage start.** With `spending_rule.start_rate`, the first
      spending date on or after the retirement date sets retirement spending
-     to `start_rate` times total wealth at the previous close, and `r0 =
+     to `start_rate` times spendable wealth (total wealth less any investment property's equity) at the
+     previous close, and `r0 =
      start_rate` ([ADR 0025](../decisions/0025-spending-in-todays-dollars-and-percentage-starts.md)).
      The amount then grows at `spending_growth` like any other.
 
    A `spending_rule` other than `fixed` then reviews spending each 1 July
    from retirement ([ADR 0023](../decisions/0023-retirement-spending-rules.md)).
-   The withdrawal rate is the year's planned spending divided by total
-   wealth at the previous close. Without a percentage start, the first
+   The withdrawal rate is the year's planned spending divided by spendable
+   wealth at the previous close (total wealth less any investment property's
+   equity; ADR 0054), and "wealth" below means spendable wealth. Without a percentage start, the first
    review records the starting rate `r0`.
    - **Guyton–Klinger.** After a year with a negative market return, and
      with the rate above `r0`, that year's growth step is skipped. Then
@@ -199,6 +201,18 @@ investment in step 10. Details are in [home-loan.md](home-loan.md)
 is then net of the amount owed (`mortgage` column), and the identity below is
 checked on assets, with principal repaid net of redraws as an outflow. A second
 identity checks the loan.
+
+**Investment property.** With `investment_property`, rent arrives on the first
+of each month and the month's running costs fall due then. The property loan's
+repayment follows the home loan's, and the costs follow both, before spending.
+Value growth and interest are charged at month end. Net rent is taxed with
+losses quarantined unless `losses_offset_other_income`. The daily `total`
+includes the property's equity (`property_value` less `property_loan`).
+`spendable`, which excludes the property's equity, is the wealth every spending
+rule uses. Rent is an inflow in the assets identity, and costs and principal
+repaid are outflows; the property loan and the value reconcile separately.
+Details are in [investment-property.md](investment-property.md)
+([ADR 0054](../decisions/0054-investment-property-in-the-ledger.md)).
 
 The opening value plus market P&L, cash salary and employer contributions,
 less contributions tax, spending paid, tax paid and fund tax, must equal
@@ -329,4 +343,4 @@ only for complete periods (ADR 0034); fund tax accrued with each accumulation di
 an unassessed final period (ADR 0035); opening year-to-date position required for a start after 1 July (ADR 0036);
 bring-forward counted once per dollar and the age-75 acceptance deadline (ADR 0037); gross wages and the Work Bonus
 starting credit, and order-independent distributions (ADR 0038). 2026-11-13, home loan, with total wealth net
-of it (ADR 0052).
+of it (ADR 0052); investment property, with spending rules on spendable wealth (ADR 0054).

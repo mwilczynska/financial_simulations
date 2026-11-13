@@ -78,6 +78,8 @@ Act No. 49, 2026, Schedule 1, was read on legislation.gov.au on 2026-10-28.
   quarterly. Real ABS quarterly CPI can replace it once Australian CPI is
   added to the datasets project.
 
-Not implemented: residential versus non-residential apportionment (no
-property is modelled), new-dwelling and affordable-housing choices,
-negative-gearing quarantining, and the apportionment method.
+Not implemented: residential versus non-residential apportionment (an
+investment property is modelled but never sold, so it has no capital gain),
+new-dwelling and affordable-housing choices, and the apportionment method.
+Rental-loss quarantining (s 26-155) is modelled for the investment property
+([investment property](../methodology/investment-property.md)).

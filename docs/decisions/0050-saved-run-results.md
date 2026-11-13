@@ -37,7 +37,7 @@ consecutive rows, so most steps are +1). One path's ledger re-runs in about 0.9 
 
 **What is saved.** The Results menu in the top bar saves the results on screen to
 `output/saved_runs/<plan-name>_<date>_<time>/` (git-ignored; one undated folder per plan name since
-[ADR 0052](0052-one-saved-run-per-plan-name.md)), with an optional note. The folder holds:
+[ADR 0053](0053-one-saved-run-per-plan-name.md)), with an optional note. The folder holds:
 
 | File | Contents |
 | --- | --- |
