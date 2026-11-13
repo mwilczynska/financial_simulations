@@ -409,7 +409,7 @@ page is drawn, and a finished run opens Outcomes.
 | Paths | One path's daily ledger, in tabs *Markets, wealth and money*, *Transfers between accounts*, *Year by year* and *Event log*; or a group of paths, in tabs *Markets, wealth and money* and *Year by year* (old section 5) |
 | Compare | The compared strategies' statistics, wealth over time and yearly flows; shown when several strategies ran |
 | Markets | The portfolios, their history and the simulated futures (old sections 1 to 3) |
-| Method | How results are calculated, today's dollars, saved files and rule assumptions |
+| Method | What is modelled, its equations and its assumptions, in nine tabs (see *Method page* below); saved files |
 
 With several strategies, Outcomes and Paths show one strategy at a time, chosen at the top of the page. The
 calculations behind every figure are unchanged, so the section-by-section description below still defines them;
@@ -417,6 +417,56 @@ where it says "section", read the page in this table. ADR 0047 lists the charts 
 remain in tables) and two that changed: the four taxes are drawn as one *Tax* flow in money in and out charts
 (`flows.fold_taxes`), and the Age Pension chart shows only the paths paid that year, with the full single rate as a
 line. Colours for the app and the PNG plots come from `reporting/palette.py`.
+
+### Method page
+
+[ADR 0058](../decisions/0058-method-page-as-a-technical-summary.md); code in `ui/method_page.py`.
+
+**Purpose.** A technical summary of the model for the person reading results: what is modelled, the equations, and
+the assumptions the results rest on. It summarises these methodology documents and changes no calculation.
+
+**Tabs.** Overview, Markets, Daily ledger, Spending strategies, Tax and super, Age Pension, Property and loans,
+Reading results, Assumptions.
+
+**Figures.** The text is Markdown with `[[name]]` placeholders. `facts(run)` reads each figure from the run and
+`fill` substitutes it; a placeholder with no value raises `KeyError`. Maths is LaTeX, so literal dollar signs are
+escaped and percentages are kept outside formulas. The page computes these figures itself, with `L` the mean block
+length, `T` the future trading days, `n` the history's rows, `N` the portfolio paths, `M` the ledger paths, `c` the
+CPI assumption and `Y` the history's length in years:
+
+```text
+dependence kept at lag h          (1 - 1/L) ** h                    (h = 21 and 252)
+blocks per path, in the history   T / L,  n / L
+periods as long as the plan       Y / plan years
+paths below the 5th percentile    0.05 N  ±  sqrt(N × 0.05 × 0.95)  (and the same for M)
+standard error of a share π       sqrt(π (1 - π) / paths)           (π = 10% and 50%)
+standard error of mean growth     σ / sqrt(Y)                       σ: historical volatility of the combined portfolio
+                                                                    (the first portfolio if there is no combined one)
+assets taper as a yearly rate     taper per $1,000 a fortnight × 26 / 1000
+part-pension cut-off              assets limit + maximum fortnightly rate / taper × 1000, to the nearest $1,000
+taxable share of a payment        (basic rate + taxable supplement) / maximum rate
+real value of a fixed threshold   (1 + c) ** -(financial years from the opening year to the last year)
+```
+
+The factor `(1 - 1/L) ** h` is the chance that two days `h` apart fall in one block of the stationary bootstrap;
+across blocks the draws are independent, so it multiplies the history's autocovariance at that lag. The standard
+error of mean growth assumes independent years and is given as a rough guide.
+
+**Rules in later years.** `projected_rules(plan, through)` rebuilds the rule sets the ledger used from the plan's CPI
+and wage growth. `projection_table` shows ten thresholds in the first year, the last year and the last year in
+today's dollars (`real.year_deflator`), with how each is carried forward. `assumed_parameters` lists every parameter
+whose status in the last year is `assumption` or `projected`, with its first and last values and its note. Income
+tax thresholds, the low income tax offset and the Division 293 threshold are enacted amounts with no indexation, so
+they are fixed in dollars and fall in today's dollars; the page says that this overstates tax late in a long run.
+
+**Assumptions tab.** Three tables (markets, economy and rules, household) give each main simplification, the plan's
+value and the direction of its effect. The directions are engineering judgements, not measurements.
+
+**Limitations.** The text must be kept in step with the code and these documents by hand; only the figures are read
+from the run. For saved results opened under later code, the rule tables show that code's projection.
+
+**Validation.** `tests/test_method_page.py` (placeholders, paired dollar signs, the projected-rule tables); the app
+test draws the page.
 
 ### Outcome tiers and average retirement spending
 
@@ -853,4 +903,5 @@ References: processed source data and provenance in the sibling
 Revision history: 2026-10-28 version 1 plan and browser app under ADR 0016;
 2026-10-28 version 2 ticker portfolios and portfolio-first interactive
 results under ADR 0017. 2026-11-02, future calendar at the history's observation density and the
-requested end as the ledger's accounting end (ADR 0034).
+requested end as the ledger's accounting end (ADR 0034). 2026-11-13, the Method page as a technical summary
+(ADR 0058).

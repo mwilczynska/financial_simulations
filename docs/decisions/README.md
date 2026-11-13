@@ -63,6 +63,7 @@ Decision records preserve why Financial Simulations makes a material modelling o
 | [0055](0055-home-value-rent-paid-and-moving-in.md) | 2026-11-13 | Accepted; implemented and tested | An optional home value whose running costs are paid before spending, rent paid by a renter, a renamed *I own the home I live in* tick box on the You tab, and moving into the investment property on a chosen date |
 | [0056](0056-stacked-path-chart-speed.md) | 2026-11-13 | Accepted; implemented and tested | The stacked path chart on canvas with a hover strip per month instead of a nearest-point search, a smaller specification, and the specification kept per view |
 | [0057](0057-hover-box-rows-and-a-shorter-test-suite.md) | 2026-11-13 | Accepted; implemented and tested | Hover boxes with name and value on one line and the age on its own row; slow tests removed, merged or made cheaper where the risk did not justify the time |
+| [0058](0058-method-page-as-a-technical-summary.md) | 2026-11-13 | Accepted; implemented and tested | The Method page as a technical summary in nine tabs: the model's equations with the run's own figures, the rules carried into later years with their values, and the main assumptions with the direction of each one's effect |
 
 ## When to write a record
 

@@ -19,7 +19,7 @@ from financial_simulations.retirement.plan import (PlanError, default_plan, load
                                                    plan_to_toml, slug)
 from financial_simulations.retirement.run_plan import run_plan
 from financial_simulations.rules.au.parameters import UnsupportedRule
-from financial_simulations.ui import charts, inputs, more_pages, outcomes_page, paths_page
+from financial_simulations.ui import charts, inputs, method_page, more_pages, outcomes_page, paths_page
 from financial_simulations.ui import saved as saved_results
 from financial_simulations.ui.charts import SHOWN_PATHS, shown_paths  # noqa: F401
 from financial_simulations.ui.results import no_results
@@ -232,7 +232,7 @@ def main():
     elif page == "Markets":
         more_pages.markets_page(run)
     else:
-        more_pages.method_page(run)
+        method_page.page(run)
 
 
 main()
