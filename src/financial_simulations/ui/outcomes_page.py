@@ -71,8 +71,12 @@ def headline(run, d):
              help="Each path's spending actually paid, averaged over its full retired financial years; this is the median "
                   "path. " + (f"One path in ten averaged less than {compact(float(spending.quantile(0.1)))}." if len(spending)
                               else "Retirement starts after the horizon."))
-    b.metric("Median wealth at retirement", compact(outcomes["Wealth at retirement"].median()),
-             help="Total wealth on your retirement date: cash, outside investments and super.")
+    # Runs saved before spendable wealth existed have only total wealth, which then had no property in it.
+    spendable = outcomes.get("Spendable wealth at retirement", outcomes["Wealth at retirement"])
+    b.metric("Median spendable wealth at retirement", compact(spendable.median()),
+             help="On your retirement date: cash, outside investments and super, less any home loan. An investment "
+                  "property's equity is left out, because it is never sold; median total wealth including it was "
+                  f"{compact(outcomes['Wealth at retirement'].median())}.")
     c.metric("Median ending wealth", compact(outcomes["Ending wealth after tax owed"].median()),
              help=f"At the horizon, less tax already incurred but not yet paid. Before that tax the median is "
                   f"{compact(outcomes['Ending wealth'].median())}.")

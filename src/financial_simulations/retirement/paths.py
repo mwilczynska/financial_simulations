@@ -135,6 +135,9 @@ def _summarise(path: int, result: LedgerResult, retire: date, cpi: float):
                "Ending outside wealth": float(outside.iloc[-1]),
                "Ending super and pension": float(daily["accumulation"].iloc[-1] + daily["pension"].iloc[-1]),
                "Wealth at retirement": float(at_retirement.iloc[-1]) if len(at_retirement) else np.nan,
+               # Without an investment property's equity or a home you moved into: what spending rules draw on.
+               "Spendable wealth at retirement": (float(daily.loc[dates <= retire, "spendable"].iloc[-1])
+                                                  if len(at_retirement) else np.nan),
                # Total wealth on the first day super can be withdrawn, when that falls after the start.
                "Wealth when super accessible": (float(daily["total"].loc[accessible[0]])
                                                 if len(accessible) and accessible[0] > daily.index[0] else np.nan),
