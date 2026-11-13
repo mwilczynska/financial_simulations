@@ -418,3 +418,29 @@ another tab, which kept its own setting, with no page warnings or
 exceptions. The server log showed Streamlit's warning about a value set
 twice for a toggle with an explicit starting value; after `first_value` the
 same sequence logged nothing.
+
+## Saved results (2026-11-13)
+
+ADR 0050. `tests/test_saved_runs.py` (5 tests) passed: every strategy's frames, median ledgers, portfolio results,
+market and draws open equal in value and dtype; every stored path ledger equals a re-run of that path, including
+paths with different event columns; the app test saves with the tick box (off by default) and opens the save.
+
+A real 50-year private plan (one strategy) with 1,000 market and 1,000 retirement paths, on 32 hardware threads,
+measured while a browser run shared the CPU:
+
+| | Without full ledgers | With full ledgers |
+| --- | --- | --- |
+| Estimate shown in the menu | 34 MB | 34 MB + 1,050 MB |
+| Size on disk | 26.8 MB | 1,158.8 MB |
+| Files | 16 | 19 |
+| Save time | 1.3 s | 363 s (the run took 158 s) |
+| Open time | 1.1 s | 2.7 s; one stored path then reads in 0.26 s |
+
+A smaller round trip of the same plan with two strategies, 100 market and 8 retirement paths and full ledgers
+compared every frame, the median and three other path ledgers, the draws and the market after opening: all equal.
+
+In the in-app browser the example plan (10 years, 100 retirement paths) ran, the Results menu showed the tick box
+off and an estimate of 4.0 MB (25.0 MB once ticked), and the save with every ledger showed its progress under the
+bar and wrote 21 MB in 19 files. *Open* from the Plan page loaded the plan and results, opened the Outcomes page with
+the same figures and the status *Saved results opened*; a non-median path on the Paths page drew from the save.
+No console or server errors.

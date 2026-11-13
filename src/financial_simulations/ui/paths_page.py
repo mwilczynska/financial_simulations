@@ -23,12 +23,14 @@ from financial_simulations.ui.theme import SHORT, card, chart_title, draw, expla
 
 
 def selected_ledger(run, path):
-    """The full daily ledger for one path, re-run on demand and kept for this result."""
+    """The full daily ledger for one path: read from a saved run that stored it, else re-run; kept for this result."""
     if path == run.representative_path:
         return run.result
     cache = st.session_state.setdefault("ledger_cache", {})
     if (id(run), path) not in cache:
-        cache[(id(run), path)] = ledger_for_path(run.plan, run.market, run.portfolios, path)
+        stored = getattr(run, "saved_ledgers", None)
+        cache[(id(run), path)] = (stored.read(path) if stored is not None and path in stored
+                                  else ledger_for_path(run.plan, run.market, run.portfolios, path))
     return cache[(id(run), path)]
 
 

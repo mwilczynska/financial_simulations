@@ -3,8 +3,9 @@
 Launch with ``financial-simulations ui`` (or ``streamlit run`` on this file).
 The plan dictionary in session state is the single source of truth: the Plan
 page edits it, the plan menu imports and exports it, and Run writes one folder,
-output/plans/<plan-name>/. A bar that stays on screen holds the pages, the plan
-menu and Run; only the open page is drawn (ADR 0047).
+output/plans/<plan-name>/. A bar that stays on screen holds the pages, the Results
+menu (save results, open saved ones: ADR 0050), the plan menu and Run; only the
+open page is drawn (ADR 0047).
 """
 
 from datetime import date
@@ -19,6 +20,7 @@ from financial_simulations.retirement.plan import (PlanError, default_plan, load
 from financial_simulations.retirement.run_plan import run_plan
 from financial_simulations.rules.au.parameters import UnsupportedRule
 from financial_simulations.ui import charts, inputs, more_pages, outcomes_page, paths_page
+from financial_simulations.ui import saved as saved_results
 from financial_simulations.ui.charts import SHOWN_PATHS, shown_paths  # noqa: F401
 from financial_simulations.ui.results import no_results
 from financial_simulations.ui.state import (PLANS_DIR, affected, cached_market, calculation_cores, keep_sticky, key,  # noqa: F401
@@ -151,7 +153,7 @@ def top_bar(plan, valid, pages):
     elif st.session_state.get("_nav_sync") != current:  # the app changed page itself (after a run)
         st.session_state["nav"] = current
     with st.container(key="topbar"):
-        brand, nav, status, menu, go = st.columns([1.5, 4.6, 1.5, 0.9, 1.1], vertical_alignment="center")
+        brand, nav, status, results, menu, go = st.columns([1.5, 4.2, 1.5, 1.0, 0.9, 1.1], vertical_alignment="center")
         saved = st.session_state.get("plan_file")
         brand.html(f"<div class='brand'>Retirement planner<small>{escape(plan['plan']['name'])}"
                    f"{'' if saved else ' · not saved'}</small></div>")
@@ -163,9 +165,13 @@ def top_bar(plan, valid, pages):
             text, colour = "Not run yet", "#a8a69d"
         elif plan_to_json(valid) != plan_to_json(run.plan):
             text, colour = "Inputs changed since the last run", "#eda100"
+        elif run.saved_from is not None:
+            text, colour = "Saved results opened", "#1baf7a"
         else:
             text, colour = "Results are up to date", "#1baf7a"
         status.html(f"<div class='status'><span class='dot' style='background:{colour}'></span>{text}</div>")
+        with results.popover("Results", icon=":material/inventory_2:", width="stretch"):
+            saved_results.results_menu(run)
         with menu.popover("Plan", icon=":material/folder_open:", width="stretch"):
             plan_menu(plan, valid)
         go.button("Run plan", type="primary", width="stretch", key="run_sidebar", on_click=request_run,
@@ -191,12 +197,13 @@ def main():
     except PlanError as exc:
         valid, problems = None, exc.problems
     run = st.session_state.result
-    if run is not None and not hasattr(run, "strategies"):  # the newest PlanRun field; an old server's modules lack it
+    if run is not None and not hasattr(run, "saved_from"):  # the newest PlanRun field; an old server's modules lack it
         st.session_state.result = run = None
     compared = run is not None and len(run.strategies or {}) > 1
     pages = [name for name in PAGES if name != "Compare" or compared]
     page = top_bar(plan, valid, pages)
     run_requested_plan()
+    saved_results.save_requested_results()
     if st.session_state.get("page") != page:  # a run finished and opened the outcomes
         st.rerun()
     run = st.session_state.result

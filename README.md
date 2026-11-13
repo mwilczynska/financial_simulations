@@ -40,7 +40,9 @@ return/risk ranges before the retirement outcomes. Charts are interactive,
 with hover values and explanations. The invented default uses the selected
 40/20/20/20 mix outside super and 100% `GLSTOCK` inside super.
 Import or export the plan as TOML or JSON, or save it to the git-ignored
-`plans/` folder. Every run writes one folder, `output/plans/<plan-name>/`.
+`plans/` folder. Every run writes one folder, `output/plans/<plan-name>/`. The *Results* menu saves a run's
+results to `output/saved_runs/` and opens them again without re-running; every path's full daily ledger is
+optional (ADR 0050).
 The same file runs from the command line:
 `python -m financial_simulations plan plans/<name>.toml`. The app derives
 full-sample descriptive returns and a cash-contribution proxy from local

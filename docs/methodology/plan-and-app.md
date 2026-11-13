@@ -321,6 +321,35 @@ working on. After a name change, **Rename** writes the new file and removes
 the old one; **Save** keeps both. **Open** loads a saved plan. Import and
 browser download sit in an expander.
 
+### Saved results
+
+The *Results* menu in the top bar saves the results on screen and opens saved ones
+([ADR 0050](../decisions/0050-saved-run-results.md)). A save writes
+`output/saved_runs/<plan-name>_<date>_<time>/` (git-ignored) with:
+
+- `run.json` (format version, time, note, plan, rule, code and market manifests) and `plan.toml`;
+- the market's daily history returns and ticker statistics, and every market path's sampled history rows
+  (`portfolio_draws.npz`: the first row and the steps between rows, compressed);
+- the portfolio results, and each strategy's path outcomes, yearly rows, account bands and month-end balances by
+  path, as Parquet;
+- each strategy's median-path ledger in full;
+- only when *Also save every path's full daily ledger* is ticked (off by default), every calculated path's ledger.
+
+A ledger set is `daily.parquet` and `events.parquet` with a `path` column, one row group per path, and `years.json`
+holding each path's financial-year records and outstanding liabilities. For analysis,
+`pd.read_parquet(".../ledgers/daily.parquet", filters=[("path", "==", 7)])` reads one path and leaving out
+`filters` reads all of them. In code, `saved_runs.load_run(folder)` returns the `PlanRun` the app uses and
+`LedgerStore(folder).read(path)` one path's `LedgerResult`.
+
+The full ledgers are produced at save time: every calculated path is re-run on the run's stored draws in the worker
+pool and written, which can take longer than the run itself. The menu shows the expected size (about 0.6 kB per path
+per strategy per plan year for the results, plus about 21 kB per path per strategy per year for the full ledgers).
+
+Opening a saved run loads its plan and results together; nothing the run summarised is recalculated. The Paths page
+reads a path's ledger from the saved ledgers when present, otherwise re-runs it from the saved market and draws, so
+it is the ledger the run summarised. If the model's Python source has changed since the save, the menu says the
+results are those of the saving code. Saves are written to a hidden partial folder and renamed when complete.
+
 **Inflation.** Results are in today's dollars, the dollars of the plan's
 start date ([ADR 0026](../decisions/0026-results-in-todays-dollars.md)). The
 Method page explains the conversion:
@@ -772,7 +801,8 @@ None belongs in Git.
 Synthetic fixtures in `tests/test_plan_markets.py` and
 `tests/test_plan.py` cover ticker parsing, source reconciliation, income
 proxy, schema round trips/failures, portfolio-to-ledger handoff, outputs
-and a 35-year horizon. Executed checks are recorded in
+and a 35-year horizon; `tests/test_saved_runs.py` covers saved results
+(ADR 0050). Executed checks are recorded in
 [planner validation](../validation/plan-portfolios.md). The local browser
 Investments and Results views and 10- and 35-year PNGs were inspected.
 

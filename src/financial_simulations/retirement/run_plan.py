@@ -43,6 +43,10 @@ class PlanRun:
     path_series: pd.DataFrame | None = None  # every calculated path's month-end balances by account (today's dollars)
     # Every compared strategy's PlanRun by rule, in the plan's order, this one included. All share the same draws.
     strategies: dict | None = None
+    # Set when the results were opened from a saved run (ADR 0050): every stored path ledger, if they were saved,
+    # and the saved folder.
+    saved_ledgers: object | None = None
+    saved_from: Path | None = None
 
     @property
     def rule(self) -> str:
