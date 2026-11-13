@@ -19,7 +19,7 @@ from financial_simulations.ui import charts
 from financial_simulations.ui.results import derived, header, kept_tabs
 from financial_simulations.ui.state import (affected, compact, fit, key, money_column, ordinal, percent_column, plural,
                                             result_key, share, sticky, sticky_choice)
-from financial_simulations.ui.theme import SHORT, card, chart_title, draw, explain
+from financial_simulations.ui.theme import SHORT, card, chart_title, draw, draw_specification, explain, specification
 
 
 def selected_ledger(run, path):
@@ -176,8 +176,8 @@ def group_story(run, d, members, label):
         market_table(stats, "Median across the group")
         slot, states = story_controls(list(growth.columns), items)
         with slot:
-            draw(*charts.path_story(real_growth(growth, cpi), kinds, colours, balances, household, additions, d.marks,
-                                    states, group=True))
+            story_chart((id(run), "group", label), states, lambda: charts.path_story(
+                real_growth(growth, cpi), kinds, colours, balances, household, additions, d.marks, states, group=True))
         explain(combined_note(run, stats) +
                 "**Markets (top).** For each portfolio and ticker, the median across the group's paths of what $1 "
                 "invested on the first day is worth at each month end, in today's dollars, on a log scale. The table "
@@ -207,6 +207,22 @@ def story_controls(series, items):
     slot = st.container(key="pathstorychart")
     states["flows"] = legend_controls("path_flows", items, "Money in and out (the bars and lines above)")
     return slot, states
+
+
+def story_chart(view, states, build):
+    """Draw the stacked chart, keeping its specification for this view and legend state.
+
+    Building the chart is the slow step. A rerun that changes neither the view nor the legend buttons (another tab,
+    coming back to the page) sends the kept specification, and the browser leaves an identical chart as it is, zoom
+    and legend clicks included.
+    """
+    cache = st.session_state.setdefault("story_cache", {})
+    kept = (*view, *[(name, tuple(state["hidden"]), state["count"]) for name, state in states.items()])
+    if kept not in cache:
+        if len(cache) >= 6:
+            cache.clear()
+        cache[kept] = specification(*build())
+    draw_specification(cache[kept])
 
 
 def combined_note(run, stats):
@@ -243,7 +259,17 @@ def legend_controls(name, names, label=None):
 
 
 def path_flow_frames(run, result, daily):
-    """One path's yearly household flows (taxes folded), account transfers and additions to outside investments."""
+    """One path's yearly household flows (taxes folded), account transfers and additions to outside investments,
+    kept for this result."""
+    cache = st.session_state.setdefault("flows_cache", {})
+    if (id(run), id(result)) not in cache:
+        if len(cache) > 24:
+            cache.clear()
+        cache[(id(run), id(result))] = (result, flow_frames(run, result, daily))  # the result is held so its id stays its own
+    return cache[(id(run), id(result))][1]
+
+
+def flow_frames(run, result, daily):
     start, cpi = daily.index[0], run.plan["assumptions"]["cpi_annual"]
     household = fold_taxes(household_flows(daily, inflation=True))
     moves = account_flows(daily, real_events(result.events, start, cpi))
@@ -309,7 +335,8 @@ def path_story(run, d, path, result, daily):
         market_table(stats)
         slot, states = story_controls(list(growth.columns), items)
         with slot:
-            draw(*charts.path_story(real_growth(growth, cpi), kinds, colours, daily, household, additions, d.marks, states))
+            story_chart((id(run), path), states, lambda: charts.path_story(
+                real_growth(growth, cpi), kinds, colours, daily, household, additions, d.marks, states))
         explain(combined_note(run, stats) +
                 "**Markets (top).** Each line is $1 invested on the first day, in today's dollars, on a log scale: a "
                 "steady slope is steady growth, and a crash is the same drop wherever it happens. The thick line is "

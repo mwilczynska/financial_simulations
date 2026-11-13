@@ -5,6 +5,7 @@ dollars; dashed vertical lines mark retirement, super access and the pension sta
 """
 
 from datetime import date
+import json
 import warnings
 
 import altair as alt
@@ -502,14 +503,20 @@ def flow_bars(frame, x, value, title, items, *, domain=None, tooltip=(), size=14
         tooltip=[alt.Tooltip("Period:N", title="Year"), "Flow:N", *tooltip]), "Flow", items, "flows")[0]
 
 
-def cursor_layers(frame, x, cursor, tooltip):
+def cursor_layers(frame, x, cursor, tooltip, first, last):
     """A vertical hairline at the month nearest the pointer, with that month's figures as the tooltip.
 
-    The same ``cursor`` selection in several panels moves the hairline in all of them at once.
+    ``x`` builds the shared date encoding for a field. Each month owns an invisible full-height strip from halfway
+    to the month before to halfway to the month after (``first`` and ``last`` close the two ends), so the pointer
+    is always over exactly one month and the browser needs no nearest-point search. The same ``cursor`` selection
+    in several panels moves the hairline in all of them at once.
     """
-    targets = (alt.Chart(frame).mark_point(opacity=0, size=1).encode(x=x, tooltip=tooltip).add_params(cursor)
-               .properties(name="cursor_targets_0"))
-    line = alt.Chart(frame).mark_rule(color=INK_SECONDARY, strokeWidth=1).encode(x=x).transform_filter(cursor)
+    dates = pd.DatetimeIndex(frame["Date"])
+    middles = dates[:-1] + (dates[1:] - dates[:-1]) / 2
+    frame = frame.assign(From=[first, *middles], To=[*middles, last])
+    targets = (alt.Chart(frame).mark_rect(opacity=0, clip=True).encode(x=x("From"), x2="To:T", tooltip=tooltip)
+               .add_params(cursor).properties(name="cursor_targets_0"))
+    line = alt.Chart(frame).mark_rule(color=INK_SECONDARY, strokeWidth=1).encode(x=x()).transform_filter(cursor)
     return [targets, line]
 
 
@@ -537,6 +544,9 @@ def path_story(growth, kinds, colours, daily, household, additions, marks, state
     follows the pointer through all three. With ``group`` the frames summarise a group of paths (median growth
     and balances at month ends, average flows) and the axis titles say so.
 
+    Speed (ADR 0056): the canvas renderer, a hover strip per month instead of a nearest-point search, and the
+    weekly lines sent one row per week.
+
     Returns the chart and, by selection name, the name prefixes of the views each selection belongs to. Altair
     lists every selection of a layered panel against every layer that has one, which defines some twice
     ("Duplicate signal name"), so ``theme.draw`` writes the right lists into the specification. Prefixes, because
@@ -554,23 +564,27 @@ def path_story(growth, kinds, colours, daily, household, additions, marks, state
 
     ZOOM_COUNT[0] += 1
     zoom = alt.selection_interval(bind="scales", encodings=["x"], zoom="wheel![event.shiftKey]", name=f"zoom_{ZOOM_COUNT[0]}")
-    cursor = alt.selection_point(name=f"cursor_{ZOOM_COUNT[0]}", fields=["Date"], nearest=True, on="pointerover",
-                                 clear="pointerout", empty=False)
+    cursor = alt.selection_point(name=f"cursor_{ZOOM_COUNT[0]}", fields=["Date"], on="pointerover", clear="pointerout",
+                                 empty=False)
     when = [alt.Tooltip("Date:T", title="Month", format="%b %Y")]
     wide = 64  # the same room for every panel's y labels, so the plot areas line up
 
-    # Markets: weekly points draw every crash a monthly line would smooth, at a fifth of the daily rows.
+    # Markets: weekly points draw every crash a monthly line would smooth, at a fifth of the daily rows. The table
+    # is sent one row per week, six significant figures, and the browser folds it into one row per series.
     names = list(growth.columns)
     weekly = pd.concat([growth.iloc[:1], growth.resample("W").last().dropna(how="all")])
-    weekly = weekly.loc[~weekly.index.duplicated()].rename_axis("Date").reset_index()
-    long = weekly.melt("Date", var_name="Series", value_name="Growth")
-    long["Kind"] = long["Series"].map(kinds)
+    weekly = weekly.loc[~weekly.index.duplicated()]
+    columns = {f"g{i}": name for i, name in enumerate(names)}
+    table = pd.DataFrame({"Date": weekly.index, **{c: [float(f"{v:.6g}") for v in weekly[n]] for c, n in columns.items()}})
     # A log axis draws a grid line at every tick; only exact 1, 2, 3 and 5 multiples of a power of ten are labelled
     # (a short range has ticks such as 1.2 and 1.4, which would otherwise all read "$1").
     mantissa = "(datum.value / pow(10, floor(log(datum.value) / LN10 + 1e-9)))"
     money = (f"abs({mantissa} - round({mantissa})) > 1e-6 || indexof([1, 2, 3, 5], round({mantissa})) < 0 ? '' : "
              "'$' + (datum.value < 1 ? format(datum.value, '~g') : format(datum.value, ',.0f'))")
-    lines, visible = hideable(alt.Chart(long).mark_line(clip=True).encode(
+    folded = (alt.Chart(table).transform_fold(list(columns), as_=["Column", "Growth"])
+              .transform_calculate(Series=f"{json.dumps(columns)}[datum.Column]",
+                                   Kind=f"{json.dumps({c: kinds[n] for c, n in columns.items()})}[datum.Column]"))
+    lines, visible = hideable(folded.mark_line(clip=True).encode(
         x=x(), y=alt.Y("Growth:Q", scale=alt.Scale(type="log", nice=False, padding=10),
                        title=("Median growth" if group else "Growth") + " of $1, today's dollars · log scale",
                        axis=alt.Axis(labelExpr=money, minExtent=wide)),
@@ -584,9 +598,9 @@ def path_story(growth, kinds, colours, daily, household, additions, marks, state
     market_months = add_age(stamp.assign(**{f"s{i}": monthly[n].to_numpy() for i, n in enumerate(names)}))
     start_line = alt.Chart(pd.DataFrame({"y": [1.0]})).mark_rule(color=AXIS, strokeDash=[2, 3]).encode(y="y:Q")
     markets = alt.layer(lines, start_line, *milestone_layers(marks), *cursor_layers(
-        market_months, x(), cursor, [*when, *age_tooltip(market_months),
-                                     *[alt.Tooltip(f"s{i}:Q", title=n, format="$,.2f") for i, n in enumerate(names)]])
-    ).properties(height=heights[0])
+        market_months, x, cursor, [*when, *age_tooltip(market_months),
+                                   *[alt.Tooltip(f"s{i}:Q", title=n, format="$,.2f") for i, n in enumerate(names)]],
+        first, last)).properties(height=heights[0])
 
     # Wealth: the stacked balances.
     balances, colours = accounts(daily)
@@ -596,11 +610,11 @@ def path_story(growth, kinds, colours, daily, household, additions, marks, state
     rules = milestone_layers(marks)[:1]
     areas = balances_chart(daily, x=x(), zoom=False, minExtent=wide).add_params(zoom).properties(name="story_wealth_0")
     wealth = alt.layer(areas, *rules, *cursor_layers(
-        wealth_months, x(), cursor, [*when, *age_tooltip(wealth_months),
-                                     alt.Tooltip("Total:Q", title="Total wealth", format="$,.0f"),
-                                     *[alt.Tooltip(f"a{i}:Q", title=v[0], format="$,.0f")
-                                       for i, v in enumerate(colours.values())]])
-    ).properties(height=heights[1])
+        wealth_months, x, cursor, [*when, *age_tooltip(wealth_months),
+                                   alt.Tooltip("Total:Q", title="Total wealth", format="$,.0f"),
+                                   *[alt.Tooltip(f"a{i}:Q", title=v[0], format="$,.0f")
+                                     for i, v in enumerate(colours.values())]],
+        first, last)).properties(height=heights[1])
 
     # Money in and out: one bar per financial year, as wide as the year on the date axis.
     spans = {year: fy_span(year, first, last) for year in sorted(household["FY ending"].unique())}
@@ -630,12 +644,12 @@ def path_story(growth, kinds, colours, daily, household, additions, marks, state
                                Added=additions.set_index("FY ending")["AUD"].reindex(year_of).to_numpy(),
                                **{f"f{i}": table[f].reindex(year_of).to_numpy() for i, f in enumerate(order)})
     flows = alt.layer(bars, zero_rule(), net_line, *([added.transform_filter(showing)] if added is not None else []),
-                      *rules, *cursor_layers(flow_months, x(), cursor, [
+                      *rules, *cursor_layers(flow_months, x, cursor, [
                           alt.Tooltip("Period:N", title="Year"),
                           alt.Tooltip("Net:Q", title="Net change in wealth", format="$,.0f"),
                           *[alt.Tooltip(f"f{i}:Q", title=f, format="$,.0f") for i, f in enumerate(order)],
                           *([alt.Tooltip("Added:Q", title="Added to outside investments", format="$,.0f")]
-                            if ADDED_LABEL in items else [])])
+                            if ADDED_LABEL in items else [])], first, last)
                       ).properties(height=heights[2])
 
     def titled(panel, text):
@@ -647,7 +661,8 @@ def path_story(growth, kinds, colours, daily, household, additions, marks, state
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)  # Altair notes that the shared selections are merged, as intended
         chart = (alt.vconcat(markets, wealth, flows, spacing=22)
-                 .resolve_scale(x="shared", color="independent", size="independent"))
+                 .resolve_scale(x="shared", color="independent", size="independent")
+                 .properties(usermeta={"embedOptions": {"renderer": "canvas"}}))
     panels = ("story_markets_", "story_wealth_", "story_flows_")
     return chart, {zoom.name: panels, cursor.name: ("cursor_targets_",), visible.name: panels[:1], showing.name: panels[2:],
                    "show_accounts_0": panels[1:2]}

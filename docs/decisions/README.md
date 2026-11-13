@@ -61,6 +61,7 @@ Decision records preserve why Financial Simulations makes a material modelling o
 | [0053](0053-one-saved-run-per-plan-name.md) | 2026-11-13 | Accepted; implemented and tested | Saved results go to `output/saved_runs/<plan-name>/` with no date; saving the same plan name again replaces the earlier save, swapped in only when complete |
 | [0054](0054-investment-property-in-the-ledger.md) | 2026-11-13 | Accepted; implemented and tested | An investment property in the daily ledger: monthly rent and running costs, a second loan (interest-only option), value growing at a fixed monthly rate, rental losses carried forward unless they may offset salary, and spending rules on wealth without the property's equity |
 | [0055](0055-home-value-rent-paid-and-moving-in.md) | 2026-11-13 | Accepted; implemented and tested | An optional home value whose running costs are paid before spending, rent paid by a renter, a renamed *I own the home I live in* tick box on the You tab, and moving into the investment property on a chosen date |
+| [0056](0056-stacked-path-chart-speed.md) | 2026-11-13 | Accepted; implemented and tested | The stacked path chart on canvas with a hover strip per month instead of a nearest-point search, a smaller specification, and the specification kept per view |
 
 ## When to write a record
 

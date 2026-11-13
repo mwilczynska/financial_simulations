@@ -4,9 +4,11 @@ Colours come from ``reporting.palette`` so the interactive charts and the PNG re
 through ``draw``, which applies one configuration (type, grid, axes, legend) instead of Streamlit's chart theme.
 """
 
+from functools import lru_cache
 from html import escape
 
 import altair as alt
+import pandas as pd
 import streamlit as st
 
 from financial_simulations.reporting.palette import (ACCENT, AXIS, GRID, INK, INK_SECONDARY, MUTED, NEUTRAL, PAGE, SURFACE,
@@ -154,9 +156,29 @@ def draw(chart, views=None, **options):
     if views is None:
         st.altair_chart(configure(chart), theme=None, width="stretch", **options)
         return
+    draw_specification(specification(chart, views), **options)
+
+
+@lru_cache(maxsize=1)
+def configuration():
+    """The chart configuration as a plain dictionary, worked out once."""
+    return configure(alt.Chart(pd.DataFrame({"x": [0]})).mark_point()).to_dict()["config"]
+
+
+def specification(chart, views, validate=False):
+    """A chart as a Vega-Lite dictionary with the app's configuration and each selection's views (``with_views``).
+
+    Speed: the configuration is added to the dictionary, because each Altair ``configure_*`` call copies the whole
+    chart, and Altair's schema validation is skipped unless ``validate`` is set (a test validates the stacked chart).
+    """
     with alt.data_transformers.disable_max_rows():  # as st.altair_chart does: a 40-year weekly line is over the limit
-        spec = configure(chart).to_dict()
-    st.vega_lite_chart(with_views(spec, views), theme=None, width="stretch", **options)
+        spec = chart.to_dict(validate=validate)
+    spec["config"] = configuration()
+    return with_views(spec, views)
+
+
+def draw_specification(spec, **options):
+    st.vega_lite_chart(spec, theme=None, width="stretch", **options)
 
 
 def with_views(spec, views):
@@ -179,4 +201,4 @@ def with_views(spec, views):
 
 
 __all__ = ["ACCENT", "NEUTRAL", "TALL", "MEDIUM", "SHORT", "apply_styles", "card", "chart_title", "configure", "draw",
-           "empty_state", "explain", "legend", "page_title", "tier_headline"]
+           "draw_specification", "specification", "empty_state", "explain", "legend", "page_title", "tier_headline"]

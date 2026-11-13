@@ -520,6 +520,17 @@ pointer in every panel; the markets and wealth tooltips give that month's values
 financial year's. `retirement_markets.png` draws the same lines and statistics for the path nearest median ending
 wealth.
 
+**Speed** ([ADR 0056](../decisions/0056-stacked-path-chart-speed.md)). The chart uses the canvas renderer. Each
+month owns an invisible full-height strip in every panel, from halfway to the month before to halfway to the month
+after, so the pointer is always over exactly one month, the month end nearest to it, and the browser runs no
+nearest-point search. The weekly lines are sent as one row per week at six significant figures and folded into
+series in the browser. The app builds the specification without Altair's schema validation (a test validates it),
+adds the chart configuration to the finished dictionary, and keeps the specification in the session per view and
+legend state, so a rerun that changes neither resends an identical chart. Measured on 13 November 2026 on a saved
+1,000-path, 55-year run (median path, in-app browser): the specification fell from 3.6 MB to 1.7 MB and its build
+from about 2.0 s to 1.4 s; reopening the page took 0.2 s instead of 2.4 s; the chart is one canvas instead of about
+5,100 SVG elements; and a pointer move is handled in about 2 ms. Paint time was not measured.
+
 **A group of paths.** With `g_p[t]` the growth of one series on path `p` of the group, the line drawn is
 `median over p of g_p[m]` at the opening mark and each month end `m`, and each statistic is the median over `p` of
 that path's statistic (`group_markets`). The balances are each account's median month-end balance and the flows
