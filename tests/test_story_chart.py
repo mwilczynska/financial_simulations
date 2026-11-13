@@ -6,9 +6,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
+pytest.importorskip("altair")  # the app's packages are an optional install; without them this file is skipped
+pytest.importorskip("streamlit")
+
 
 def story():
-    pytest.importorskip("streamlit")
     from financial_simulations.ui import charts
 
     days = pd.bdate_range("2026-07-01", "2030-06-28", name="Date")

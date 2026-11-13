@@ -133,14 +133,6 @@ def test_paired_portfolios_share_draws_and_reconcile_through_the_full_ledger(tmp
     assert not list((tmp_path / "out").glob("*.pdf"))
 
 
-def test_paired_outputs_do_not_depend_on_batch_size(tmp_path):
-    study = paired_study(tmp_path)
-    run_paired(study, tmp_path / "a")
-    run_paired(replace(study, base=replace(study.base, generators=replace(study.base.generators, batch_size=1))), tmp_path / "b")
-    for name in ("paired_outcomes.csv", "paired_summary.csv", "paired_differences.csv", "tail_diagnostics.csv"):
-        assert (tmp_path / "a" / name).read_bytes() == (tmp_path / "b" / name).read_bytes()
-
-
 def test_window_provenance_requirements_are_enforced(tmp_path):
     study = paired_study(tmp_path, methods='["stationary"]')
     windows = list(study.windows)

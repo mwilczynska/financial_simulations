@@ -108,11 +108,21 @@ def period(end_year):
     return f"Jul {int(end_year) - 1} – Jun {int(end_year)}"
 
 
-def period_label(end_year):
-    """A financial year for tooltips, with the person's age at its 30 June when known."""
+def with_period(frame, years=None):
+    """Add ``Period`` (the financial year in words) and, when a birth date is known, ``FY age`` (age at its 30 June).
+
+    ``years`` gives each row's financial year when the frame has no ``FY ending`` column.
+    """
+    years = list(frame["FY ending"] if years is None else years)
     born = BORN["date"]
-    text = period(end_year)
-    return f"{text} (age {age_on(born, date(int(end_year), 6, 30))} at 30 June)" if born else text
+    age = {"FY age": [age_on(born, date(int(y), 6, 30)) for y in years]} if born else {}
+    return frame.assign(Period=[period(y) for y in years], **age)
+
+
+def year_tooltip():
+    """Tooltip rows for a frame from ``with_period``: the year, then the age on its own row."""
+    age = [alt.Tooltip("FY age:Q", title="Your age at 30 June", format="d")] if BORN["date"] else []
+    return [alt.Tooltip("Period:N", title="Year"), *age]
 
 
 def milestone_layers(marks, x="Date:T"):
@@ -138,7 +148,7 @@ def quantile_bands(frame, by, field):
     q = frame.groupby(by)[field].quantile([0.05, 0.25, 0.5, 0.75, 0.95]).unstack().reset_index()
     q.columns = [by, "P05", "P25", "P50", "P75", "P95"]
     if by == "FY ending":
-        q["Period"] = q[by].map(period_label)
+        q["Period"] = q[by].map(period)
     return q
 
 
@@ -396,7 +406,7 @@ def all_paths_chart(paths, marks, outcomes, shown=TIERS, cache_key=None, log=Tru
 def states_chart(shares, marks, height=MEDIUM):
     """The share of paths in each outcome state in each financial year, as stacked areas with the worst at the bottom."""
     frame = add_age(shares, "FY ending")
-    frame = frame.assign(Period=frame["FY ending"].map(period_label), order=frame["State"].map(list(reversed(TIERS)).index))
+    frame = with_period(frame).assign(order=frame["State"].map(list(reversed(TIERS)).index))
     # No fixed y domain: with every state shown the stack reaches 100%, and hiding Self-funded in the legend lets
     # the axis close in on the states that need attention.
     chart, _ = toggle(alt.Chart(frame).mark_area(stroke=SURFACE, strokeWidth=1).encode(
@@ -407,7 +417,7 @@ def states_chart(shares, marks, height=MEDIUM):
         order=alt.Order("order:Q"),
         # Self-funded is the quiet background; the three states that need attention keep their full colour.
         opacity=alt.condition(alt.datum.State == TIERS[0], alt.value(0.4), alt.value(1)),
-        tooltip=[alt.Tooltip("Period:N", title="Year"), "State:N", alt.Tooltip("Share:Q", title="Share of paths", format=".1%"),
+        tooltip=[*year_tooltip(), "State:N", alt.Tooltip("Share:Q", title="Share of paths", format=".1%"),
                  alt.Tooltip("Paths:Q", format=",d")]).properties(height=height), "State", list(reversed(TIERS)), "states")
     inside = marks.loc[marks["Position"].between(frame["FY ending"].min(), frame["FY ending"].max())] if len(marks) else marks
     return with_milestones(chart, inside, "Position:Q")
@@ -463,7 +473,7 @@ def additions_layer(frame, x, value="AUD", color=None):
                                       point=alt.OverlayMarkDef(shape="square", size=36, color=ADDED_COLOUR, filled=True)).encode(
         x=x, y=f"{value}:Q",
         **({"color": color} if color is not None else {}),
-        tooltip=[alt.Tooltip("Period:N", title="Year"),
+        tooltip=[*year_tooltip(),
                  alt.Tooltip(f"{value}:Q", title="Added to outside investments", format="$,.0f")])
 
 
@@ -500,7 +510,7 @@ def flow_bars(frame, x, value, title, items, *, domain=None, tooltip=(), size=14
     return toggle(alt.Chart(frame).mark_bar(size=size, stroke=SURFACE, strokeWidth=0.6).encode(
         x=x, y=alt.Y(f"{value}:Q", stack=True, title=title, axis=money_axis(), scale=scale),
         color=flow_colour(items), order=alt.Order("Flow:N"),
-        tooltip=[alt.Tooltip("Period:N", title="Year"), "Flow:N", *tooltip]), "Flow", items, "flows")[0]
+        tooltip=[*year_tooltip(), "Flow:N", *tooltip]), "Flow", items, "flows")[0]
 
 
 def cursor_layers(frame, x, cursor, tooltip, first, last):
@@ -620,8 +630,9 @@ def path_story(growth, kinds, colours, daily, household, additions, marks, state
     spans = {year: fy_span(year, first, last) for year in sorted(household["FY ending"].unique())}
 
     def placed(frame):
-        return frame.assign(Start=frame["FY ending"].map(lambda y: spans[y][0]), End=frame["FY ending"].map(lambda y: spans[y][1]),
-                            Mid=frame["FY ending"].map(lambda y: spans[y][2]), Period=frame["FY ending"].map(period_label))
+        return with_period(frame).assign(Start=frame["FY ending"].map(lambda y: spans[y][0]),
+                                         End=frame["FY ending"].map(lambda y: spans[y][1]),
+                                         Mid=frame["FY ending"].map(lambda y: spans[y][2]))
 
     order, items = flow_items(household, additions)
     shown = placed(household.loc[household["Flow"].isin(order)])
@@ -639,13 +650,13 @@ def path_story(growth, kinds, colours, daily, household, additions, marks, state
     table = shown.pivot_table(index="FY ending", columns="Flow", values="AUD", aggfunc="sum").reindex(columns=order).fillna(0.0)
     year_of = months.year + (months.month >= 7)
     by_year = net.set_index("FY ending")
-    flow_months = stamp.assign(Period=[period_label(y) for y in year_of],
+    flow_months = with_period(stamp, year_of).assign(
                                Net=by_year["Net change"].reindex(year_of).to_numpy(),
                                Added=additions.set_index("FY ending")["AUD"].reindex(year_of).to_numpy(),
                                **{f"f{i}": table[f].reindex(year_of).to_numpy() for i, f in enumerate(order)})
     flows = alt.layer(bars, zero_rule(), net_line, *([added.transform_filter(showing)] if added is not None else []),
                       *rules, *cursor_layers(flow_months, x, cursor, [
-                          alt.Tooltip("Period:N", title="Year"),
+                          *year_tooltip(),
                           alt.Tooltip("Net:Q", title="Net change in wealth", format="$,.0f"),
                           *[alt.Tooltip(f"f{i}:Q", title=f, format="$,.0f") for i, f in enumerate(order)],
                           *([alt.Tooltip("Added:Q", title="Added to outside investments", format="$,.0f")]

@@ -5,10 +5,10 @@ import pytest
 from financial_simulations.data.registry import resolve_asset
 
 
-@pytest.fixture
-def processed_fixture(tmp_path):
-    """Two full synthetic years of custom and fund daily observations."""
-    root = tmp_path / "processed"
+@pytest.fixture(scope="session")
+def processed_fixture(tmp_path_factory):
+    """Two full synthetic years of custom and fund daily observations, written once and only read by tests."""
+    root = tmp_path_factory.mktemp("data") / "processed"
     distribution = root / "distributions"
     distribution.mkdir(parents=True)
     dates = pd.bdate_range("2020-01-01", "2021-12-31")

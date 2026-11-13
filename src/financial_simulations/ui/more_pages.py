@@ -98,13 +98,13 @@ def compare_page(run):
         bars["x0"] = bars["FY ending"] - 0.42 + bars["Strategy"].map(position) * width
         bars["x1"] = bars["x0"] + width * 0.88  # a small gap between neighbouring bars
         bars["Strategy"] = bars["Strategy"].map(STRATEGY_NAMES)
-        bars["Period"] = bars["FY ending"].map(charts.period_label)
+        bars = charts.with_period(bars)
         outflow = flow in OUTFLOWS
         chart, _ = charts.toggle(alt.Chart(bars).mark_bar(cornerRadiusTopLeft=2, cornerRadiusTopRight=2).encode(
             x=alt.X("x0:Q", axis=charts.fy_axis(bars), scale=charts.fy_scale(bars)), x2="x1:Q",
             y=alt.Y("Value:Q", title=f"Median {flow.lower()}" + (" paid" if outflow else "") + " per year, today's dollars",
                     axis=charts.money_axis()), y2=alt.datum(0), color=colour,
-            tooltip=[alt.Tooltip("Period:N", title="Year"), "Strategy:N", alt.Tooltip("Value:Q", title="Median", format="$,.0f")]),
+            tooltip=[*charts.year_tooltip(), "Strategy:N", alt.Tooltip("Value:Q", title="Median", format="$,.0f")]),
             "Strategy", [STRATEGY_NAMES[r] for r in rules], "strategy_bars")
         first, last = int(bars["FY ending"].min()) - 0.6, int(bars["FY ending"].max()) + 0.6
         # Markers outside the years shown (retirement falls before the first full retired year) would sit on the axis.

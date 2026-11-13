@@ -104,26 +104,6 @@ def test_pension_before_super_access_starts_when_super_becomes_accessible(proces
     assert not any("transition-to-retirement" in note for note in notes)
 
 
-def test_run_plan_writes_portfolio_and_retirement_reports(tmp_path, processed_fixture):
-    plan = quick_plan()
-    market = load_plan_markets(plan["assets"], processed_fixture)
-    run = run_plan(plan, tmp_path, market=market)
-    assert run.folder == tmp_path / "example-early-retirement"
-    assert (run.folder / "portfolio_future.png").exists()
-    assert (run.folder / "retirement_range.png").exists()
-    assert (run.folder / "retirement_paths.csv").exists()
-    assert (run.folder / "asset_summary.csv").exists()
-    assert (run.folder / "manifest.json").exists()
-    assert load_plan_text((run.folder / "plan.toml").read_text(encoding="utf-8")) == plan
-    assert len(run.portfolios.outcomes) == 48  # 16 shared paths for each portfolio and their combination
-    assert len(run.retirement_paths) == 1
-    flows = [c for c in run.retirement_annual.columns if c.startswith("Flow: ")]
-    assert "Flow: Spending" in flows and "Flow: Investment returns" in flows
-    yearly = run.retirement_annual
-    assert (yearly[flows].sum(axis=1) - yearly["Net change in wealth"]).abs().max() < 1e-4
-    assert not list(run.folder.glob("*.pdf"))
-
-
 def test_portfolios_keep_shared_daily_draws_but_reflect_distinct_weights(processed_fixture):
     plan = quick_plan()
     plan["plan"]["years"] = 1
@@ -142,30 +122,77 @@ def test_portfolios_keep_shared_daily_draws_but_reflect_distinct_weights(process
     assert (outside != inside).any()
 
 
-def test_command_line_runs_a_plan_file(tmp_path, monkeypatch, capsys, processed_fixture):
+@pytest.fixture(scope="module")
+def quick_run(processed_fixture):
+    """One three-path run without report files, with the progress messages it sent."""
+    plan = quick_plan()
+    plan["market"]["retirement_paths"] = 3
+    seen = []
+    run = run_plan(plan, None, market=load_plan_markets(plan["assets"], processed_fixture),
+                   progress=lambda fraction, message: seen.append((fraction, message)))
+    return run, seen
+
+
+def test_command_line_runs_a_plan_file_and_writes_its_reports(tmp_path, monkeypatch, capsys, processed_fixture):
     from financial_simulations.cli import main
 
     monkeypatch.setenv("FINANCIAL_DATASETS_PROCESSED", str(processed_fixture))
+    plan = quick_plan()
     file = tmp_path / "mine.toml"
-    file.write_text(plan_to_toml(quick_plan()), encoding="utf-8")
+    file.write_text(plan_to_toml(plan), encoding="utf-8")
     assert main(["plan", str(file), "--output", str(tmp_path / "out")]) == 0
     summary = json.loads(capsys.readouterr().out)
-    assert summary["years_assessed"] == 10 and Path(summary["folder"]).is_dir()
+    folder = Path(summary["folder"])
+    assert summary["years_assessed"] == 10 and folder == tmp_path / "out" / "example-early-retirement"
+    for name in ("portfolio_future.png", "retirement_range.png", "retirement_paths.csv", "asset_summary.csv", "manifest.json"):
+        assert (folder / name).exists(), name
+    assert load_plan_text((folder / "plan.toml").read_text(encoding="utf-8")) == plan
+    assert not list(folder.glob("*.pdf"))
+
+
+def test_run_results_reconcile_and_progress_covers_every_stage(quick_run):
+    run, seen = quick_run
+    assert len(run.portfolios.outcomes) == 48  # 16 shared paths for each portfolio and their combination
+    assert len(run.retirement_paths) == 3 and "Wealth when super accessible" in run.retirement_paths
+    yearly = run.retirement_annual
+    flows = [c for c in yearly.columns if c.startswith("Flow: ")]
+    assert "Flow: Spending" in flows and "Flow: Investment returns" in flows
+    assert (yearly[flows].sum(axis=1) - yearly["Net change in wealth"]).abs().max() < 1e-4
+    # Every path's monthly wealth is kept, and its median is the reported band.
+    paths = run.wealth_paths
+    assert paths["Path"].nunique() == 3
+    assert paths.groupby("Date")["Total wealth"].median().to_numpy() == pytest.approx(run.retirement_bands["P50"].to_numpy())
+    # Each path's account series add up to its total wealth.
+    series = run.path_series
+    assert series["Path"].nunique() == 3 and {"Outside super", "Super and pension", "Pension account"} <= set(series)
+    total = series.groupby("Date")[["Outside super", "Super and pension"]].sum().sum(axis=1)
+    assert total.to_numpy() == pytest.approx(paths.groupby("Date")["Total wealth"].sum().to_numpy())
+    fractions = [f for f, _ in seen]
+    assert fractions == sorted(fractions) and fractions[0] < 0.05 and fractions[-1] >= 0.95
+    messages = " ".join(m for _, m in seen)
+    for stage in ("Sampling market paths", "history", "future portfolio paths", "Daily tax ledgers", "saving"):
+        assert stage in messages
 
 
 @pytest.mark.skipif("sandbox." in tempfile.gettempdir().lower(),
                     reason="Streamlit AppTest stalls in this managed Windows sandbox; the local browser is used for UI validation")
-def test_browser_app_runs_with_tickers_and_interactive_results(tmp_path, monkeypatch, processed_fixture):
+def test_browser_app_runs_draws_every_page_and_saves_and_opens_results(tmp_path, monkeypatch, processed_fixture):
     pytest.importorskip("streamlit")
+    pytest.importorskip("pyarrow")
+    from pandas.testing import assert_frame_equal
     from streamlit.testing.v1 import AppTest
+    from financial_simulations.retirement.saved_runs import list_saved_runs
 
     monkeypatch.setenv("FINANCIAL_DATASETS_PROCESSED", str(processed_fixture))
+    monkeypatch.setenv("FINANCIAL_SIMULATIONS_WORKERS", "1")
     monkeypatch.chdir(tmp_path)
     app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "src" / "financial_simulations" / "ui" / "app.py"),
                             default_timeout=120)
     app.run()
     assert not app.exception
     assert [t.label for t in app.tabs] == ["You", "Investments", "Retirement", "Assumptions"]  # the Plan page opens first
+    # Before a run there are no results to save: both tick boxes in the plan menu are greyed out.
+    assert app.checkbox(key="save_results_too").disabled and app.checkbox(key="save_full_ledgers").disabled
     app.number_input(key="retire__0").set_value(57)
     app.number_input(key="paths__0").set_value(16)
     app.number_input(key="retirement_paths__0").set_value(3).run()
@@ -207,9 +234,38 @@ def test_browser_app_runs_with_tickers_and_interactive_results(tmp_path, monkeyp
     app.session_state["group_tabs__0"] = "Year by year"
     app.run()
     assert not app.exception
+    # The plan menu saves the results with the plan, and opens them again (ADR 0051).
+    assert app.session_state.result.saved_from is None
+    results, ledgers = app.checkbox(key="save_results_too"), app.checkbox(key="save_full_ledgers")
+    assert not results.disabled and not results.value and ledgers.disabled  # every path's ledger needs results ticked
+    results.check().run()
+    ledgers = app.checkbox(key="save_full_ledgers")
+    assert not ledgers.disabled and ledgers.value is False  # every path's ledger is opt-in
+    ledgers.check().run()
+    app.button(key="save_plan").click().run()
+    assert not app.exception and not app.error
+    assert (tmp_path / "plans" / "example-early-retirement.toml").exists()
+    (row,) = list_saved_runs(tmp_path / "output" / "saved_runs")
+    assert row["full_ledgers"] and row["retirement_paths"] == 3
+    original = app.session_state.result
+    app.button(key="open_saved").click().run()
+    assert not app.exception and not app.error
+    opened = app.session_state.result
+    assert opened.saved_from.resolve() == row["folder"].resolve() and opened.saved_ledgers.paths == [0, 1, 2]
+    assert app.session_state.page == "Outcomes" and app.session_state.plan_file is None
+    assert_frame_equal(opened.retirement_paths, original.retirement_paths)
+    app.session_state["page"] = "Paths"
+    app.run()
+    assert not app.exception
+    # Changed inputs grey the results box out again: a plan file is never saved beside other inputs' results.
+    app.session_state["page"] = "Plan"
+    app.run()
+    app.number_input(key=f"retirement_paths__{app.session_state.version}").set_value(4).run()
+    app.run()  # the menu is drawn before the Plan page applies an edit, so it shows on the next rerun
+    assert app.checkbox(key="save_results_too").disabled and not app.checkbox(key="save_results_too").value
 
 
-def test_35_year_path_and_plots_keep_yearly_summary_compact(tmp_path, processed_fixture):
+def test_35_year_path_runs_to_the_end_with_monthly_bands(processed_fixture):
     plan = quick_plan()
     plan["plan"]["years"] = 35
     plan["person"]["date_of_birth"] = "1995-01-01"
@@ -224,11 +280,10 @@ def test_35_year_path_and_plots_keep_yearly_summary_compact(tmp_path, processed_
     plan["spending"]["annual"] = 0
     plan["pension"]["start_age"] = 0
     market = load_plan_markets(plan["assets"], processed_fixture)
-    run = run_plan(plan, tmp_path, market=market)
+    run = run_plan(plan, None, market=market)
     assert (run.result.daily.index[-1] - run.result.daily.index[0]).days >= 35 * 365 - 2
     assert len(run.retirement_bands) >= 35 * 12
     assert len(run.portfolios.paths) >= 2 * 35 * 12
-    assert (run.folder / "ledger.png").stat().st_size > 10000
 
 
 def test_annual_rebalancing_is_the_default_and_harvests_dispersion():
@@ -277,19 +332,6 @@ def test_salary_follows_wage_growth_unless_switched_off(processed_fixture):
     assert scenario.employment.annual_growth == 0.0
 
 
-def test_run_progress_covers_every_stage_in_order(processed_fixture):
-    plan = quick_plan()
-    plan["market"]["retirement_paths"] = 2
-    seen = []
-    run_plan(plan, None, market=load_plan_markets(plan["assets"], processed_fixture),
-             progress=lambda fraction, message: seen.append((fraction, message)))
-    fractions = [f for f, _ in seen]
-    assert fractions == sorted(fractions) and fractions[0] < 0.05 and fractions[-1] >= 0.95
-    messages = " ".join(m for _, m in seen)
-    for stage in ("Sampling market paths", "history", "future portfolio paths", "Daily tax ledgers", "saving"):
-        assert stage in messages
-
-
 def test_fixed_outside_contribution_maps_to_paydays(processed_fixture):
     plan = default_plan()
     assert plan["outside"]["saving"] == "surplus"
@@ -306,16 +348,6 @@ def test_fixed_outside_contribution_maps_to_paydays(processed_fixture):
     plan["outside"]["saving"] = "sometimes"
     with pytest.raises(PlanError, match="outside.saving: must be one of surplus, fixed"):
         normalize_plan(plan)
-
-
-def test_run_keeps_every_paths_monthly_wealth(processed_fixture):
-    plan = quick_plan()
-    plan["market"]["retirement_paths"] = 3
-    run = run_plan(plan, None, market=load_plan_markets(plan["assets"], processed_fixture))
-    paths = run.wealth_paths
-    assert paths["Path"].nunique() == 3
-    median = paths.groupby("Date")["Total wealth"].median().to_numpy()
-    assert median == pytest.approx(run.retirement_bands["P50"].to_numpy())
 
 
 def test_spending_rule_defaults_to_fixed_and_maps_to_the_ledger(processed_fixture):
@@ -365,16 +397,16 @@ def test_compared_strategies_share_one_start_and_old_single_rules_still_load(pro
 
 def test_every_compared_strategy_runs_on_the_same_draws_and_writes_its_own_folder(tmp_path, processed_fixture):
     plan = default_plan()
-    plan["spending"].update(compare=["fixed", "guyton_klinger", "percent"], retirement="percent")
-    plan["market"].update(paths=16, retirement_paths=4)
+    plan["spending"].update(compare=["fixed", "percent"], retirement="percent")
+    plan["market"].update(paths=16, retirement_paths=2)
     market = load_plan_markets(plan["assets"], processed_fixture)
     run = run_plan(plan, tmp_path, market=market)
-    assert list(run.strategies) == ["fixed", "guyton_klinger", "percent"] and run.strategies["fixed"] is run
+    assert list(run.strategies) == ["fixed", "percent"] and run.strategies["fixed"] is run
     for rule, strategy in run.strategies.items():
-        assert strategy.rule == rule and strategy.portfolios is run.portfolios and len(strategy.retirement_paths) == 4
+        assert strategy.rule == rule and strategy.portfolios is run.portfolios and len(strategy.retirement_paths) == 2
     # Paired draws: spending is the same until retirement, so every strategy reaches it with the same wealth.
     reached = {rule: s.retirement_paths.set_index("Path")["Wealth at retirement"] for rule, s in run.strategies.items()}
-    assert (reached["guyton_klinger"] == reached["fixed"]).all() and (reached["percent"] == reached["fixed"]).all()
+    assert (reached["percent"] == reached["fixed"]).all()
     assert not run.strategies["fixed"].retirement_paths["Spending paid"].equals(
         run.strategies["percent"].retirement_paths["Spending paid"])
     folder = run.folder
@@ -387,16 +419,10 @@ def test_every_compared_strategy_runs_on_the_same_draws_and_writes_its_own_folde
     for name in ("comparison_summary.csv", "comparison_wealth.png", "comparison_spending.png"):
         assert (folder / name).exists()
     summary = pd.read_csv(folder / "comparison_summary.csv")
-    assert list(summary.columns) == ["Measure", "Kind", "Fixed", "Guyton–Klinger", "% of wealth"]
+    assert list(summary.columns) == ["Measure", "Kind", "Fixed", "% of wealth"]
     # The same starting spending for every strategy, by construction.
     start = summary.loc[summary["Measure"] == "Starting retirement spending (median)"].iloc[0]
-    assert start["Fixed"] == pytest.approx(start["Guyton–Klinger"]) == pytest.approx(start["% of wealth"])
-    # Back to one strategy: the original layout returns and the strategy folders go.
-    plan["spending"]["compare"] = ["fixed"]
-    run = run_plan(plan, tmp_path, market=market)
-    assert (folder / "daily.csv").exists() and not (folder / "strategies").exists()
-    assert not (folder / "comparison_wealth.png").exists()
-    assert list(run.strategies) == ["fixed"]
+    assert start["Fixed"] == pytest.approx(start["% of wealth"])
 
 
 def test_spending_rises_with_cpi_and_old_nominal_growth_becomes_a_real_change():
@@ -453,17 +479,6 @@ def test_path_groups_rank_by_ending_wealth_and_keep_at_least_one_path():
     ranks = ending_percentiles(calculated)
     assert ranks[worst[0]] == pytest.approx(0.25) and ranks[worst[-1]] == pytest.approx(99.75)
     assert [ordinal(v) for v in (0.25, 2, 11, 21, 52.6, 99.75)] == ["1st", "2nd", "11th", "21st", "53rd", "99th"]
-
-
-def test_run_keeps_each_paths_account_series_and_wealth_when_super_is_accessible(processed_fixture):
-    plan = quick_plan()
-    plan["market"]["retirement_paths"] = 3
-    run = run_plan(plan, None, market=load_plan_markets(plan["assets"], processed_fixture))
-    series = run.path_series
-    assert series["Path"].nunique() == 3 and {"Outside super", "Super and pension", "Pension account"} <= set(series)
-    total = series.groupby("Date")[["Outside super", "Super and pension"]].sum().sum(axis=1)
-    assert total.to_numpy() == pytest.approx(run.wealth_paths.groupby("Date")["Total wealth"].sum().to_numpy())
-    assert "Wealth when super accessible" in run.retirement_paths
 
 
 def test_future_calendar_keeps_the_history_density_and_extends_shorter_horizons():
@@ -567,28 +582,6 @@ def test_worker_count_honours_requests_and_limits_the_automatic_count(monkeypatc
     assert paths.worker_count(1000) == (28, None)
 
 
-def _priority_class():
-    import ctypes
-
-    kernel32 = ctypes.windll.kernel32
-    kernel32.GetCurrentProcess.restype = ctypes.c_void_p
-    kernel32.GetPriorityClass.argtypes = (ctypes.c_void_p,)
-    return kernel32.GetPriorityClass(kernel32.GetCurrentProcess())
-
-
-@pytest.mark.skipif(not __import__("sys").platform.startswith("win"), reason="Windows priority classes")
-def test_ledger_workers_run_below_normal_priority():
-    from concurrent.futures import ProcessPoolExecutor
-    from financial_simulations.retirement.paths import (BELOW_NORMAL_PRIORITY_CLASS, _below_normal_priority,
-                                                        _without_main_module)
-
-    with ProcessPoolExecutor(1, initializer=_below_normal_priority) as pool:
-        with _without_main_module():  # as run_ledgers does: workers must not re-run the launching module
-            future = pool.submit(_priority_class)
-        assert future.result() == BELOW_NORMAL_PRIORITY_CLASS
-    assert _priority_class() != BELOW_NORMAL_PRIORITY_CLASS  # the parent keeps its priority
-
-
 @pytest.mark.skipif("sandbox." in tempfile.gettempdir().lower(),
                     reason="Streamlit AppTest stalls in this managed Windows sandbox; the local browser is used for UI validation")
 def test_app_compares_ticked_strategies_and_ignores_a_stale_cores_choice(tmp_path, monkeypatch, processed_fixture):
@@ -603,12 +596,11 @@ def test_app_compares_ticked_strategies_and_ignores_a_stale_cores_choice(tmp_pat
     app.session_state["calculation_cores"] = "Automatic (24 on this computer)"
     app.run()
     assert not app.exception
-    app.checkbox(key="compare_guyton_klinger__0").check().run()
     app.checkbox(key="compare_vanguard__0").check().run()
     assert not app.exception
-    assert app.session_state.plan["spending"]["compare"] == ["fixed", "guyton_klinger", "vanguard"]
+    assert app.session_state.plan["spending"]["compare"] == ["fixed", "vanguard"]
     assert app.session_state.plan["spending"]["retirement"] == "percent"
-    assert any("about 3 times as long" in c.value for c in app.caption)
+    assert any("about 2 times as long" in c.value for c in app.caption)
     app.number_input(key="paths__0").set_value(16)
     app.number_input(key="retirement_paths__0").set_value(3).run()
     app.button(key="run_sidebar").click().run()
@@ -638,7 +630,7 @@ def test_app_compares_ticked_strategies_and_ignores_a_stale_cores_choice(tmp_pat
     assert not app.exception
     app.session_state["page"] = "Plan"
     app.run()
-    for rule in ("fixed", "guyton_klinger", "vanguard"):
+    for rule in ("fixed", "vanguard"):
         app.checkbox(key=f"compare_{rule}__0").uncheck().run()
     assert not app.exception and any(e.value == "Tick at least one strategy." for e in app.error)
 

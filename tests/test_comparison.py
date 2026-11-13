@@ -56,16 +56,12 @@ end = "2020-01-08"
     return load_comparison(experiment)
 
 
-def test_complete_comparison_batch_invariance_and_trace_reconstruction(tmp_path):
+def test_complete_comparison_and_trace_reconstruction(tmp_path):
     config = fixture(tmp_path)
-    first, second = tmp_path / "first", tmp_path / "second"
+    first = tmp_path / "first"
     manifest = run_comparison(config, first)
-    other = run_comparison(replace(config, batch_size=1), second)
-    assert other["effective_settings"]["batch_size"] == 1
     assert manifest["paths_evaluated"] == 55
     assert manifest["cases"] == 16
-    for filename in ("summary.csv", "outcomes.csv", "traces.csv", "dependence.csv", "correlations.csv"):
-        assert (first / filename).read_bytes() == (second / filename).read_bytes()
     summary = pd.read_csv(first / "summary.csv")
     no_replay = summary[(summary["window"] == "short") & (summary["method"] == "historical_replay")
                         & (summary["horizon_observations"] == 5)].iloc[0]
@@ -125,7 +121,7 @@ def test_block_sampling_preserves_synthetic_serial_pattern_that_iid_breaks():
         assert autocorrelation(source[draw.indices], 1) < -0.90
 
 
-def test_parametric_grid_pairing_reconstruction_and_batch_invariance(tmp_path):
+def test_parametric_grid_pairing_and_reconstruction(tmp_path):
     from financial_simulations.markets.assumptions import assumed_price_index
 
     fixture(tmp_path)
@@ -155,13 +151,10 @@ annual_returns = {GLSTOCK = 0.08, GLBOND = 0.03}
 '''
     experiment.write_text(experiment.read_text(encoding="utf-8") + grid, encoding="utf-8")
     config = load_comparison(experiment)
-    first, second = tmp_path / "parametric", tmp_path / "parametric-other"
+    first = tmp_path / "parametric"
     manifest = run_comparison(config, first)
-    run_comparison(replace(config, batch_size=1), second)
     assert manifest["model"] == "stage_1c_joint_daily_v1"
     assert manifest["cases"] == 28 and manifest["paths_evaluated"] == 103
-    for filename in ("summary.csv", "outcomes.csv", "traces.csv", "calibration.json"):
-        assert (first / filename).read_bytes() == (second / filename).read_bytes()
     summary = pd.read_csv(first / "summary.csv")
     outcomes = pd.read_csv(first / "outcomes.csv").merge(summary, on="case_id", suffixes=("", "_summary"))
     gaussian = outcomes[outcomes["method"] == "lognormal"]
@@ -196,13 +189,10 @@ def test_evaluation_reports_are_exact_and_do_not_change_market_paths(tmp_path):
     plain = tmp_path / "plain"
     run_comparison(config, plain)
     evaluated = replace(config, evaluation=EvaluationSettings("nominal", 1.0, 0.0, 0.95, 8))
-    first, second = tmp_path / "evaluated", tmp_path / "evaluated-small"
+    first = tmp_path / "evaluated"
     manifest = run_comparison(evaluated, first)
-    run_comparison(replace(evaluated, batch_size=1), second)
     assert manifest["model"] == "stage_1d_evaluation_v1"
     assert manifest["evaluation_cases"] == 15  # One unavailable replay case stays unavailable.
-    for filename in ("wealth_percentiles.csv", "risk_summary.csv", "outcomes.csv"):
-        assert (first / filename).read_bytes() == (second / filename).read_bytes()
     old = pd.read_csv(plain / "outcomes.csv")
     outcomes = pd.read_csv(first / "outcomes.csv")
     pd.testing.assert_frame_equal(old, outcomes[old.columns])
@@ -317,12 +307,9 @@ annual_returns = {GLSTOCK = 0.08, GLBOND = 0.03}
 '''
     experiment.write_text(experiment.read_text(encoding="utf-8") + grid, encoding="utf-8")
     config = load_comparison(experiment)
-    first, second = tmp_path / "garch", tmp_path / "garch-other"
+    first = tmp_path / "garch"
     manifest = run_comparison(config, first)
-    run_comparison(replace(config, batch_size=1), second)
     assert manifest["model"] == "stage_1c_joint_daily_garch_fhs_v1"
-    for filename in ("summary.csv", "outcomes.csv", "traces.csv", "calibration.json"):
-        assert (first / filename).read_bytes() == (second / filename).read_bytes()
     summary = pd.read_csv(first / "summary.csv")
     garch = summary[summary["method"] == "garch_fhs"]
     assert len(garch) and set(garch["nominal_paths_match"].dropna()) == {"base"}

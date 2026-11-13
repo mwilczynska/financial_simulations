@@ -76,7 +76,8 @@ The third alternative.
 - **Methodology:** [retirement-ledger.md](../methodology/retirement-ledger.md),
   [plan-and-app.md](../methodology/plan-and-app.md).
 - **Tests:** `tests/test_plan.py::test_worker_count_honours_requests_and_limits_the_automatic_count`,
-  `tests/test_plan.py::test_ledger_workers_run_below_normal_priority`,
+  `tests/test_plan.py::test_ledger_workers_run_below_normal_priority` (removed by
+  [ADR 0057](0057-hover-box-rows-and-a-shorter-test-suite.md)),
   `tests/test_projection.py::test_cached_cgt_dates_and_factors_match_the_rule_functions`; the full suite.
 - **Benchmark (idle machine, each run after a two-minute cool-down):** 280 paths of a 50-year plan.
 

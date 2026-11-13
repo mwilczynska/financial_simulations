@@ -356,10 +356,10 @@ def age_pension_tab(run):
             bands = charts.quantile_bands(paid, "FY ending", "Age Pension")
             full = d.full_rate.rename_axis("FY ending").reset_index(name="Full rate")
             full = full.loc[full["FY ending"].between(bands["FY ending"].min(), bands["FY ending"].max())]
-            full["Period"] = full["FY ending"].map(charts.period_label)
+            full = charts.with_period(full)
             line = alt.Chart(full).mark_line(color=INK, strokeDash=[5, 3], strokeWidth=1.5).encode(
                 x="FY ending:Q", y="Full rate:Q",
-                tooltip=[alt.Tooltip("Period:N", title="Year"),
+                tooltip=[*charts.year_tooltip(),
                          alt.Tooltip("Full rate:Q", title="Full single rate for the year", format="$,.0f")])
             draw(alt.layer(charts.band_chart(bands, "Age Pension per year, today's dollars", color=YELLOW, x="FY ending:Q"),
                            line))
@@ -411,10 +411,10 @@ def flows_tab(run):
     stats = long.groupby(["FY ending", "Flow"])["AUD"].quantile([0.25, 0.5, 0.75]).unstack().reset_index()
     stats.columns = ["FY ending", "Flow", "P25", "Median", "P75"]
     stats = stats.groupby("Flow").filter(lambda g: g[["P25", "Median", "P75"]].abs().max().max() > 1e-6)
-    stats["Period"] = stats["FY ending"].map(charts.period_label)
+    stats = charts.with_period(stats)
     net = annual.groupby("FY ending")["Net change in wealth"].quantile([0.25, 0.5, 0.75]).unstack().reset_index()
     net.columns = ["FY ending", "P25", "Median", "P75"]
-    net["Period"] = net["FY ending"].map(charts.period_label)
+    net = charts.with_period(net)
     wealth = [c for c in ("Wealth at start of year", "Wealth at end of year") if c in annual]
     if wealth:
         net = net.merge(annual.groupby("FY ending")[wealth].median().reset_index(), on="FY ending")
@@ -422,7 +422,7 @@ def flows_tab(run):
     x = alt.X("FY ending:Q", axis=charts.fy_axis(annual), scale=charts.fy_scale(annual))
     additions = (annual.groupby("FY ending")["Added to outside investments"].median().reset_index(name="AUD")
                  if "Added to outside investments" in annual else pd.DataFrame(columns=["FY ending", "AUD"]))
-    additions["Period"] = additions["FY ending"].map(charts.period_label)
+    additions = charts.with_period(additions)
     # The net change's middle half is in its tooltip, not drawn: in late years it is several times the bars' height
     # and would flatten them.
     domain = charts.flow_domain(stats, "Median", (net["Median"], additions["AUD"] if len(additions) else [0.0]))
@@ -431,7 +431,7 @@ def flows_tab(run):
                                      alt.Tooltip("P25:Q", title="25th percentile", format="$,.0f"),
                                      alt.Tooltip("P75:Q", title="75th percentile", format="$,.0f")])
     line = alt.Chart(net).mark_line(color=INK, strokeWidth=2, point=alt.OverlayMarkDef(color=INK, size=30)).encode(
-        x=x, y="Median:Q", tooltip=[alt.Tooltip("Period:N", title="Year"),
+        x=x, y="Median:Q", tooltip=[*charts.year_tooltip(),
                                     *[alt.Tooltip(f"{c}:Q", title="Median wealth at start", format="$,.0f")
                                       for c in wealth if c.endswith("start of year")],
                                     alt.Tooltip("Median:Q", title="Median net change in wealth", format="$,.0f"),

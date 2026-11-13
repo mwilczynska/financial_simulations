@@ -375,7 +375,7 @@ def path_moves(run, d, result, daily, marks):
             if part.empty:
                 st.caption(f"{account}: no transfers on this path.")
                 continue
-            part["Period"] = part["FY ending"].map(charts.period_label)
+            part = charts.with_period(part)
             flows = sorted(part["Flow"].unique())
             name = "path_moves_" + account.split()[0].lower()
             st.markdown(f"**{account}**")
@@ -385,7 +385,7 @@ def path_moves(run, d, result, daily, marks):
                 x=x, y=alt.Y("sum(AUD):Q", title="Today's dollars", axis=charts.money_axis()),
                 color=alt.Color("Flow:N", scale=alt.Scale(domain=flows, range=list(SERIES[:len(flows)])),
                                 legend=alt.Legend(symbolType="square")),
-                tooltip=[alt.Tooltip("Period:N", title="Year"), "Flow:N", alt.Tooltip("AUD:Q", format="$,.0f")]),
+                tooltip=[*charts.year_tooltip(), "Flow:N", alt.Tooltip("AUD:Q", format="$,.0f")]),
                 "Flow", flows, state, name)
             draw(charts.with_milestones(alt.layer(chart, charts.zero_rule()).properties(height=SHORT), marks, "Position:Q"))
         explain("Outside investments receive your leftover pay and are sold to pay spending and tax; super receives "

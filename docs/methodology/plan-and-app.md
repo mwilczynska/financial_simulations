@@ -553,6 +553,9 @@ statistics equal the same path's row in the portfolio analysis's outcomes; ident
 
 The results were first laid out as five sections on one page, each chart followed by an explanation.
 Financial years are written "Jul 2026 – Jun 2027" in tables and tooltips,
+with the age at that 30 June on its own tooltip row. A tooltip shows each
+figure's name and value on one line
+([ADR 0057](../decisions/0057-hover-box-rows-and-a-shorter-test-suite.md)),
 and axes are titled "Year ending 30 June". Dashed vertical lines mark
 retirement, when super becomes accessible and when the pension starts on
 time and financial-year charts; `milestones` in `retirement/flows.py`

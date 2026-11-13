@@ -83,6 +83,15 @@ CSS = f"""
   [data-testid="stExpander"] details {{ background: {SURFACE}; }}
   [data-baseweb="tab-list"] {{ gap: 0.4rem; }}
   [data-testid="stVegaLiteChart"] {{ width: 100%; }}
+
+  /* A chart's hover box: Streamlit stacks each figure's name above its value, which makes a long box that runs off
+     the screen. Name and value share a line here, so the box is half the height. */
+  #vg-tooltip-element.vg-tooltip {{ max-width: 34rem; }}
+  #vg-tooltip-element.vg-tooltip td.key, #vg-tooltip-element.vg-tooltip td.value {{
+    display: table-cell; width: auto; max-width: none; white-space: nowrap; font-size: 0.78rem; line-height: 1.25;
+    padding-top: 1px; padding-bottom: 1px; vertical-align: baseline; }}
+  #vg-tooltip-element.vg-tooltip td.key {{ text-align: left; padding-right: 0.9rem; }}
+  #vg-tooltip-element.vg-tooltip td.value {{ text-align: right; font-variant-numeric: tabular-nums; }}
 </style>
 """
 
