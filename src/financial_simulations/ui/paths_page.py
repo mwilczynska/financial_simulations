@@ -76,7 +76,10 @@ def group_view(run, d, members, label):
         st.caption(f"Only {plural(len(members), 'path')} in this group, so its figures rest on very few market sequences. "
                    "Raise *Daily retirement-ledger paths* (Plan, Assumptions) for a steadier picture.")
     a, b, c, e = st.columns(4)
-    a.metric("Wealth at retirement (median)", compact(float(group["Wealth at retirement"].median())))
+    spendable = "Spendable wealth at retirement" if "Spendable wealth at retirement" in group else "Wealth at retirement"
+    a.metric("Spendable wealth at retirement (median)", compact(float(group[spendable].median())),
+             help="Cash, investments and super on the retirement date, less any home loan; it excludes an investment "
+                  f"property's equity. Median total wealth: {compact(float(group['Wealth at retirement'].median()))}.")
     b.metric("Ending wealth (median)", compact(float(group["Ending wealth"].median())))
     c.metric("Average spending per retired year", compact(float(group["Average retired-year spending"].median())),
              help="Each path's spending paid, averaged over its full retired financial years; the group's median path.")
@@ -435,8 +438,10 @@ def path_view(run, d, path, ranks):
     outcome = d.outcomes.set_index("Path").loc[path]
     st.subheader(f"Path {path} · {outcome['Outcome'].lower()}")
     a, b, c, e = st.columns(4)
-    a.metric("Wealth at retirement", compact(outcome["Wealth at retirement"]),
-             help="Total wealth on your retirement date.")
+    a.metric("Spendable wealth at retirement", compact(outcome.get("Spendable wealth at retirement",
+                                                                   outcome["Wealth at retirement"])),
+             help="Cash, investments and super on your retirement date, less any home loan; it excludes an investment "
+                  f"property's equity. Total wealth: {compact(outcome['Wealth at retirement'])}.")
     b.metric(f"Wealth at {daily.index[-1].date():%B %Y}", compact(daily["total"].iloc[-1]),
              help=f"The {ordinal(ranks[path])} percentile of ending wealth among calculated paths.")
     c.metric("Average spending per retired year", compact(outcome["Average retired-year spending"]),
