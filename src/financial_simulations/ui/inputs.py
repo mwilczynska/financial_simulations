@@ -6,7 +6,7 @@ import os
 
 import streamlit as st
 
-from financial_simulations.data.plan_markets import CUSTOM_TICKERS, TICKERS
+from financial_simulations.data.plan_markets import CUSTOM_TICKERS, DESCRIPTIONS, FUND_TICKERS, TICKERS
 from financial_simulations.retirement.paths import CPU_HEADROOM, automatic_workers
 from financial_simulations.retirement.ledger import Mortgage
 from financial_simulations.retirement.plan import RENT_KEPT, sacrifice_per_year
@@ -351,6 +351,36 @@ def work_summary(plan):
                else "salary stays the same dollar amount."), "How saving outside super works")
 
 
+def ticker_guide():
+    """What each ticker is, and why the list is fixed, as Markdown."""
+    def table(tickers):
+        return "| Ticker | What it is |\n| --- | --- |\n" + "\n".join(f"| {t} | {DESCRIPTIONS[t]} |" for t in tickers)
+    return f"""
+A ticker is one investment the portfolios can hold. Each has a history of **daily total returns** (price change plus
+distributions, after the fund's fees), and the simulation resamples those days. All histories are in US dollars and
+are used as if they were Australian-dollar returns.
+
+**Long-history datasets** run from 1970. Where a fund exists they use its observed returns from its first day and a
+documented model before that, so they cover far more market conditions than the fund alone.
+
+{table(CUSTOM_TICKERS)}
+
+**Fund histories** are the observed returns of one US-listed fund, from its first trading day.
+
+{table(FUND_TICKERS)}
+
+**Adding a ticker.** The list is fixed: typing another code does not work, because the app never downloads prices. It
+reads histories that were built and checked in the companion `financial_datasets` project. Any fund with a daily
+history of prices and distributions can be added there and then listed here; this needs a change to both projects.
+
+**ASX tickers** (VAS, VGS and so on) are not available yet. Every fund above trades on a US exchange in US dollars,
+and the data build rejects quotes in any other currency. On the price source an ASX code carries an `.AX` suffix
+(`VAS.AX`), while a US code has none (`VT`), which keeps the two apart when the same letters are used on both
+exchanges. Adding them also needs a decision on mixing Australian-dollar and US-dollar returns in one portfolio, and
+on the two exchanges' different trading days.
+"""
+
+
 def inputs_investments(plan):
     with card("tickers"):
         st.subheader("Tickers")
@@ -376,6 +406,7 @@ def inputs_investments(plan):
                              "is not an ETF tax statement or an extra return.")})
             except ValueError as exc:
                 st.warning(str(exc))
+        explain(ticker_guide(), "What these tickers are, and adding others")
     left, right = st.columns(2, gap="medium")
     with left:
         with card("outside"):

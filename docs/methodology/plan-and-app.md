@@ -45,6 +45,22 @@ dates in `manifest.json`. `FINANCIAL_DATASETS_PROCESSED` can override the
 processed-data location. There is no network download or arbitrary ticker
 lookup.
 
+**The catalogue is closed.** `ticker_name` refuses any code outside the table,
+so a plan cannot name an arbitrary ticker. Adding one means building and
+validating its daily history in `financial_datasets` and then listing it in
+`plan_markets.py` with a one-line description in `DESCRIPTIONS`; the app's
+Tickers card shows those descriptions and this rule under "What these tickers
+are, and adding others". Every fund ticker is US-listed and quoted in USD.
+ASX-listed funds are not supported: the upstream fund build requests the bare
+symbol from the vendor chart and rejects any quote whose currency is not USD,
+and `MarketPath` carries one currency for all columns. On that vendor an ASX
+code is the symbol with an `.AX` suffix (`VAS.AX`) and a US code has none,
+which is how the two would be told apart. Supporting them needs, at least, a
+currency per ticker upstream, a rule for combining AUD and USD series (the
+model currently reads USD returns as AUD returns), and a view on the
+intersection of ASX and US trading dates, whose same-dated closes are about
+14 to 16 hours apart. None of this is implemented.
+
 Custom pre-fund segments can be reconstructed or modelled. Fund ticker
 histories start at available vendor inception. For any selection, the return
 sample uses the **intersection of recorded dates**. A step across a missing

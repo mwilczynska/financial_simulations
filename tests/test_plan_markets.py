@@ -19,6 +19,18 @@ def test_custom_ticker_full_sample_and_common_dates(processed_fixture):
         ticker_name("SPY")
 
 
+def test_every_ticker_is_described_and_asx_codes_are_refused():
+    from financial_simulations.data.plan_markets import DESCRIPTIONS, TICKERS
+    from financial_simulations.ui.inputs import ticker_guide
+
+    assert set(DESCRIPTIONS) == set(TICKERS)
+    guide = ticker_guide()
+    assert all(f"| {ticker} | {DESCRIPTIONS[ticker]} |" in guide for ticker in TICKERS)
+    for code in ("VAS", "VAS.AX"):
+        with pytest.raises(ValueError, match="unavailable"):
+            ticker_name(code)
+
+
 def test_observed_fund_ticker_uses_its_own_shorter_history(processed_fixture):
     market = load_plan_markets(["BND", "USLCAP3x"], processed_fixture)
     row = market.asset_summary.set_index("Ticker").loc["BND"]
