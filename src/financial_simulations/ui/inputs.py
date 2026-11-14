@@ -184,7 +184,8 @@ def home_inputs(plan):
 def dollars(amount, escape=False):
     """Whole dollars with a true minus sign; ``escape`` for Markdown, where a bare $ starts maths."""
     sign = "−" if amount < -0.5 else ""
-    return f"{sign}{'\\$' if escape else '$'}{abs(amount):,.0f}"
+    symbol = "\\$" if escape else "$"  # outside the f-string: Python 3.11 allows no backslash inside one
+    return f"{sign}{symbol}{abs(amount):,.0f}"
 
 
 def property_first_year(estate):

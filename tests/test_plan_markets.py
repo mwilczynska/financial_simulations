@@ -20,6 +20,7 @@ def test_custom_ticker_full_sample_and_common_dates(processed_fixture):
 
 
 def test_every_ticker_is_described_and_asx_codes_are_refused():
+    pytest.importorskip("streamlit")  # the guide lives with the app's inputs
     from financial_simulations.data.plan_markets import DESCRIPTIONS, TICKERS
     from financial_simulations.ui.inputs import ticker_guide
 
