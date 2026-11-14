@@ -432,7 +432,9 @@ calculations behind every figure are unchanged, so the section-by-section descri
 where it says "section", read the page in this table. ADR 0047 lists the charts that were removed (their figures
 remain in tables) and two that changed: the four taxes are drawn as one *Tax* flow in money in and out charts
 (`flows.fold_taxes`), and the Age Pension chart shows only the paths paid that year, with the full single rate as a
-line. Colours for the app and the PNG plots come from `reporting/palette.py`.
+line. Colours for the app and the PNG plots come from `reporting/palette.py`:
+the reference hues for strategies and outcome tiers (ADR 0047) and a bold set for accounts, portfolios, tickers and
+money flows ([ADR 0059](../decisions/0059-bold-colours-for-accounts-portfolios-and-flows.md)).
 
 ### Method page
 

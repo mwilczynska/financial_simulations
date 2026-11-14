@@ -15,8 +15,8 @@ import streamlit as st
 
 from financial_simulations.reporting.palette import (ACCOUNT_COLOURS, MORTGAGE_COLOUR, MOVED_HOME_COLOUR, PROPERTY_COLOUR,
                                                      PROPERTY_LOAN_COLOUR, ADDED_COLOUR, AXIS, BLUE, FLOW_COLOURS, INK,
-                                                     INK_SECONDARY, MUTED, NET_COLOUR, PORTFOLIO_COLOURS, SERIES, SURFACE,
-                                                     TIER_COLOURS)
+                                                     INK_SECONDARY, MUTED, NET_COLOUR, PORTFOLIO_COLOURS, SURFACE,
+                                                     TICKER_COLOURS, TIER_COLOURS)
 from financial_simulations.retirement.outcomes import TIERS
 from financial_simulations.rules.au.superannuation import age_on
 from financial_simulations.ui.state import compact
@@ -681,7 +681,7 @@ def path_story(growth, kinds, colours, daily, household, additions, marks, state
 
 def allocation_pie(weights, tickers):
     """Donut of one portfolio's weights: percentages on the slices, fixed colours per ticker."""
-    colour = {t: SERIES[i % len(SERIES)] for i, t in enumerate(tickers)}
+    colour = ticker_colours(tickers)
     labels = weights["Label"].tolist()
     scale = alt.Scale(domain=labels, range=[colour[t] for t in weights["Ticker"]])
     base = alt.Chart(weights).encode(theta=alt.Theta("Weight:Q", stack=True), order=alt.Order("Weight:Q", sort="descending"))
@@ -695,7 +695,7 @@ def allocation_pie(weights, tickers):
 
 
 def ticker_colours(tickers):
-    return {t: SERIES[i % len(SERIES)] for i, t in enumerate(tickers)}
+    return {t: TICKER_COLOURS[i % len(TICKER_COLOURS)] for i, t in enumerate(tickers)}
 
 
 def overlay_histogram(frame, field, title, *, series, log=False, percent=True, height=SHORT):

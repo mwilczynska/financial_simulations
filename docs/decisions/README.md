@@ -64,6 +64,7 @@ Decision records preserve why Financial Simulations makes a material modelling o
 | [0056](0056-stacked-path-chart-speed.md) | 2026-11-13 | Accepted; implemented and tested | The stacked path chart on canvas with a hover strip per month instead of a nearest-point search, a smaller specification, and the specification kept per view |
 | [0057](0057-hover-box-rows-and-a-shorter-test-suite.md) | 2026-11-13 | Accepted; implemented and tested | Hover boxes with name and value on one line and the age on its own row; slow tests removed, merged or made cheaper where the risk did not justify the time |
 | [0058](0058-method-page-as-a-technical-summary.md) | 2026-11-13 | Accepted; implemented and tested | The Method page as a technical summary in nine tabs: the model's equations with the run's own figures, the rules carried into later years with their values, and the main assumptions with the direction of each one's effect |
+| [0059](0059-bold-colours-for-accounts-portfolios-and-flows.md) | 2026-11-14 | Accepted; implemented and tested | A bold set of hues for accounts, portfolios, tickers and money flows, chosen by the user; outside super blue, super purple; two shades adjusted for colour-vision separation |
 
 ## When to write a record
 

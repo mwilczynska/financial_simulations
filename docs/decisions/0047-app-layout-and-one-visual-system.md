@@ -5,6 +5,8 @@ Date: 2026-11-10.
 Status: accepted; implemented and tested. Supersedes the page layout in
 [ADR 0016](0016-plan-file-and-browser-app.md) and the strategy tabs in
 [ADR 0046](0046-one-tab-per-strategy.md); the calculations behind every figure are unchanged.
+The account, portfolio, ticker and flow colours are superseded by
+[ADR 0059](0059-bold-colours-for-accounts-portfolios-and-flows.md).
 
 ## Context
 

@@ -200,13 +200,13 @@ def write_path_markets_plot(output: Path, plan, growth, stats, path):
     The same lines and figures as the top panel and table of the app's single-path view (ADR 0049). ``growth`` and
     ``stats`` come from ``path_markets``.
     """
-    from financial_simulations.reporting.palette import INK, INK_SECONDARY, MUTED, NEUTRAL, SERIES
+    from financial_simulations.reporting.palette import TICKER_COLOURS, portfolio_line_colours
     from financial_simulations.retirement.path_markets import PORTFOLIO, real_growth
 
     real = real_growth(growth, plan["assumptions"]["cpi_annual"])
-    tickers = {t: SERIES[i % len(SERIES)] for i, t in enumerate(plan["assets"])}
+    tickers = {t: TICKER_COLOURS[i % len(TICKER_COLOURS)] for i, t in enumerate(plan["assets"])}
     # Three portfolios when a combined one leads the two entered.
-    portfolio_colours = iter((INK, INK_SECONDARY, NEUTRAL) if (stats["Kind"] == PORTFOLIO).sum() > 2 else (INK, MUTED))
+    portfolio_colours = iter(portfolio_line_colours((stats["Kind"] == PORTFOLIO).sum()))
     with matplotlib.rc_context({"font.family": "DejaVu Sans"}):
         fig, ax = _figure("Markets on the path nearest median ending wealth",
                           f"Path {path}: growth of $1 invested on the first day, today's dollars, log scale\n"

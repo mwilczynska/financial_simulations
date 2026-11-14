@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from financial_simulations.reporting.palette import INK, INK_SECONDARY, MUTED, NEUTRAL, SERIES
+from financial_simulations.reporting.palette import BOLD_SERIES, portfolio_line_colours
 from financial_simulations.retirement.flows import account_flows, fold_taxes, household_flows
 from financial_simulations.retirement.outcomes import TIERS, ending_percentiles
 from financial_simulations.retirement.path_markets import COMBINED_PORTFOLIO, PORTFOLIO, group_markets, path_markets, real_growth
@@ -124,11 +124,11 @@ def group_view(run, d, members, label):
 
 
 def story_colours(run, stats):
-    """Each market series' kind and colour: the portfolios dark, each ticker its colour from the Markets page."""
+    """Each market series' kind and colour: the portfolios navy, blue and purple, each ticker its Markets-page colour."""
     kinds = dict(zip(stats["Series"], stats["Kind"]))
     tickers = charts.ticker_colours(run.plan["assets"])
     count = sum(kind == PORTFOLIO for kind in kinds.values())  # three when a combined portfolio leads
-    portfolio_colours = iter((INK, INK_SECONDARY, NEUTRAL) if count > 2 else (INK, MUTED))
+    portfolio_colours = iter(portfolio_line_colours(count))
     return kinds, {name: next(portfolio_colours) if kind == PORTFOLIO else tickers[name] for name, kind in kinds.items()}
 
 
@@ -383,7 +383,7 @@ def path_moves(run, d, result, daily, marks):
             # A fixed colour domain keeps hidden flows in the legend so they can be shown again.
             chart, _ = charts.hideable(alt.Chart(part).mark_bar(size=12, stroke="#ffffff", strokeWidth=0.6).encode(
                 x=x, y=alt.Y("sum(AUD):Q", title="Today's dollars", axis=charts.money_axis()),
-                color=alt.Color("Flow:N", scale=alt.Scale(domain=flows, range=list(SERIES[:len(flows)])),
+                color=alt.Color("Flow:N", scale=alt.Scale(domain=flows, range=list(BOLD_SERIES[:len(flows)])),
                                 legend=alt.Legend(symbolType="square")),
                 tooltip=[*charts.year_tooltip(), "Flow:N", alt.Tooltip("AUD:Q", format="$,.0f")]),
                 "Flow", flows, state, name)
