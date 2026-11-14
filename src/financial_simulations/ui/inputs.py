@@ -6,7 +6,8 @@ import os
 
 import streamlit as st
 
-from financial_simulations.data.plan_markets import CUSTOM_TICKERS, DESCRIPTIONS, FUND_TICKERS, TICKERS
+from financial_simulations.data.plan_markets import CUSTOM_TICKERS, FUND_TICKERS, TICKERS, describe, native_currency
+from financial_simulations.data.ticker_store import download, market, stored_symbols
 from financial_simulations.retirement.paths import CPU_HEADROOM, automatic_workers
 from financial_simulations.retirement.ledger import Mortgage
 from financial_simulations.retirement.plan import RENT_KEPT, sacrifice_per_year
@@ -352,62 +353,148 @@ def work_summary(plan):
                else "salary stays the same dollar amount."), "How saving outside super works")
 
 
-def ticker_guide():
-    """What each ticker is, and why the list is fixed, as Markdown."""
+CURRENCY_LABELS = {"AUD": "Australian dollars", "USD": "US dollars"}
+
+
+def ticker_kind(ticker):
+    if ticker in CUSTOM_TICKERS:
+        return "long-history dataset"
+    return "fund history" if ticker in FUND_TICKERS else f"downloaded, {market(ticker)[0]}"
+
+
+def ticker_guide(downloaded=()):
+    """What each ticker is, how returns are measured and how to add a ticker, as Markdown."""
     def table(tickers):
-        return "| Ticker | What it is |\n| --- | --- |\n" + "\n".join(f"| {t} | {DESCRIPTIONS[t]} |" for t in tickers)
+        return "| Ticker | What it is |\n| --- | --- |\n" + "\n".join(f"| {t} | {describe(t)} |" for t in tickers)
+    own = (f"**Downloaded tickers** on this computer.\n\n{table(downloaded)}" if downloaded
+           else "**Downloaded tickers.** None yet.")
     return f"""
 A ticker is one investment the portfolios can hold. Each has a history of **daily total returns** (price change plus
-distributions, after the fund's fees), and the simulation resamples those days. All histories are in US dollars and
-are used as if they were Australian-dollar returns.
+distributions, after any fund fees), and the simulation resamples those days.
 
-**Long-history datasets** run from 1970. Where a fund exists they use its observed returns from its first day and a
-documented model before that, so they cover far more market conditions than the fund alone.
+**Currency.** Returns are measured in the currency chosen above. In Australian dollars, a US-dollar history is
+converted with the daily AUDUSD exchange rate, so it includes currency movements, as an unhedged holding does. In US
+dollars, an Australian-dollar history is converted the other way, and the US-dollar returns are applied to your
+Australian-dollar balances as they stand, which leaves currency movements out.
+
+**Long-history datasets** run from 1970, in US dollars. Where a fund exists they use its observed returns from its
+first day and a documented model before that, so they cover far more market conditions than the fund alone.
 
 {table(CUSTOM_TICKERS)}
 
-**Fund histories** are the observed returns of one US-listed fund, from its first trading day.
+**Fund histories** are the observed returns of one US-listed fund, in US dollars, from its first trading day.
 
 {table(FUND_TICKERS)}
 
-**Adding a ticker.** The list is fixed: typing another code does not work, because the app never downloads prices. It
-reads histories that were built and checked in the companion `financial_datasets` project. Any fund with a daily
-history of prices and distributions can be added there and then listed here; this needs a change to both projects.
+{own}
 
-**ASX tickers** (VAS, VGS and so on) are not available yet. Every fund above trades on a US exchange in US dollars,
-and the data build rejects quotes in any other currency. On the price source an ASX code carries an `.AX` suffix
-(`VAS.AX`), while a US code has none (`VT`), which keeps the two apart when the same letters are used on both
-exchanges. Adding them also needs a decision on mixing Australian-dollar and US-dollar returns in one portfolio, and
-on the two exchanges' different trading days.
+**Adding a ticker.** Any share or fund on the ASX or a US exchange can be added. Type it with its market after a dot,
+`VAS.AX` for the ASX or `SPY.US` for a US exchange (NYSE, Nasdaq and the others), and press Download. The suffix is
+how the two markets are told apart, and it keeps a US share such as `STT.US` apart from the dataset called `STT`. The
+download takes the longest history Yahoo Finance has, checks it, and stores it on this computer; the table above shows
+the first date it found. Download again to bring a ticker up to date. Runs only read the stored copy.
+
+**What to check on a downloaded ticker.** Its history is vendor data and has not been reconciled with the issuer's
+records as the listed funds have. The first date can be later than the fund's listing. Distribution records can be
+missing in early years, which lowers the income share but not the total return.
+
+**The sampled window.** Whole days are drawn across all selected tickers together, so the simulation uses the dates
+every one of them has. A ticker with a short history shortens the window for the whole plan. ASX and US exchanges
+also close on different holidays, and the ASX closes 14 to 16 hours before the US, so the same-day link between the
+two markets is understated.
 """
+
+
+def download_ticker():
+    """The Download button: fetch and store one ticker, then select it."""
+    typed = st.session_state.get(key("new_ticker"), "")
+    try:
+        meta = download(typed)
+    except ValueError as exc:
+        st.session_state.ticker_message = ("error", str(exc))
+        return
+    st.session_state.pop("market_cache", None)
+    chosen = list(st.session_state.get(key("tickers"), []))
+    if meta["symbol"] not in chosen:
+        st.session_state[key("tickers")] = chosen + [meta["symbol"]]
+    st.session_state[key("new_ticker")] = ""
+    odd = sum(count for status, count in meta["status_counts"].items() if "adjustment" in status)
+    st.session_state.ticker_message = ("success", f"Downloaded {meta['symbol']}: {meta['name'] or meta['kind']}, "
+                                       f"{meta['currency']}, {meta['first']} to {meta['last']} ({meta['rows']:,} days)."
+                                       + (f" {odd} days have a price adjustment that does not match a recorded "
+                                          "distribution." if odd else ""))
 
 
 def inputs_investments(plan):
     with card("tickers"):
         st.subheader("Tickers")
-        plan["assets"] = st.multiselect(
-            "Tickers available to both portfolios", TICKERS, default=plan["assets"], key=key("tickers"),
-            format_func=lambda ticker: f"{ticker} · {'long-history dataset' if ticker in CUSTOM_TICKERS else 'fund history'}",
-            help="Custom series extend back to 1970; fund tickers begin at their observed inception. Return and "
-                 "cash-contribution estimates come from local processed data.")
-        names = plan["assets"]
+        downloaded = stored_symbols()
+        options = [*TICKERS, *downloaded, *(t for t in plan["assets"] if t not in TICKERS and t not in downloaded)]
+        chosen, measured = st.columns([3, 1], gap="medium")
+        with chosen:
+            plan["assets"] = st.multiselect(
+                "Tickers available to both portfolios", options, default=plan["assets"], key=key("tickers"),
+                format_func=lambda ticker: f"{ticker} · {ticker_kind(ticker)}",
+                help="Long-history datasets extend back to 1970; fund and downloaded tickers begin at their first "
+                     "recorded day.")
+        with measured:
+            plan["market"]["currency"] = st.radio(
+                "Measure returns in", list(CURRENCY_LABELS), index=list(CURRENCY_LABELS).index(plan["market"]["currency"]),
+                format_func=CURRENCY_LABELS.get, key=key("currency"),
+                help="Australian dollars converts US-dollar histories with the daily AUDUSD rate, so results include "
+                     "currency movements. US dollars leaves them out and converts Australian-dollar histories instead.")
+        names, currency = plan["assets"], plan["market"]["currency"]
         if names:
             try:
-                preview = cached_market(tuple(names))
-                summary = preview.asset_summary[["Ticker", "First", "Last", "Full-sample CAGR", "Cash contribution proxy"]].copy()
+                preview = cached_market(tuple(names), currency)
+                summary = preview.asset_summary[["Ticker", "Quoted in", "First", "Last", "Full-sample CAGR",
+                                                 "Cash contribution proxy"]].copy()
                 summary["Coverage"] = summary["First"].astype(str) + "–" + summary["Last"].astype(str)
-                summary = summary[["Ticker", "Coverage", "Full-sample CAGR", "Cash contribution proxy"]]
+                summary = summary[["Ticker", "Quoted in", "Coverage", "Full-sample CAGR", "Cash contribution proxy"]]
                 summary["Full-sample CAGR"] *= 100
                 summary["Cash contribution proxy"] *= 100
                 st.dataframe(summary, width="stretch", hide_index=True, column_config={
-                    "Full-sample CAGR": st.column_config.NumberColumn("Full-sample CAGR %", format="%.2f"),
+                    "Full-sample CAGR": st.column_config.NumberColumn(f"Full-sample CAGR % ({currency})", format="%.2f"),
                     "Cash contribution proxy": st.column_config.NumberColumn(
                         "Cash contribution proxy %/yr", format="%.2f",
                         help="A historical planning proxy that splits total return into income and price for tax. It "
                              "is not an ETF tax statement or an extra return.")})
+                shared = preview.manifest
+                years = (date.fromisoformat(shared["common_last"]) - date.fromisoformat(shared["common_first"])).days / 365.25
+                latest = preview.asset_summary.sort_values("First").iloc[-1]["Ticker"]
+                window = (f"The simulation samples the days all of these share: {shared['common_first']} to "
+                          f"{shared['common_last']} ({shared['common_returns']:,} days, {years:.0f} years)"
+                          + (f", set by {latest}." if preview.asset_summary["First"].nunique() > 1 else "."))
+                if years < 15:
+                    st.warning(window + " A short window covers few market conditions, so results lean heavily on "
+                                        "those years.")
+                else:
+                    st.caption(window)
             except ValueError as exc:
                 st.warning(str(exc))
-        explain(ticker_guide(), "What these tickers are, and adding others")
+        local = [t for t in names if native_currency(t) == "AUD"]
+        franking = dict(plan.get("franking", {}))
+        if local:
+            st.markdown("**Franking**")
+            columns = st.columns(4)
+            for i, ticker in enumerate(local):
+                with columns[i % 4]:
+                    franking[ticker] = percent(
+                        f"{ticker} franked share %", franking.get(ticker, 0.0), f"franked_{ticker}", low=0, high=100,
+                        step=5, help="The share of this ticker's distributions that is franked, from its distribution "
+                                     "statements. Franking credits at the 30% company rate are added to your tax "
+                                     "return and super's. Leave at 0 if unsure.")
+        plan["franking"] = {t: v for t, v in franking.items() if t in names and v > 0}
+        add, press = st.columns([3, 1], vertical_alignment="bottom")
+        add.text_input("Add a ticker by download", key=key("new_ticker"), placeholder="VAS.AX or SPY.US",
+                       help="Write the ticker with its market: .AX for the ASX, .US for a US exchange. Downloading a "
+                            "ticker you already have brings it up to date.")
+        press.button("Download", on_click=download_ticker, icon=":material/download:", width="stretch")
+        level, message = st.session_state.pop("ticker_message", (None, None))
+        if level:
+            (st.success if level == "success" else st.error)(message)
+        explain(ticker_guide([t for t in options if t not in TICKERS and t in downloaded]),
+                "What these tickers are, and adding others")
     left, right = st.columns(2, gap="medium")
     with left:
         with card("outside"):

@@ -51,7 +51,7 @@ def run_with_progress(valid):
         bar.progress(min(max(fraction, 0.0), 1.0), text=f"{message} · {fraction:.0%}")
 
     try:
-        market = cached_market(tuple(valid["assets"]))
+        market = cached_market(tuple(valid["assets"]), valid["market"]["currency"])
         return run_plan(valid, market=market, progress=progress, workers=calculation_cores())
     finally:
         bar.empty()

@@ -80,7 +80,11 @@ marked as enacted, projected or assumed.
 - **One person.** Couples are planned, not built.
 - **US-dollar returns stand in for Australian-dollar returns.** Exchange rates and Australian distribution
   components such as franking are not modelled yet.
-- **A fixed list of tickers.** They are US-listed funds and custom long histories; ASX funds are not supported.
+- **Downloaded tickers are vendor data.** Any ASX or US-listed ticker can be added (`VAS.AX`, `SPY.US`) with
+  `pip install -e ".[download]"`, but its history comes from Yahoo Finance unreconciled, and a short history
+  shortens the period every result is drawn from.
+- **Currency conversion is approximate day to day.** Returns can be measured in Australian or US dollars; the
+  exchange rate is fixed hours before the US close, which overstates converted daily volatility.
 - **Constant inflation and wage growth**, set by you.
 - **The future is drawn from the past.** Resampling cannot produce markets unlike any in the sample.
 

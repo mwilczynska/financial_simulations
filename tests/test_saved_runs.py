@@ -36,7 +36,7 @@ def same_ledger(a, b):
 @pytest.fixture(scope="module")
 def compared_run(processed_fixture):
     plan = compared_plan()
-    return run_plan(plan, None, market=load_plan_markets(plan["assets"], processed_fixture), workers=1)
+    return run_plan(plan, None, market=load_plan_markets(plan["assets"], processed_fixture, currency="AUD"), workers=1)
 
 
 def test_saved_run_opens_with_identical_results_for_every_strategy(tmp_path, compared_run):

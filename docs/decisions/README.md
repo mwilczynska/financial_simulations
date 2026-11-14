@@ -66,6 +66,7 @@ Decision records preserve why Financial Simulations makes a material modelling o
 | [0058](0058-method-page-as-a-technical-summary.md) | 2026-11-13 | Accepted; implemented and tested | The Method page as a technical summary in nine tabs: the model's equations with the run's own figures, the rules carried into later years with their values, and the main assumptions with the direction of each one's effect |
 | [0059](0059-bold-colours-for-accounts-portfolios-and-flows.md) | 2026-11-14 | Accepted; implemented and tested | A bold set of hues for accounts, portfolios, tickers and money flows, chosen by the user; outside super blue, super purple; two shades adjusted for colour-vision separation |
 | [0060](0060-largest-fall-in-wealth-before-loans.md) | 2026-11-14 | Accepted; implemented and tested | The largest fall in wealth is measured on wealth before loans, so a plan whose home loan exceeds its savings no longer reports falls of more than 100% |
+| [0061](0061-downloaded-tickers-and-return-currency.md) | 2026-11-14 | Accepted; implemented and tested | Any ASX or US-listed ticker can be downloaded and stored locally, written `VAS.AX` or `SPY.US`; the plan measures returns in AUD or USD and converts with AUDUSD spot; older files load as USD; optional franking share per ticker |
 
 ## When to write a record
 

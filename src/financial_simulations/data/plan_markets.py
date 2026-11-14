@@ -1,8 +1,10 @@
 """Local processed ticker histories for the retirement planner.
 
 Custom tickers match the investment tracker. Fund tickers use the companion
-distribution project's observed vendor total-return histories. Nothing is
-downloaded, and the USD histories are never described as observed AUD returns.
+distribution project's observed vendor total-return histories. Downloaded
+tickers (``VAS.AX``, ``SPY.US``) are read from the local ticker store; nothing
+is fetched here. Returns are measured in one currency, AUD or USD, and a
+history quoted in the other is converted with the AUDUSD spot rate.
 """
 
 from dataclasses import dataclass
@@ -15,6 +17,7 @@ import numpy as np
 import pandas as pd
 
 from financial_simulations.data.registry import resolve_asset
+from financial_simulations.data.ticker_store import is_symbol, market, store_root, stored_meta, symbol_name
 from financial_simulations.markets.path import MarketPath
 
 
@@ -67,14 +70,29 @@ _LOOKUP = {ticker.upper(): ticker for ticker in TICKERS}
 _LOOKUP.update({"CMDTY": "COMM", "GOLD2X": "GOLDPM2x"})
 
 
+CURRENCIES = ("AUD", "USD")
+FX_FILE = "fx_aud_usd.csv"  # US dollars per Australian dollar
+
+
 def ticker_name(value: str) -> str:
-    """Resolve a supported local ticker, retaining the tracker's display spelling."""
+    """A listed ticker in the tracker's spelling, or a downloaded ticker with its market suffix."""
     if not isinstance(value, str):
         raise ValueError("Ticker must be text.")
-    try:
-        return _LOOKUP[value.strip().upper()]
-    except KeyError as exc:
-        raise ValueError(f"Ticker {value!r} is unavailable in the local processed datasets.") from exc
+    listed = _LOOKUP.get(value.strip().upper())
+    return listed if listed is not None else symbol_name(value)
+
+
+def native_currency(ticker: str) -> str:
+    """The currency a ticker's history is quoted in: every listed ticker is in US dollars."""
+    return market(ticker)[1] if is_symbol(ticker) else "USD"
+
+
+def describe(ticker: str, ticker_root: str | Path | None = None) -> str:
+    """One line on what a ticker is; a downloaded ticker gives the vendor's name and its market."""
+    if ticker in DESCRIPTIONS:
+        return DESCRIPTIONS[ticker]
+    meta = stored_meta(ticker, ticker_root)
+    return f"{meta['name'] or meta['kind'] or 'Downloaded history'} ({meta['exchange'] or meta['market']}, {meta['currency']})"
 
 
 def processed_root() -> Path:
@@ -157,34 +175,85 @@ def _fund(ticker: str, frame: pd.DataFrame):
     return dates, levels, cash, "observed fund vendor history", part["Cash Status"].value_counts().to_dict()
 
 
-def load_plan_markets(tickers, root: str | Path | None = None) -> PlanMarketData:
-    """Load full ticker histories and their joint common-date return matrix.
+def plan_markets(plan: dict) -> PlanMarketData:
+    """The histories a normalized plan selects, in the currency it measures returns in."""
+    return load_plan_markets(plan["assets"], currency=plan["market"]["currency"])
+
+
+def _stored(ticker: str, ticker_root: Path, hashes: dict):
+    meta = stored_meta(ticker, ticker_root)
+    raw = (ticker_root / f"{ticker}.csv").read_bytes()
+    digest = sha256(raw).hexdigest()
+    if digest != meta["sha256"]:
+        raise ValueError(f"{ticker}: the stored history does not match its recorded hash; download it again.")
+    hashes[f"tickers/{ticker}.csv"] = digest
+    frame = pd.read_csv(BytesIO(raw))
+    dates = _dates(frame["Date"], ticker)
+    returns = _numeric(frame["Total Return"], f"{ticker} total returns", first_missing=True)
+    if (returns[1:] <= -1).any():
+        raise ValueError(f"{ticker}: invalid total return.")
+    cash = _numeric(frame["Distribution Return"], f"{ticker} cash contributions")
+    if (cash < 0).any():
+        raise ValueError(f"{ticker}: negative cash distribution contribution.")
+    return dates, np.r_[1.0, np.cumprod(1 + returns[1:])], cash, "downloaded vendor history", meta["status_counts"]
+
+
+def _exchange_rate(root: Path, hashes: dict) -> pd.Series:
+    """US dollars per Australian dollar on the days the source published a rate."""
+    frame = _read(root / FX_FILE, hashes)
+    rate = pd.Series(_numeric(frame["Close"], "AUDUSD rate"), index=_dates(frame["Date"], "AUDUSD"))
+    if (rate <= 0).any():
+        raise ValueError("AUDUSD: nonpositive exchange rate.")
+    return rate
+
+
+def load_plan_markets(tickers, root: str | Path | None = None, *, currency: str = "USD",
+                      ticker_root: str | Path | None = None) -> PlanMarketData:
+    """Load full ticker histories and their joint common-date return matrix in one currency.
+
+    A history quoted in the other currency is converted with the AUDUSD spot rate on the dates both have: a level in
+    US dollars divided by US dollars per Australian dollar is a level in Australian dollars. No rate is carried to a
+    date without one; a step across such a date compounds the levels, as for any missing trading day.
 
     The annual income number is the mean sum of daily cash/preceding-price
-    contributions over complete calendar years. It is only a planning proxy,
+    contributions over complete calendar years, in the ticker's own currency. It is only a planning proxy,
     not a buy-and-hold yield, tax allocation, or fresh return on top of TR.
     """
+    if currency not in CURRENCIES:
+        raise ValueError(f"Returns can be measured in {' or '.join(CURRENCIES)}, not {currency!r}.")
     names = tuple(ticker_name(value) for value in tickers)
     if not names or len(names) != len(set(names)):
         raise ValueError("Choose at least one unique ticker.")
     root = Path(root) if root is not None else processed_root()
+    ticker_root = Path(ticker_root) if ticker_root is not None else store_root()
     hashes: dict[str, str] = {}
     fund_table = _read(root / "distributions" / "fund_prices.csv", hashes) if any(t in FUND_TICKERS for t in names) else None
+    rate = _exchange_rate(root, hashes) if any(native_currency(t) != currency for t in names) else None
     histories, rows, income, source_info = {}, [], {}, {}
     for ticker in names:
         dates, levels, cash, source, quality = (_custom(ticker, root, hashes) if ticker in CUSTOM_TICKERS
-                                                else _fund(ticker, fund_table))
+                                                else _fund(ticker, fund_table) if ticker in FUND_TICKERS
+                                                else _stored(ticker, ticker_root, hashes))
         full_years = _completed_years(dates)
         annual_cash = pd.Series(cash, index=dates).groupby(dates.year).sum()
         yield_proxy = float(annual_cash.loc[sorted(full_years)].mean()) if full_years else 0.0
         if not 0 <= yield_proxy < 1:
             raise ValueError(f"{ticker}: estimated income split outside supported range.")
+        native, native_first, native_rows = native_currency(ticker), dates[0], len(dates)
+        if native != currency:
+            shared = dates.intersection(rate.index)
+            if len(shared) < 253:
+                raise ValueError(f"{ticker}: fewer than 252 returns on days with an AUDUSD rate.")
+            own = pd.Series(levels, index=dates).loc[shared].to_numpy()
+            quoted = rate.loc[shared].to_numpy()
+            dates, levels = shared, own / quoted if currency == "AUD" else own * quoted
         elapsed = (dates[-1] - dates[0]).days
         if elapsed <= 0:
             raise ValueError(f"{ticker}: insufficient return history.")
         daily = levels[1:] / levels[:-1] - 1
         growth = levels / levels[0]
-        rows.append({"Ticker": ticker, "Source": source, "First": dates[0].date(), "Last": dates[-1].date(),
+        rows.append({"Ticker": ticker, "Source": source, "Quoted in": native,
+                     "First": dates[0].date(), "Last": dates[-1].date(),
                      "Observations": len(daily), "Full-sample CAGR": float(growth[-1] ** (365.25 / elapsed) - 1),
                      "Daily volatility, annualised": float(np.std(daily, ddof=1) * np.sqrt(252)),
                      "Maximum drawdown": float(np.min(growth / np.maximum.accumulate(growth) - 1)),
@@ -193,6 +262,8 @@ def load_plan_markets(tickers, root: str | Path | None = None) -> PlanMarketData
         histories[ticker] = pd.Series(levels, index=dates)
         source_info[ticker] = {"source": source, "quality_counts": {str(k): int(v) for k, v in quality.items()},
                                "first": str(dates[0].date()), "last": str(dates[-1].date()),
+                               "quoted_in": native, "own_first": str(native_first.date()),
+                               "dates_without_exchange_rate": native_rows - len(dates),
                                "complete_income_years": len(full_years)}
     common = histories[names[0]].index
     for ticker in names[1:]:
@@ -201,8 +272,11 @@ def load_plan_markets(tickers, root: str | Path | None = None) -> PlanMarketData
         raise ValueError("Selected tickers have fewer than 252 shared return observations; choose a compatible portfolio.")
     levels = np.column_stack([histories[ticker].loc[common].to_numpy() for ticker in names])
     returns = levels[1:] / levels[:-1] - 1
-    path = MarketPath(tuple(common.date), names, returns, "USD")
-    manifest = {"currency": "USD", "calendar_policy": "common_dates", "common_first": str(common[0].date()),
+    path = MarketPath(tuple(common.date), names, returns, currency)
+    manifest = {"currency": currency,
+                "conversion": ("AUDUSD spot on shared dates; no rate carried to a date without one" if rate is not None
+                               else "none: every ticker is quoted in this currency"),
+                "calendar_policy": "common_dates", "common_first": str(common[0].date()),
                 "common_last": str(common[-1].date()), "common_returns": len(returns),
                 "dropped_dates": {ticker: int(len(histories[ticker]) - len(common)) for ticker in names},
                 "inputs_sha256": hashes, "tickers": source_info,

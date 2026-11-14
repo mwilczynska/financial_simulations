@@ -6,9 +6,11 @@ so the browser form, the command line and hand-edited files all share one
 format. ``build_inputs`` turns a valid plan into ledger inputs: a market path,
 a ``LedgerScenario`` and projected rule sets.
 
-The planner loads ticker histories from local processed data. Portfolio paths
-resample joint USD returns; until FX data exist, retirement paths explicitly
-apply those returns as an AUD proxy rather than claiming an observed AUD series.
+The planner loads ticker histories from local processed data and the local
+store of downloaded tickers. ``market.currency`` says which currency returns
+are measured in: AUD converts US-dollar histories with the AUDUSD rate; USD
+converts Australian-dollar histories and applies the US-dollar returns to the
+Australian-dollar ledger as a stated proxy (ADR 0061).
 """
 
 from datetime import date, timedelta
@@ -22,7 +24,7 @@ import numpy as np
 import pandas as pd
 
 from financial_simulations.dates import as_date
-from financial_simulations.data.plan_markets import load_plan_markets, ticker_name
+from financial_simulations.data.plan_markets import CURRENCIES, plan_markets, ticker_name
 from financial_simulations.markets.calendar import observation_calendar, observations_per_year
 from financial_simulations.markets.path import MarketPath
 from financial_simulations.retirement.ledger import (AssetIncome, Employment, Home, InvestmentProperty, LedgerScenario,
@@ -33,9 +35,10 @@ from financial_simulations.rules.au.age_pension import maximum_rate
 from financial_simulations.rules.au.superannuation import access_date, add_business_days, birthday
 
 
-SCHEMA_VERSION = 3
-# Version 2 had one spending.rule; version 3 lists the strategies to compare in spending.compare (ADR 0043). Both read.
-READABLE_VERSIONS = (2, 3)
+SCHEMA_VERSION = 4
+# Version 2 had one spending.rule; version 3 lists the strategies to compare in spending.compare (ADR 0043). Version 4
+# adds market.currency, downloaded tickers and franking (ADR 0061); earlier files measured returns in USD. All read.
+READABLE_VERSIONS = (2, 3, 4)
 RULES_START = date(2026, 7, 1)
 REBALANCE = ("annual", "none")
 SAVING = ("surplus", "fixed")
@@ -143,10 +146,11 @@ def normalize_plan(raw: dict) -> dict:
         raise PlanError(["plan: must be a table of sections"])
     c = _Checker()
     known = {"schema_version", "plan", "person", "employment", "assets", "outside", "super", "spending", "pension", "assumptions",
-             "market", "year_to_date", "mortgage", "investment_property", "home"}
+             "market", "year_to_date", "mortgage", "investment_property", "home", "franking"}
     c.problems += [f"{k}: unknown section" for k in raw if k not in known]
-    if raw.get("schema_version", SCHEMA_VERSION) not in READABLE_VERSIONS:
-        c.problems.append(f"schema_version: this tool reads versions {READABLE_VERSIONS[0]} and {READABLE_VERSIONS[-1]}; version 1 holdings need a reviewed conversion to portfolio balances and tax positions")
+    version = raw.get("schema_version", SCHEMA_VERSION)
+    if version not in READABLE_VERSIONS:
+        c.problems.append(f"schema_version: this tool reads versions {READABLE_VERSIONS[0]} to {READABLE_VERSIONS[-1]}; version 1 holdings need a reviewed conversion to portfolio balances and tax positions")
     def section(name):
         value = raw.get(name, {})
         if not isinstance(value, dict):
@@ -171,7 +175,7 @@ def normalize_plan(raw: dict) -> dict:
                             "ceiling", "floor"},
                "pension": {"start_age", "transfer_all", "amount"},
                "assumptions": {"cpi_annual", "wage_growth_annual", "planning_age"},
-               "market": {"paths", "retirement_paths", "seed", "block_length"},
+               "market": {"paths", "retirement_paths", "seed", "block_length", "currency"},
                "year_to_date": {"entered", *YEAR_TO_DATE},
                "mortgage": {"balance", "interest_rate", "years", "extra_share"},
                "home": {"value", "running_costs", "growth"},
@@ -219,6 +223,19 @@ def normalize_plan(raw: dict) -> dict:
         names.add(name)
         assets.append(name)
     plan["assets"] = assets
+    # The franked share of each ticker's distributions (0 to 1), for Australian shares and funds. Absent means none.
+    franking = raw.get("franking", {})
+    plan["franking"] = {}
+    if not isinstance(franking, dict):
+        c.problems.append("franking: must map tickers to the franked share of their distributions")
+        franking = {}
+    for name, value in franking.items():
+        if name not in names:
+            c.problems.append(f"franking.{name}: ticker is not selected under assets")
+        elif isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 <= value <= 1:
+            c.problems.append(f"franking.{name}: must be a share from 0 to 1")
+        elif value > 0:
+            plan["franking"][name] = float(value)
     plan["outside"] = {"cash": c.number(outside, "cash", "outside", 0.0, low=0, high=1e9),
                        "cash_buffer": c.number(outside, "cash_buffer", "outside", 0.0, low=0, high=1e9),
                        "investment_balance": c.number(outside, "investment_balance", "outside", 0.0, low=0, high=1e9),
@@ -329,7 +346,10 @@ def normalize_plan(raw: dict) -> dict:
     plan["market"] = {"paths": c.number(market, "paths", "market", 1000, low=16, high=5000, integer=True),
                       "retirement_paths": c.number(market, "retirement_paths", "market", 100, low=1, high=2000, integer=True),
                       "seed": c.number(market, "seed", "market", 20261028, low=0, high=2147483647, integer=True),
-                      "block_length": c.number(market, "block_length", "market", 63, low=1, high=1260, integer=True)}
+                      "block_length": c.number(market, "block_length", "market", 63, low=1, high=1260, integer=True),
+                      # The currency returns are measured in. Files before version 4 used US-dollar returns.
+                      "currency": c.choice(market, "currency", "market",
+                                           "AUD" if isinstance(version, int) and version >= 4 else "USD", CURRENCIES)}
     if not plan["outside"]["weights"]:
         c.problems.append("outside.weights: an outside-super portfolio is required for current and future investments")
     if not plan["super"]["weights"]:
@@ -397,7 +417,10 @@ def plan_to_toml(plan: dict) -> str:
     """Write a normalized plan as readable TOML (tables, inline weight tables, arrays of tables)."""
     plan = normalize_plan(plan)
     lines = [f"# Retirement plan file, schema version {SCHEMA_VERSION}. Edit here or in the browser app.",
-             f"schema_version = {SCHEMA_VERSION}", f"assets = {_toml_value(plan['assets'])}", ""]
+             f"schema_version = {SCHEMA_VERSION}", f"assets = {_toml_value(plan['assets'])}"]
+    if plan["franking"]:
+        lines.append(f"franking = {_toml_value(plan['franking'])}")
+    lines.append("")
     for section in ("plan", "person", "employment", "outside", "super", "spending", "home", "mortgage", "investment_property",
                     "pension", "assumptions", "market", "year_to_date"):
         lines.append(f"[{section}]")
@@ -462,8 +485,12 @@ def build_inputs(plan: dict, *, market=None, returns=None):
     start, end, shortened = horizon(plan)
     if end <= start:
         raise PlanError([f"person.date_of_birth: the person is {OLDEST_AGE} or older at the start; runs stop before that age"])
-    market = market or load_plan_markets(plan["assets"])
-    notes = ["Selected histories and cash contributions are USD. The retirement ledger applies sampled USD returns as an AUD proxy; FX and Australian tax distribution components are not yet available."]
+    market = market or plan_markets(plan)
+    notes = [("Returns are measured in Australian dollars: US-dollar histories are converted with the AUDUSD spot rate, "
+              "unhedged." if market.path.currency == "AUD" else
+              "Returns are measured in US dollars and applied to the Australian-dollar ledger as a proxy, which leaves "
+              "out exchange-rate movements.")
+             + " Each ticker's income share is its historical cash distribution rate; franking is as entered."]
     if shortened:
         notes.append(f"Horizon shortened to {end}: runs stop the day before age {OLDEST_AGE}.")
     names = plan["assets"]
@@ -530,7 +557,8 @@ def build_inputs(plan: dict, *, market=None, returns=None):
         outside_weights=plan["outside"]["weights"],
         super_units={a: plan["super"]["balance"] * w for a, w in plan["super"]["weights"].items()},
         super_weights=plan["super"]["weights"],
-        income={ticker: AssetIncome(market.income_yields[ticker], 0.0) for ticker in names},
+        income={ticker: AssetIncome(market.income_yields[ticker], plan["franking"].get(ticker, 0.0))
+                for ticker in names},
         employment=employment, annual_spending=plan["spending"]["annual"], spending_growth=spending_growth(plan),
         retirement_spending=retirement_schedule(plan),
         spending_rule=SpendingRule(rule, band=plan["spending"]["guardrail_band"],

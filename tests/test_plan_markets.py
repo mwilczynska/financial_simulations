@@ -27,9 +27,9 @@ def test_every_ticker_is_described_and_asx_codes_are_refused():
     assert set(DESCRIPTIONS) == set(TICKERS)
     guide = ticker_guide()
     assert all(f"| {ticker} | {DESCRIPTIONS[ticker]} |" in guide for ticker in TICKERS)
-    for code in ("VAS", "VAS.AX"):
-        with pytest.raises(ValueError, match="unavailable"):
-            ticker_name(code)
+    assert "`VAS.AX`" in guide and "`SPY.US`" in guide
+    with pytest.raises(ValueError, match="unavailable"):
+        ticker_name("VAS")  # an unlisted ticker needs its market suffix
 
 
 def test_observed_fund_ticker_uses_its_own_shorter_history(processed_fixture):

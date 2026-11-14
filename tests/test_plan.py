@@ -25,7 +25,7 @@ def test_example_plan_round_trips_through_toml_and_json():
     plan = default_plan()
     assert load_plan_text(plan_to_toml(plan), "plan.toml") == plan
     assert load_plan_text(plan_to_json(plan), "plan.json") == plan
-    assert json.loads(plan_to_json(plan))["schema_version"] == 3
+    assert json.loads(plan_to_json(plan))["schema_version"] == 4
     assert plan["assets"] == ["USLCAP3x", "ITT3x", "GOLDPM2x", "COMM", "GLSTOCK"]
     assert plan["outside"]["weights"] == {"USLCAP3x": 0.4, "ITT3x": 0.2, "GOLDPM2x": 0.2, "COMM": 0.2}
     assert plan["super"]["weights"] == {"GLSTOCK": 1.0}
@@ -63,7 +63,7 @@ def test_minimal_plan_gets_documented_defaults():
 
 def test_build_inputs_maps_portfolios_and_derived_income_onto_ledger(processed_fixture):
     plan = default_plan()
-    market = load_plan_markets(plan["assets"], processed_fixture)
+    market = load_plan_markets(plan["assets"], processed_fixture, currency="AUD")
     path, scenario, years, notes = build_inputs(plan, market=market)
     assert path.currency == "AUD" and path.assets == tuple(plan["assets"])
     assert scenario.person.retirement_date == date(2027, 9, 15)
@@ -74,7 +74,7 @@ def test_build_inputs_maps_portfolios_and_derived_income_onto_ledger(processed_f
     assert scenario.income["ITT3x"].franked_fraction == 0
     assert scenario.pension.commence == date(2032, 9, 15)
     assert list(years)[0] == "2026-27" and list(years)[-1] == "2035-36"
-    assert "AUD proxy" in notes[0]
+    assert "measured in Australian dollars" in notes[0]
 
 
 def test_horizon_runs_past_age_pension_age_with_the_age_pension(processed_fixture):
@@ -83,7 +83,7 @@ def test_horizon_runs_past_age_pension_age_with_the_age_pension(processed_fixtur
     plan["pension"]["start_age"] = 0
     start, end, shortened = horizon(plan)
     assert end == date(2036, 6, 30) and not shortened  # ten years, through age 74
-    market = load_plan_markets(plan["assets"], processed_fixture)
+    market = load_plan_markets(plan["assets"], processed_fixture, currency="AUD")
     _, scenario, _, _ = build_inputs(plan, market=market)
     assert scenario.age_pension and not scenario.person.homeowner and scenario.person.other_assets == 25000
     plan["plan"]["years"] = 60
@@ -94,7 +94,7 @@ def test_pension_before_super_access_starts_when_super_becomes_accessible(proces
     plan = default_plan()
     plan["person"].update(date_of_birth="1966-05-10", retirement_age=65)
     plan["pension"]["start_age"] = 60
-    market = load_plan_markets(plan["assets"], processed_fixture)
+    market = load_plan_markets(plan["assets"], processed_fixture, currency="AUD")
     _, scenario, _, notes = build_inputs(plan, market=market)
     assert scenario.pension.commence == date(2031, 5, 10)  # 65th birthday, not the requested 60th
     assert any("transition-to-retirement" in note for note in notes)
@@ -108,7 +108,7 @@ def test_portfolios_keep_shared_daily_draws_but_reflect_distinct_weights(process
     plan = quick_plan()
     plan["plan"]["years"] = 1
     plan["super"]["weights"] = {"COMM": 1.0}
-    market = load_plan_markets(plan["assets"], processed_fixture)
+    market = load_plan_markets(plan["assets"], processed_fixture, currency="AUD")
     compared = analyse_portfolios(plan, market, target_observations(plan, market))
     same_mix = default_plan()
     same_mix["plan"]["years"] = 1
@@ -128,7 +128,7 @@ def quick_run(processed_fixture):
     plan = quick_plan()
     plan["market"]["retirement_paths"] = 3
     seen = []
-    run = run_plan(plan, None, market=load_plan_markets(plan["assets"], processed_fixture),
+    run = run_plan(plan, None, market=load_plan_markets(plan["assets"], processed_fixture, currency="AUD"),
                    progress=lambda fraction, message: seen.append((fraction, message)))
     return run, seen
 
@@ -279,7 +279,7 @@ def test_35_year_path_runs_to_the_end_with_monthly_bands(processed_fixture):
     plan["super"]["total_super_balance_prior_30_june"] = 100
     plan["spending"]["annual"] = 0
     plan["pension"]["start_age"] = 0
-    market = load_plan_markets(plan["assets"], processed_fixture)
+    market = load_plan_markets(plan["assets"], processed_fixture, currency="AUD")
     run = run_plan(plan, None, market=market)
     assert (run.result.daily.index[-1] - run.result.daily.index[0]).days >= 35 * 365 - 2
     assert len(run.retirement_bands) >= 35 * 12
@@ -313,7 +313,7 @@ def test_salary_sacrifice_percentage_adds_to_the_dollar_amount(processed_fixture
     plan["employment"]["salary_sacrifice_per_year"] = 0.0
     plan["employment"]["salary_sacrifice_percent"] = 0.05
     assert sacrifice_per_year(plan) == pytest.approx(8000)
-    market = load_plan_markets(plan["assets"], processed_fixture)
+    market = load_plan_markets(plan["assets"], processed_fixture, currency="AUD")
     _, scenario, _, _ = build_inputs(plan, market=market)
     assert scenario.employment.salary_sacrifice_per_payday == pytest.approx(8000 / 26)
     plan["employment"]["salary_sacrifice_percent"] = 1.2
@@ -324,7 +324,7 @@ def test_salary_sacrifice_percentage_adds_to_the_dollar_amount(processed_fixture
 def test_salary_follows_wage_growth_unless_switched_off(processed_fixture):
     plan = default_plan()
     assert plan["employment"]["salary_indexed"] is True
-    market = load_plan_markets(plan["assets"], processed_fixture)
+    market = load_plan_markets(plan["assets"], processed_fixture, currency="AUD")
     _, scenario, _, _ = build_inputs(plan, market=market)
     assert scenario.employment.annual_growth == pytest.approx(plan["assumptions"]["wage_growth_annual"])
     plan["employment"]["salary_indexed"] = False
@@ -335,7 +335,7 @@ def test_salary_follows_wage_growth_unless_switched_off(processed_fixture):
 def test_fixed_outside_contribution_maps_to_paydays(processed_fixture):
     plan = default_plan()
     assert plan["outside"]["saving"] == "surplus"
-    market = load_plan_markets(plan["assets"], processed_fixture)
+    market = load_plan_markets(plan["assets"], processed_fixture, currency="AUD")
     _, scenario, _, _ = build_inputs(plan, market=market)
     assert scenario.outside_contribution_per_payday is None
     plan["outside"]["saving"] = "fixed"
@@ -353,7 +353,7 @@ def test_fixed_outside_contribution_maps_to_paydays(processed_fixture):
 def test_spending_rule_defaults_to_fixed_and_maps_to_the_ledger(processed_fixture):
     plan = default_plan()
     assert plan["spending"]["compare"] == ["fixed"] and plan["spending"]["minimum"] == 0
-    market = load_plan_markets(plan["assets"], processed_fixture)
+    market = load_plan_markets(plan["assets"], processed_fixture, currency="AUD")
     plan["spending"].update(compare=["guyton_klinger"], minimum=30000.0, maximum=90000.0, guardrail_band=0.25)
     with pytest.raises(PlanError, match="spending.retirement: market-responsive or compared strategies start from a"):
         normalize_plan(plan)
@@ -379,11 +379,11 @@ def test_compared_strategies_share_one_start_and_old_single_rules_still_load(pro
     plan = normalize_plan(plan)
     assert plan["spending"]["compare"] == ["fixed", "guyton_klinger", "percent"]  # in a fixed order
     assert 'compare = ["fixed", "guyton_klinger", "percent"]' in plan_to_toml(plan)
-    assert "schema_version = 3" in plan_to_toml(plan) and "rule" not in plan["spending"]
+    assert "schema_version = 4" in plan_to_toml(plan) and "rule" not in plan["spending"]
     # Fixed spending compared with a market-responsive rule must start from the same percentage of wealth.
     with pytest.raises(PlanError, match="spending.retirement"):
         normalize_plan({**plan, "spending": {**plan["spending"], "compare": ["fixed", "vanguard"], "retirement": "same"}})
-    market = load_plan_markets(plan["assets"], processed_fixture)
+    market = load_plan_markets(plan["assets"], processed_fixture, currency="AUD")
     with pytest.raises(ValueError, match="pick one with strategy_plan"):
         build_inputs(plan, market=market)
     assert build_inputs(strategy_plan(plan, "fixed"), market=market)[1].spending_rule.start_rate == plan["spending"]["retirement_percent"]
@@ -399,7 +399,7 @@ def test_every_compared_strategy_runs_on_the_same_draws_and_writes_its_own_folde
     plan = default_plan()
     plan["spending"].update(compare=["fixed", "percent"], retirement="percent")
     plan["market"].update(paths=16, retirement_paths=2)
-    market = load_plan_markets(plan["assets"], processed_fixture)
+    market = load_plan_markets(plan["assets"], processed_fixture, currency="AUD")
     run = run_plan(plan, tmp_path, market=market)
     assert list(run.strategies) == ["fixed", "percent"] and run.strategies["fixed"] is run
     for rule, strategy in run.strategies.items():
@@ -504,7 +504,7 @@ def test_planner_paths_use_the_history_density_and_the_requested_end(processed_f
 
     plan = default_plan()
     plan["plan"].update(start_date="2028-07-01", years=1)  # ends Saturday 30 June 2029
-    market = load_plan_markets(plan["assets"], processed_fixture)
+    market = load_plan_markets(plan["assets"], processed_fixture, currency="AUD")
     path, scenario, _, _ = build_inputs(plan, market=market)
     assert path.dates == target_observations(plan, market)
     assert len(path.dates) - 1 == pytest.approx(observations_per_year(market.path.dates), abs=1)
@@ -525,7 +525,7 @@ def test_a_midyear_plan_start_requires_confirmed_year_to_date_amounts(processed_
                                 pending_employer_contributions=1200, prior_year_tax=-500)
     plan = normalize_plan(plan)
     assert load_plan_text(plan_to_toml(plan), "plan.toml") == plan
-    market = load_plan_markets(plan["assets"], processed_fixture)
+    market = load_plan_markets(plan["assets"], processed_fixture, currency="AUD")
     _, scenario, _, _ = build_inputs(plan, market=market)
     opening = scenario.opening_year
     assert opening.labour_income == 52000 and opening.payg_withheld == 11000
@@ -535,7 +535,7 @@ def test_a_midyear_plan_start_requires_confirmed_year_to_date_amounts(processed_
 
 def test_a_1_july_plan_start_passes_last_years_tax_and_age_pension_split(processed_fixture):
     plan = default_plan()
-    market = load_plan_markets(plan["assets"], processed_fixture)
+    market = load_plan_markets(plan["assets"], processed_fixture, currency="AUD")
     assert build_inputs(plan, market=market)[1].opening_year is None
     plan["year_to_date"].update(prior_year_tax=2500, age_pension=1000)
     _, scenario, years, _ = build_inputs(normalize_plan(plan), market=market)

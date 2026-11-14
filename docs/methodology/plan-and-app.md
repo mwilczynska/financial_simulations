@@ -42,24 +42,17 @@ counts. Fund series use processed vendor total returns and distribution
 contributions. Files remain in the sibling project; plans contain codes, not
 copied data or machine paths. The loader records SHA-256 hashes and first/last
 dates in `manifest.json`. `FINANCIAL_DATASETS_PROCESSED` can override the
-processed-data location. There is no network download or arbitrary ticker
-lookup.
+processed-data location. Loading never downloads.
 
-**The catalogue is closed.** `ticker_name` refuses any code outside the table,
-so a plan cannot name an arbitrary ticker. Adding one means building and
-validating its daily history in `financial_datasets` and then listing it in
-`plan_markets.py` with a one-line description in `DESCRIPTIONS`; the app's
-Tickers card shows those descriptions and this rule under "What these tickers
-are, and adding others". Every fund ticker is US-listed and quoted in USD.
-ASX-listed funds are not supported: the upstream fund build requests the bare
-symbol from the vendor chart and rejects any quote whose currency is not USD,
-and `MarketPath` carries one currency for all columns. On that vendor an ASX
-code is the symbol with an `.AX` suffix (`VAS.AX`) and a US code has none,
-which is how the two would be told apart. Supporting them needs, at least, a
-currency per ticker upstream, a rule for combining AUD and USD series (the
-model currently reads USD returns as AUD returns), and a view on the
-intersection of ASX and US trading dates, whose same-dated closes are about
-14 to 16 hours apart. None of this is implemented.
+**Other tickers and currency (ADR 0061).** Beyond the table, a plan can name
+any ASX or US-listed ticker that has been downloaded to the local ticker
+store, written with its market: `VAS.AX` or `SPY.US`. `market.currency`
+(`AUD` or `USD`) sets the currency returns are measured in, and histories
+quoted in the other are converted with the AUDUSD spot rate. The app's
+Tickers card describes every ticker, holds the currency choice and the
+Download field, and shows the shared window. Names, download checks,
+storage, the conversion, franking and their limitations are in
+[downloaded tickers and the return currency](downloaded-tickers-and-currency.md).
 
 Custom pre-fund segments can be reconstructed or modelled. Fund ticker
 histories start at available vendor inception. For any selection, the return
@@ -67,8 +60,9 @@ sample uses the **intersection of recorded dates**. A step across a missing
 date compounds source total-return levels between the shared dates; no
 observed zero return is inserted. The loader requires at least 252 joint
 returns and checks dates, finite values, positive levels and reconciliation
-between custom published levels and returns. These are nominal USD return
-conventions, not Australian dollar observations. See
+between custom published levels and returns. The listed histories are nominal
+USD returns; in the `AUD` setting they are converted, and in the `USD` setting
+they are applied to the Australian-dollar ledger as a proxy. See
 [data adapters](data-adapters.md) for the wider dataset contract.
 
 The app shows full-sample descriptive measures for each ticker:
@@ -85,27 +79,29 @@ The app shows full-sample descriptive measures for each ticker:
 The ledger uses the cash proxy as its existing quarterly estimated-income
 split: at quarter end `q = annual proxy / 4`; it removes `q` from the current
 unit price and pays that amount in cash. Total wealth before tax is unchanged
-by this split. The data do not identify Australian franking, so the planner
-sets the franked fraction to zero. Fund expenses and financing already in
+by this split. The data do not identify Australian franking, so the franked
+fraction is zero unless the plan's `franking` table gives a share for a ticker. Fund expenses and financing already in
 total-return histories are not charged again. See the
 [retirement ledger](retirement-ledger.md) for the account convention.
 
 ## Plan schema and accounting
 
-Schema version 3 uses the fields below. Version 2 files, which name one `rule`, still load (ADR 0043).
+Schema version 4 uses the fields below. Version 2 files, which name one `rule`, still load (ADR 0043), as do
+version 3 files, which have no `market.currency` and load as `USD` (ADR 0061).
 
 | Section | Relevant fields |
 | --- | --- |
 | `[plan]` | Name, start date from 2026-07-01, requested years |
 | `[person]` and `[employment]` | Birth date, retirement age, cover, salary, `salary_sacrifice_per_year`, `salary_sacrifice_percent` (fraction of salary, added to the dollar amount), payday |
-| `assets` | Selected local ticker codes |
+| `assets` | Selected ticker codes: listed names, or downloaded ones with `.AX` or `.US` |
+| `franking` | Optional table of ticker to franked share of its distributions (0 to 1); default none |
 | `[outside]` | Cash, cash buffer, `cash_interest`, `investment_balance`, `opening_cost_base`, `opening_acquired`, `weights`, `rebalance`, `saving` (`surplus` or `fixed`), `contribution_per_year`, `contribution_indexed` |
 | `[super]` | Balance, prior 30 June total super balance, `weights`, `rebalance`, `realised_gains` (share of the fund's unrealised gains realised each year; default 0.2, an assumption; ADR 0029) |
 | `[spending]`, `[pension]`, `[assumptions]` | `annual` (today's dollars), `real_change` (a year, on top of CPI; default 0), `retirement` (`same` default, `amount` with `retirement_annual`, or `percent` with `retirement_percent` of total wealth on the retirement date), `compare` (the spending strategies to compare, a list of `fixed` (default), `guyton_klinger`, `vanguard` and `percent`, kept in that order; anything but `["fixed"]` requires `retirement = "percent"`, so every compared strategy starts from the same spending; a version 2 `rule` loads as a one-item list), `minimum`, `maximum` (today's dollars, CPI-indexed), `guardrail_band`, `guardrail_step`, `ceiling`, `floor`; pension transfer; projected-rule assumptions. A `planning_age` in older files is accepted and ignored (ADR 0041). A legacy nominal `annual_growth` is read as `real_change = (1 + annual_growth) / (1 + cpi) - 1` (ADR 0025) |
 | `[mortgage]` | `balance` (0 = no loan), `interest_rate`, `years`, `extra_share` ([home loan](home-loan.md), ADR 0052); a loan needs `person.homeowner` |
 | `[home]` | `value` (0 = not modelled), `running_costs` (0.01 of value a year), `growth` (0.04); needs `person.homeowner` ([home loan](home-loan.md), ADR 0055). A renter's `person.weekly_rent` is paid before spending |
 | `[investment_property]` | `value` (0 = none), `weekly_rent`, `loan`; with defaults `growth` (0.04), `interest_rate` (0.06), `years` (25), `interest_only_years` (0), `running_costs` (0.015 of value a year), `losses_offset_salary` (false), `move_in_date` (optional; ADR 0055) ([investment property](investment-property.md), ADR 0054) |
-| `[market]` | Portfolio path count, retirement path count, seed, mean block length |
+| `[market]` | Portfolio path count, retirement path count, seed, mean block length, `currency` (`AUD` or `USD`) |
 
 **Spending strategies** ([ADR 0043](../decisions/0043-compared-spending-strategies-in-the-plan.md)). A normalized
 plan lists its compared strategies in `spending.compare` and has no single rule. `strategy_plan(plan, rule)`
@@ -249,9 +245,9 @@ removed them: the daily tax ledger answers whether the money lasts, with
 tax and the Age Pension, over the years simulated.
 
 The first `retirement_paths` of those same joint draws run through the
-[daily tax ledger](retirement-ledger.md). USD source returns are explicitly
-applied as an **AUD proxy** because USD/AUD FX and Australian distribution
-components are absent. Ledgers run in worker processes when there are
+[daily tax ledger](retirement-ledger.md). In the `AUD` setting the sampled returns are
+Australian-dollar returns; in the `USD` setting US-dollar returns are explicitly
+applied as an **AUD proxy**. Australian distribution components are absent. Ledgers run in worker processes when there are
 more than four; each worker returns only a summary row, month-end account
 series and financial-year rows. Every calculated path is classified:
 
@@ -611,7 +607,7 @@ dollars; `USLCAP3x` CAGR 6.5%, volatility 51.8%, worst drawdown 98.5%.
 
 **Limitations.** The portfolio lines are the entered portfolios at their target weights, not the ledger's holdings,
 which also reflect contributions, sales and the cash buffer. The combined portfolio keeps the opening split between
-outside and super; the household's actual split also moves with contributions, drawdowns and pension transfers. Returns are USD histories used as an AUD proxy. The
+outside and super; the household's actual split also moves with contributions, drawdowns and pension transfers. Returns are in the plan's currency (ADR 0061). The
 factor 252 is a convention, not the sampled history's exact observations per year.
 
 **Validation.** `tests/test_path_markets.py`: rebalancing at the first observation of a calendar year; a portfolio's
@@ -899,7 +895,7 @@ and a 35-year horizon; `tests/test_saved_runs.py` covers saved results
 [planner validation](../validation/plan-portfolios.md). The local browser
 Investments and Results views and 10- and 35-year PNGs were inspected.
 
-These are conditional resamples of historical or reconstructed USD sources,
+These are conditional resamples of historical, reconstructed or downloaded sources,
 not forecasts. Full-sample CAGR is descriptive. Bootstrap blocks preserve
 local sequences and joint co-movement but can repeat rare events or miss new
 regimes. Pointwise percentile bands are not whole-path confidence intervals.

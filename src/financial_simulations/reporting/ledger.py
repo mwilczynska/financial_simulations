@@ -42,7 +42,9 @@ def write_ledger_report(result, output, title, manifest=None):
         top, bottom = figure.subplots(2, 1, height_ratios=(3, 2))
         figure.subplots_adjust(left=0.09, right=0.97, top=0.86, bottom=0.11, hspace=0.35)
         figure.suptitle(title, fontsize=16, fontweight="bold", x=0.035, ha="left", y=0.97)
-        source = "sampled USD returns used as AUD proxy" if isinstance((manifest or {}).get("market"), dict) else "synthetic market input"
+        market = (manifest or {}).get("market")
+        source = ("synthetic market input" if not isinstance(market, dict) else
+                  "sampled AUD returns" if market.get("currency") == "AUD" else "sampled USD returns used as AUD proxy")
         figure.text(0.035, 0.925, f"Daily account balances (AUD, nominal) | {source} | tax liabilities settle after 30 June",
                     color="#536369")
         stack = np.vstack([daily[column].to_numpy() for column, _, _ in ACCOUNTS])

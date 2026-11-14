@@ -119,7 +119,7 @@ def test_the_age_pension_assets_test_counts_assets_without_deducting_the_home_lo
 
 def test_plan_mortgage_section_validates_round_trips_and_builds_the_ledger_loan(processed_fixture):
     plan = default_plan()
-    processed_fixture = load_plan_markets(plan["assets"], processed_fixture)
+    processed_fixture = load_plan_markets(plan["assets"], processed_fixture, currency="AUD")
     assert plan["mortgage"] == {"balance": 0.0, "interest_rate": 0.06, "years": 25.0, "extra_share": 0.0}
     assert build_inputs(plan, market=processed_fixture)[1].mortgage is None
     plan["mortgage"].update(balance=400000.0, interest_rate=0.058, years=22.0, extra_share=0.25)

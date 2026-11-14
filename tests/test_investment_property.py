@@ -143,7 +143,7 @@ def test_the_age_pension_counts_equity_and_net_rent():
 
 def test_plan_section_validates_round_trips_and_builds_the_property(processed_fixture):
     plan = default_plan()
-    processed_fixture = load_plan_markets(plan["assets"], processed_fixture)
+    processed_fixture = load_plan_markets(plan["assets"], processed_fixture, currency="AUD")
     assert plan["investment_property"]["value"] == 0.0
     assert build_inputs(plan, market=processed_fixture)[1].investment_property is None
     plan["investment_property"].update(value=750000.0, weekly_rent=650.0, loan=500000.0)

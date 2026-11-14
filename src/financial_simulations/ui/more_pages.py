@@ -180,9 +180,9 @@ def markets_page(run):
             "Worst calendar year": percent_column("Worst year"), "Best calendar year": percent_column("Best year"),
             "Positive years": percent_column("Positive years", "Share of full calendar years with a gain.", 0)})
         shares = portfolios.combined_shares
-        explain(f"Statistics for each portfolio as a whole ({market.manifest['common_returns']:,} joint daily returns, USD "
-                "total returns), using the same rebalancing as the simulations. Historical returns are **nominal**: the "
-                "source data have no inflation history. On a log scale equal vertical distances are equal percentage "
+        explain(f"Statistics for each portfolio as a whole ({market.manifest['common_returns']:,} joint daily returns, "
+                f"{market.path.currency} total returns), using the same rebalancing as the simulations. Historical "
+                "returns are **nominal**: the source data have no inflation history. On a log scale equal vertical distances are equal percentage "
                 "changes, so a straight line means steady compound growth. Reconstructed pre-fund history is a model, "
                 "not observed fund performance. Rebalancing matters: an annually rebalanced mix of volatile, weakly "
                 "correlated assets can grow faster than any of its parts, because each January it sells what rose and "
@@ -223,6 +223,8 @@ def markets_page(run):
             "Maximum drawdown": percent_column("Max drawdown"),
             "Cash contribution proxy": percent_column("Cash proxy %/yr", digits=2),
             "Observations": st.column_config.NumberColumn(format="%,d")})
-        st.caption("Each ticker over its own full history. The cash proxy averages annual sums of daily cash distributions "
-                   "over complete years. The tax ledger uses it to split total return into income and price; it is not "
-                   "added to growth. No Australian franking is inferred from these USD sources.")
+        st.caption(f"Each ticker over its own full history, measured in {market.path.currency}; a ticker quoted in the "
+                   "other currency is converted and covers the days with an exchange rate. The cash proxy averages "
+                   "annual sums of daily cash distributions over complete years. The tax ledger uses it to split total "
+                   "return into income and price; it is not added to growth. Franking is only what you enter on the "
+                   "Investments tab.")

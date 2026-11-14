@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 
 from financial_simulations.markets.resampling import Sampler, sample_indices
-from financial_simulations.data.plan_markets import load_plan_markets
+from financial_simulations.data.plan_markets import plan_markets
 from financial_simulations.retirement.plan import future_observations, horizon
 from financial_simulations.retirement.real import stock_deflator
 from financial_simulations.rules.au.superannuation import birthday
@@ -199,4 +199,4 @@ def analyse_portfolios(plan: dict, market, target_dates, progress=None) -> Portf
 
 def target_observations(plan: dict, market=None) -> tuple:
     """The plan horizon's future observation dates, at the density of the history being sampled."""
-    return future_observations(plan, market or load_plan_markets(plan["assets"]))
+    return future_observations(plan, market or plan_markets(plan))

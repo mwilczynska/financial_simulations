@@ -63,7 +63,7 @@ def write_portfolio_plots(output: Path, plan, portfolios):
     """Write portfolio calibration and forward paths, shared by every compared spending strategy."""
     output = Path(output)
     with matplotlib.rc_context({"font.family": "DejaVu Sans"}):
-        fig, ax = _figure("Historical portfolio growth", "Full shared sample; USD total returns; each account's rebalancing policy; reconstructed periods included")
+        fig, ax = _figure("Historical portfolio growth", f"Full shared sample; {plan['market']['currency']} total returns; each account's rebalancing policy; reconstructed periods included")
         for title, part in portfolios.historical.groupby("Portfolio", sort=False):
             ax.plot(pd.to_datetime(part["Date"]), part["Growth of 100"], label=title, color=COLORS[title], linewidth=1.5)
         ax.set_yscale("log")
@@ -77,7 +77,7 @@ def write_portfolio_plots(output: Path, plan, portfolios):
         axes = fig.subplots(len(groups), 1, sharex=True)
         fig.subplots_adjust(left=0.10, right=0.97, top=0.85, bottom=0.11, hspace=0.24)
         fig.text(0.10, 0.95, "Future portfolio growth ranges", fontsize=16, fontweight="bold", color="#19353a")
-        fig.text(0.10, 0.90, f"{plan['market']['paths']} shared stationary-bootstrap draws; growth of $100 in today's dollars; USD-return convention", fontsize=9, color="#536369")
+        fig.text(0.10, 0.90, f"{plan['market']['paths']} shared stationary-bootstrap draws; growth of $100 in today's dollars; {plan['market']['currency']} returns", fontsize=9, color="#536369")
         for ax, (title, part) in zip(axes, groups):
             dates = pd.to_datetime(part["Date"])
             ax.fill_between(dates, part["P05"], part["P95"], color=COLORS[title], alpha=0.13, label="5th–95th percentile")
@@ -130,7 +130,7 @@ def write_retirement_plots(output: Path, plan, retirement_paths, retirement_band
         complete = int((retirement_paths["Status"] != "unsupported").sum())
         total = len(retirement_paths)
         wide = wide_wealth_range(retirement_bands)
-        subtitle = f"{complete} of {total} daily tax-ledger paths calculated; today's dollars (AUD proxy); unsupported draws excluded"
+        subtitle = f"{complete} of {total} daily tax-ledger paths calculated; today's dollars ({'AUD' if plan['market']['currency'] == 'AUD' else 'AUD proxy from USD returns'}); unsupported draws excluded"
         if wide:
             subtitle += "\nLog-like y-axis above $1,000 keeps central paths visible beside the upper tail"
         fig, ax = _figure("Retirement wealth range", subtitle)

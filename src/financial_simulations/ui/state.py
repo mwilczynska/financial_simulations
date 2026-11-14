@@ -70,11 +70,12 @@ def load_into_session(plan, message):
     st.session_state.pop("_sticky", None)
 
 
-def cached_market(tickers):
+def cached_market(tickers, currency):
+    """The histories for a ticker selection in one currency; a new download empties the cache."""
     cache = st.session_state.setdefault("market_cache", {})
-    if tickers not in cache:
-        cache[tickers] = load_plan_markets(tickers)
-    return cache[tickers]
+    if (tickers, currency) not in cache:
+        cache[tickers, currency] = load_plan_markets(tickers, currency=currency)
+    return cache[tickers, currency]
 
 
 def calculation_cores():

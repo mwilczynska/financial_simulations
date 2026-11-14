@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from financial_simulations.data.plan_markets import load_plan_markets
+from financial_simulations.data.plan_markets import plan_markets
 from financial_simulations.reporting.ledger import write_ledger_report
 from financial_simulations.reporting.plan import (write_comparison_plots, write_outcome_plot, write_path_markets_plot,
                                                   write_portfolio_plots, write_retirement_plots)
@@ -143,7 +143,10 @@ def run_plan(plan: dict, output_root: str | Path | None = DEFAULT_ROOT, *, marke
     """
     tell = progress or (lambda fraction, message: None)
     plan = normalize_plan(plan)
-    market = market or load_plan_markets(plan["assets"])
+    market = market or plan_markets(plan)
+    if market.path.currency != plan["market"]["currency"]:
+        raise ValueError(f"The supplied histories are in {market.path.currency}, but the plan measures returns in "
+                         f"{plan['market']['currency']}.")
     target = target_observations(plan, market)
     portfolios = analyse_portfolios(plan, market, target, lambda f, m: tell(0.35 * f, m))
     cpi = plan["assumptions"]["cpi_annual"]
@@ -172,7 +175,10 @@ def run_plan(plan: dict, output_root: str | Path | None = DEFAULT_ROOT, *, marke
                     "market": market.manifest, "sampler": {"method": "stationary", **plan["market"],
                                                              "target_calendar": ("weekdays evenly thinned to the history's observations "
                                                                                  "per year; not a holiday forecast"),
-                                                             "retirement_currency_convention": "USD returns applied as an explicit AUD proxy"}}
+                                                             "retirement_currency_convention": (
+                                                                 "AUD returns; USD histories converted at AUDUSD spot"
+                                                                 if market.path.currency == "AUD" else
+                                                                 "USD returns applied as an explicit AUD proxy")}}
         for name, frame in (("asset_summary", market.asset_summary), ("portfolio_summary", portfolios.summary),
                             ("portfolio_history", portfolios.historical), ("portfolio_bands", portfolios.paths),
                             ("portfolio_outcomes", portfolios.outcomes)):

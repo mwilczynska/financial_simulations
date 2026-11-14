@@ -24,7 +24,7 @@ def test_compound_rebalances_on_the_first_observation_of_a_calendar_year():
 def test_path_markets_matches_the_portfolio_analysis_for_the_same_path(monkeypatch, processed_fixture):
     monkeypatch.setenv("FINANCIAL_DATASETS_PROCESSED", str(processed_fixture))
     plan = normalize_plan(quick_plan())
-    market = load_plan_markets(plan["assets"])
+    market = load_plan_markets(plan["assets"], currency="AUD")
     portfolios = analyse_portfolios(plan, market, future_observations(plan, market))
     path = 3
     growth, stats = path_markets(plan, market, portfolios, path)
@@ -58,7 +58,7 @@ def test_path_markets_matches_the_portfolio_analysis_for_the_same_path(monkeypat
 def test_group_markets_of_one_path_is_that_path_and_medians_are_per_series(monkeypatch, processed_fixture):
     monkeypatch.setenv("FINANCIAL_DATASETS_PROCESSED", str(processed_fixture))
     plan = normalize_plan(quick_plan())
-    market = load_plan_markets(plan["assets"])
+    market = load_plan_markets(plan["assets"], currency="AUD")
     portfolios = analyse_portfolios(plan, market, future_observations(plan, market))
     growth, stats = path_markets(plan, market, portfolios, 3)
     months, alone = group_markets(plan, market, portfolios, [3])
@@ -82,7 +82,7 @@ def test_identical_portfolios_are_one_series(monkeypatch, processed_fixture):
     plan["super"]["weights"] = dict(plan["outside"]["weights"])
     plan["super"]["rebalance"] = plan["outside"]["rebalance"]
     plan = normalize_plan(plan)
-    market = load_plan_markets(plan["assets"])
+    market = load_plan_markets(plan["assets"], currency="AUD")
     portfolios = analyse_portfolios(plan, market, future_observations(plan, market))
     growth, stats = path_markets(plan, market, portfolios, 0)
     assert list(stats.loc[stats["Kind"] == "Portfolio", "Series"]) == [ONE_PORTFOLIO]

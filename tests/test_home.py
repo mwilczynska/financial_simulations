@@ -99,7 +99,7 @@ def test_after_moving_in_the_age_pension_uses_the_homeowner_limits_and_ignores_t
 
 def test_plan_home_rent_and_move_in_validate_round_trip_and_build(processed_fixture):
     plan = default_plan()
-    processed_fixture = load_plan_markets(plan["assets"], processed_fixture)
+    processed_fixture = load_plan_markets(plan["assets"], processed_fixture, currency="AUD")
     assert plan["home"] == {"value": 0.0, "running_costs": 0.01, "growth": 0.04} and plan["person"]["weekly_rent"] == 0
     plan["home"]["value"] = 900000.0
     assert load_plan_text(plan_to_toml(plan)) == normalize_plan(plan)

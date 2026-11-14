@@ -25,6 +25,8 @@ def processed_fixture(tmp_path_factory):
         cash[20::63] = 0.002 * (j + 1)
         pd.DataFrame({"Date": kept.strftime("%Y-%m-%d"), "Distribution Return": cash,
                       "Basis": "modeled"}).to_csv(distribution / asset.filename, index=False)
+    # A constant exchange rate: converting between currencies leaves every return as it was.
+    pd.DataFrame({"Date": dates.strftime("%Y-%m-%d"), "Close": 0.7}).to_csv(root / "fx_aud_usd.csv", index=False)
     fund_returns = np.full(len(dates), 0.00015)
     fund_returns[0] = np.nan
     pd.DataFrame({"Fund": "BND", "Date": dates.strftime("%Y-%m-%d"),

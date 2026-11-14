@@ -1,5 +1,5 @@
 # Invented example plan; replace all personal amounts and dates before relying on it.
-schema_version = 3
+schema_version = 4
 assets = ["USLCAP3x", "ITT3x", "GOLDPM2x", "COMM", "GLSTOCK"]
 
 [plan]
@@ -111,3 +111,6 @@ paths = 1000
 retirement_paths = 100
 seed = 20261028
 block_length = 63
+# The currency returns are measured in. "AUD" converts US-dollar histories with the AUDUSD rate (unhedged); "USD"
+# converts Australian-dollar histories and applies US-dollar returns to this Australian-dollar plan as a proxy.
+currency = "AUD"

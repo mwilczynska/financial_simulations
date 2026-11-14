@@ -155,7 +155,23 @@ def facts(run) -> dict:
                 f"rent of {money(plan['person']['weekly_rent'])} a week" if plan["person"]["weekly_rent"] > 0 else ""]
     holdings = [item for item in holdings if item]
     yields = "\n".join(f"| {ticker} | {percent(market.income_yields[ticker], 2)} |" for ticker in plan["assets"])
+    australian = market.path.currency == "AUD"
+    franked = ", ".join(f"{ticker} {percent(share, 0)}" for ticker, share in plan.get("franking", {}).items())
     return {
+        "currency_text": (
+            "Returns are nominal and in Australian dollars: a US-dollar history is converted with the daily AUDUSD "
+            "spot rate on the dates both have, so it carries the exchange rate's movements, as an unhedged holding does."
+            if australian else
+            "Returns are nominal and in US dollars: an Australian-dollar history is converted with the daily AUDUSD "
+            "spot rate, and the US-dollar returns are then applied to Australian-dollar balances as they stand."),
+        "currency_row": (
+            "| US-dollar histories are converted at the daily AUDUSD reference rate, set hours before the US close | "
+            "Returns in Australian dollars | Single-day converted returns are noisier than true ones, which overstates "
+            "daily volatility; the effect fades over the multi-day blocks sampled. No hedging is modelled |"
+            if australian else
+            "| US-dollar returns are used as Australian-dollar returns | Returns in US dollars | Leaves out currency "
+            "risk and any difference in average return from the exchange rate. Direction unclear |"),
+        "franking": f"franked share {franked}" if franked else "no franking credits",
         "start": f"{start:%d %B %Y}", "end": f"{end:%d %B %Y}", "years": f"{years:.0f}",
         "age_end": age_on(born, end), "preservation": preservation_age(born, first),
         "tickers": len(plan["assets"]), "rows": f"{rows:,}", "first": market.manifest["common_first"],
@@ -306,7 +322,7 @@ The tickers' daily **total returns** (price change plus distributions, after fun
 their financing costs) on the dates they all have: [[first]] to [[last]], [[history_years]] years. They form a matrix
 $R$ with $n$ = [[rows]] rows and one column per ticker, where row $j$ holds every ticker's return on the same day. A
 step across a date that some ticker lacks compounds the total-return levels between the shared dates; no zero return
-is inserted. Returns are nominal and in US dollars.
+is inserted. [[currency_text]]
 
 #### Stationary block bootstrap
 
@@ -872,7 +888,9 @@ look better than a fuller model would give; "cautious" the reverse. The directio
 | Assumption | In this plan | Effect on results |
 | --- | --- | --- |
 | Future returns are drawn from the history's own returns | [[first]] to [[last]] | Sets the level of every result. The history's average return is carried forward in full, with no allowance for lower returns ahead |
-| US-dollar returns are used as Australian-dollar returns | All tickers | Leaves out currency risk and any difference in average return from the exchange rate. Direction unclear |
+[[currency_row]]
+| Downloaded tickers use vendor prices and distributions, unreconciled with issuer records | Tickers written with `.AX` or `.US` | A missing early distribution lowers the income share, not the total return |
+| ASX and US closes on the same date are 14 to 16 hours apart | Plans mixing the two markets | Understates their same-day link; fades over multi-day blocks |
 | Nominal returns are deflated at a constant CPI | [[cpi]] | **Flatters** where the history includes high-inflation years: their nominal returns are deflated at only [[cpi]], so those stretches look better in real terms than they were |
 | Dependence beyond the block length is lost | Mean block [[length]] days | Changes the long-run spread; direction unclear (*Markets*) |
 | Leveraged and long-history tickers are modelled before their funds existed | Per ticker | Results inherit those reconstructions |
@@ -886,7 +904,7 @@ look better than a fuller model would give; "cautious" the reverse. The directio
 | Interest on cash is constant | [[cash_interest]] | Small |
 | Today's law continues, indexed by its own rules | To [[last_fy]] | Leaves out legislative change, in either direction |
 | Income tax thresholds stay fixed in dollars | [[creep]] of today's real value by [[last_fy]] | **Cautious:** overstates tax late in the run |
-| Each ticker's income is its historical cash distribution rate; no franking credits | See *Daily ledger* | Sets how much tax is paid yearly instead of deferred |
+| Each ticker's income is its historical cash distribution rate; franking is as entered | See *Daily ledger*; [[franking]] | Sets how much tax is paid yearly instead of deferred |
 | The super fund realises a fixed share of its unrealised gains each year | [[realised]] | A higher share means more fund tax and more Division 296 |
 | The opening outside balance is one parcel per ticker with one cost base and date | | Blurs the tax on early sales |
 | The lowest-tax parcels are sold first | | Flatters relative to selling oldest first; needs parcel records |
