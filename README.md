@@ -1,272 +1,149 @@
 # Financial Simulations
 
-Python tools for simulating portfolio futures and planning Australian retirement, including early retirement funded outside super and subsequent combinations of outside investments and super.
+**A retirement planner for Australians that simulates your money one day at a time.**
 
-Status: Stage 1A is implemented: typed portfolio inputs, local CSV/Parquet and
-optimiser adapters, daily holdings/cash accounting, annual rebalancing or
-buy-and-hold, dated contributions/withdrawals, static PNG plots and inspectable
-baseline reports. Synthetic tests and daily reconciliation with the companion
-optimiser are recorded in [validation evidence](docs/validation/stage-1a.md).
-Stage 1B is also implemented: joint daily historical replay, independent rows,
-moving blocks and stationary bootstrap, with sample-period/block-length/seed
-sensitivity and traceable PNG reports. Stage 1C adds a correlated daily
-log-return benchmark, explicit persistent return assumptions and an assumed
-purchasing-power comparison, plus an optional GARCH filtered-historical-
-simulation generator for volatility clustering and heavy tails. Stage 1D is
-complete: calendar-day nominal/real wealth percentiles, explicit targets,
-censored drawdown/recovery and Monte Carlo sampling error. It also adds paired
-multi-portfolio studies on shared draws, provenance-checked source-segment
-sensitivity, a leveraged-risk tail diagnostic and rolling calibration/holdout
-scoring. A batched many-path ledger with dated cash flows is ready for Stage 2.
-Stage 2A provides a sourced [2026-27 Australian rule register](docs/rules/au-2026-27.md),
-tested tax and super rule functions and a daily single-person
-[retirement ledger](docs/methodology/retirement-ledger.md) for that year
-(`python scripts/ledger_example.py` runs two five-year synthetic examples).
-Later years use projected rule sets with an assumed CPI, including the 2027
-CGT reform. AUD FX and Australian CPI data remain planned.
+Enter your pay, spending, investments, super and home. The app generates many possible market futures from
+decades of daily returns, runs every one through Australian tax, super and Age Pension rules, and shows how
+often the money lasts, how much you could spend and what the bad cases look like.
 
-## Plan a retirement in the browser
+It runs locally in your browser. Your plan and results never leave your machine.
+
+[![Python tests](https://github.com/mwilczynska/financial_simulations/actions/workflows/tests.yml/badge.svg)](https://github.com/mwilczynska/financial_simulations/actions/workflows/tests.yml)
+![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-1c5cab)
+
+![The Outcomes page: the share of simulated futures that are self-funded, draw the Age Pension or run out of money, with every path's wealth plotted below](docs/images/outcomes.png)
+
+> [!NOTE]
+> This is a research tool, not financial advice. The screenshots use an invented plan: a 30-year-old on
+> $180,000 with a $600,000 home loan who retires at 60.
+
+## What it answers
+
+- **Will the money last?** Every simulated future is classed as self-funded, on a part or full Age Pension, or ran out.
+- **How much can I spend?** Compare four retirement spending strategies on identical markets.
+- **What happens in a bad market?** Open any single path and follow each account, tax bill and transfer.
+- **What does my portfolio do?** See its history since 1970 and the range of simulated returns.
+
+## A tour
+
+| | |
+| --- | --- |
+| [![Plan page, You tab](docs/images/plan.png)](docs/images/plan.png) | [![Plan page, Retirement tab](docs/images/plan-retirement.png)](docs/images/plan-retirement.png) |
+| **Plan.** Your age, salary, home, loan and any investment property, with a first-year estimate of tax and saving. | **Spending strategies.** Tick one or more: fixed, Guyton–Klinger guardrails, Vanguard ceiling and floor, or a percentage of wealth. |
+| [![Paths page](docs/images/paths.png)](docs/images/paths.png) | [![Compare page](docs/images/compare.png)](docs/images/compare.png) |
+| **Paths.** One future in full: what markets did, what each account held, and the money in and out each year. | **Compare.** Every ticked strategy on the same market paths, so the differences come from the strategy alone. |
+| [![Markets page](docs/images/markets.png)](docs/images/markets.png) | [![Method page](docs/images/method.png)](docs/images/method.png) |
+| **Markets.** Each portfolio's mix, historical growth, volatility and drawdowns. | **Method.** The model's equations, rules and assumptions, filled in with the figures of your own run. |
+
+## How it works
+
+```mermaid
+flowchart LR
+    A["<b>History</b><br/>daily total returns<br/>of your tickers"] --> B["<b>Resampling</b><br/>stationary block<br/>bootstrap"]
+    B --> C["<b>Portfolios</b><br/>your mix compounded<br/>on every path"]
+    C --> D["<b>Daily ledger</b><br/>pay, spending, tax,<br/>super, loans, pension"]
+    D --> E["<b>Results</b><br/>outcomes and percentiles<br/>in today's dollars"]
+```
+
+The only random input is the sequence of daily market returns. Given one sequence, everything else follows
+from your plan and the tax rules.
+
+1. **History.** Daily total returns for the tickers you choose, some reaching back to 1970.
+2. **Resampling.** Blocks of consecutive days are drawn jointly across tickers, which keeps the correlations
+   between assets and the clustering of volatile periods.
+3. **Daily ledger.** Each path steps through every calendar day: interest, market return, pay, contributions,
+   spending, tax and, each 30 June, the year's tax assessment.
+4. **Results.** Amounts are converted to today's dollars, each path is classified, and percentiles are taken
+   across paths.
+
+Returns stay daily throughout. Monthly and annual figures are summaries of daily paths.
+
+## What is modelled
+
+| Area | Included |
+| --- | --- |
+| **Income tax** | Resident rates and offsets, Medicare levy and surcharge, PAYG withholding, the annual assessment |
+| **Super** | Super guarantee, salary sacrifice, contribution caps, fund tax, Division 296, access dates, account-based pensions and minimum drawdowns |
+| **Investments outside super** | Individual parcels, capital gains tax, distributions, annual rebalancing, a cash buffer |
+| **Age Pension** | Income and assets tests, deeming, Work Bonus, SAPTO |
+| **Property** | Your home and its running costs, a home loan with extra repayments, an investment property with rent and its own loan |
+| **Spending** | Fixed buying power, Guyton–Klinger guardrails, Vanguard ceiling and floor, percentage of wealth, with an optional minimum and maximum |
+
+Rules are sourced for 2026-27 and [recorded with their references](docs/rules/au-2026-27.md). Later years use
+[projected rules](docs/rules/au-projection.md) under the CPI and wage growth you assume, with each parameter
+marked as enacted, projected or assumed.
+
+## Limitations
+
+- **One person.** Couples are planned, not built.
+- **US-dollar returns stand in for Australian-dollar returns.** Exchange rates and Australian distribution
+  components such as franking are not modelled yet.
+- **A fixed list of tickers.** They are US-listed funds and custom long histories; ASX funds are not supported.
+- **Constant inflation and wage growth**, set by you.
+- **The future is drawn from the past.** Resampling cannot produce markets unlike any in the sample.
+
+The [plan and app guide](docs/methodology/plan-and-app.md) covers these in detail.
+
+## Run it
+
+You need Python 3.11 or newer, and a checkout of
+[financial_datasets](https://github.com/mwilczynska/financial_datasets) with its processed data, in a folder
+beside this one. Set `FINANCIAL_DATASETS_PROCESSED` to use a different location.
 
 ```powershell
+python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e '.[ui]'
 .\.venv\Scripts\python.exe -m financial_simulations ui
 ```
 
-This opens a local app at http://localhost:8501. Select local processed
-tickers, set separate portfolio allocations and opening balances outside and
-inside super, then enter work, spending, pension and horizon details. Press
-**Run plan** to inspect each portfolio's historical behaviour and simulated
-return/risk ranges before the retirement outcomes. Charts are interactive,
-with hover values and explanations. The invented default uses the selected
-40/20/20/20 mix outside super and 100% `GLSTOCK` inside super.
-Import or export the plan as TOML or JSON, or save it to the git-ignored
-`plans/` folder. Every run writes one folder, `output/plans/<plan-name>/`. Ticking *Also save results* in the
-Plan menu saves a run's results to `output/saved_runs/` with the plan, and *Open saved results* opens them again
-without re-running; every path's full daily ledger is optional (ADRs 0050 and 0051).
-The same file runs from the command line:
-`python -m financial_simulations plan plans/<name>.toml`. The app derives
-full-sample descriptive returns and a cash-contribution proxy from local
-processed data; no annual return or yield is entered. It resamples joint
-daily USD returns and explicitly uses them as an AUD proxy in the retirement
-ledger until FX and Australian distribution data are available. Runs stop
-before Age Pension age. See the
-[plan and app guide](docs/methodology/plan-and-app.md).
+The app opens at http://localhost:8501 with an invented example plan. Change the inputs and press **Run plan**.
+
+Plans save as TOML in `plans/`, and the same file runs from the command line:
+
+```powershell
+.\.venv\Scripts\python.exe -m financial_simulations plan plans/my-plan.toml
+```
+
+Each run writes its charts, tables and a manifest of input hashes to `output/plans/<plan-name>/`. Both folders
+are git-ignored.
+
+## Research tools
+
+The planner sits on a portfolio simulation library, which also runs from the command line.
+
+| Command | What it does |
+| --- | --- |
+| `run` | Replay a portfolio through history with daily accounting, rebalancing and dated cash flows |
+| `compare` | Compare return generators: historical replay, bootstraps, correlated lognormal and GARCH filtered historical simulation |
+| `paired` | Compare portfolios on shared draws, across observed and reconstructed periods |
+| `holdout` | Score each generator against what markets did next |
+| `reconcile` | Check the accounting against [portfolio_optimisation](https://github.com/mwilczynska/portfolio_optimisation) |
+
+```powershell
+.\.venv\Scripts\python.exe -m financial_simulations run scenarios/examples/baseline.toml --output output/baseline
+```
+
+Example configurations such as [baseline.toml](scenarios/examples/baseline.toml) are in `scenarios/examples/`. Each command writes PNG charts, CSV
+tables and a manifest.
+
+## Documentation
+
+Every model is written up with its equations, sources, validation and limits.
+
+- [Methodology](docs/methodology/README.md): how each calculation works, starting with the
+  [retirement ledger](docs/methodology/retirement-ledger.md) and the [daily engine](docs/methodology/daily-engine.md)
+- [Decision records](docs/decisions/README.md): why each material choice was made, and the alternatives
+- [Rule register](docs/rules/au-2026-27.md): the Australian tax and super rules, with sources and effective dates
+- [Validation](docs/validation/stage-2a.md): the checks that were run, and their results
+- [Literature review](docs/literature-review.md) and [project plan](PLAN.md)
 
 ## Development
 
-Use Python 3.11 or newer:
-
 ```powershell
-python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e '.[dev,parquet]'
 .\.venv\Scripts\python.exe -m pytest
-```
-
-Parquet support is optional; omit `parquet` for CSV-only use. The
-[adapter methodology](docs/methodology/data-adapters.md) records the implemented
-scope, strict calendar policy, supported aliases and validation evidence.
-
-## Run the first baseline
-
-Keep `financial_datasets` and optionally `portfolio_optimisation` as sibling
-checkouts, as described in [the plan](PLAN.md). From this repository:
-
-```powershell
-.\.venv\Scripts\python.exe -m financial_simulations run scenarios/examples/baseline.toml --output output/baseline --parquet
-.\.venv\Scripts\python.exe -m financial_simulations run scenarios/examples/optimiser_baseline.toml --output output/optimiser-baseline
-.\.venv\Scripts\python.exe -m financial_simulations run scenarios/examples/cash_flows.toml --output output/cash-flows
-```
-
-Each Stage 1 baseline run writes `wealth.png`, `drawdown.png` and
-`allocation.png` directly from Python/Matplotlib. The retirement planner
-also provides interactive portfolio and ledger charts. No PDFs are generated.
-The local HTML report embeds the
-same images and links the full daily ledger, source observations, monthly/annual
-summaries and a versioned input/code manifest. All generated output stays ignored.
-
-The examples use nominal USD. The default is the user-selected `Optimised CURRENT`
-portfolio from `portfolio_plot17.py`: `USLCAP3x` 40%, `ITT3x` 20%, `GOLDPM2x` 20%
-and `COMM` 20%, with annual calendar-year rebalancing. This label records the
-user's selection, not a new claim of optimality. Existing daily fund returns
-retain their embedded financing/expenses. An equal-weight global four-asset
-comparator is available in `equal_weight_baseline.toml`. The default's
-2010-2025 window uses matching source observation calendars. The loader rejects
-mixed calendars and bad data rather than filling or dropping trading rows.
-These historical results do not implement Australian purchasing power or tax.
-
-Edit the TOML examples for other weights, windows, policies or dated cash flows.
-Paths in TOML resolve relative to that file. A contribution uses a positive
-amount; a withdrawal request uses a negative amount. Initial cash is a retained
-reserve. On closed-market dates withdrawals can spend only cash; any shortfall
-is recorded without borrowing or automatic retry. See the
-[accounting methodology](docs/methodology/portfolio-accounting.md) for timing.
-
-## Compare empirical generators (Stage 1B)
-
-```powershell
-.\.venv\Scripts\python.exe -m financial_simulations compare scenarios/examples/comparison.toml --output output/stage1b
-.\.venv\Scripts\python.exe scripts/validate_experiment.py --output output/stage1b
-```
-
-The first command runs the configurable experiment; the second also reconciles
-every saved example path to the full daily ledger. The default compares the
-40/20/20/20 portfolio over 252, 1,260 and 2,520 daily observations, using two
-calibration windows, three block lengths and two separate seeds. Each stochastic
-setting draws 256 paths per seed. All complete overlapping replay windows are
-counted explicitly; a missing horizon is reported with zero complete windows.
-
-Outputs include `terminal_wealth.png`, `sample_paths.png`, `dependence.png`,
-case/path outcome CSVs, saved source-index traces and an input/code manifest.
-These are nominal USD conditional scenarios. The default uses a shared observed
-accounting-calendar template, not a forecast of future exchange holidays.
-Horizon counts are not exact calendar years. Longer target grids can be supplied
-through an explicit `calendar_file` CSV in the experiment. Dated cash flows,
-inflation/FX factors and retirement rules are outside this comparison runner.
-Read [methodology](docs/methodology/resampling.md) and
-[validation](docs/validation/stage-1b.md) before interpreting the sample percentiles.
-
-## Compare return assumptions (Stage 1C)
-
-```powershell
-.\.venv\Scripts\python.exe -m financial_simulations compare scenarios/examples/monte_carlo.toml --output output/stage1c
-.\.venv\Scripts\python.exe scripts/validate_experiment.py --experiment scenarios/examples/monte_carlo.toml --output output/stage1c
-```
-
-The second command runs the experiment and independently reconciles its saved
-paths through the full daily ledger; the validator supports both Stage 1B and
-1C. The example keeps the selected 40/20/20/20 portfolio and compares empirical
-generators with correlated Gaussian daily log returns under a historical fit,
-base, lower-return and persistent-high-inflation grid. Each stochastic case
-uses 512 paths per seed, two seeds and two calibration windows.
-
-Forward return and inflation rates are explicitly labelled engineering
-demonstrations, not forecasts or user-approved expectations. Historical log
-means/covariance and forward inputs are recorded separately. Annual geometric,
-expected compounded and annualised daily arithmetic conventions have distinct
-daily conversions. Gaussian cases share innovations, so base and high inflation
-have identical nominal market paths and different assumed purchasing power.
-
-Additional outputs are `terminal_purchasing_power.png`, `mean_assumptions.png`,
-`mean_assumptions.csv` and `calibration.json`. The manifest records source/code
-hashes, fitted parameters, canonical assumptions and random-stream recipes.
-The assumed deflator accrues over elapsed calendar days; it is not observed
-CPI, Australian inflation or an AUD conversion. See
-[parametric methodology](docs/methodology/parametric.md) and
-[Stage 1C validation](docs/validation/stage-1c.md) for limits and executed checks.
-
-## Evaluate outcomes (Stage 1D)
-
-Stage 1D's first evaluation/reporting pass is available:
-
-```powershell
-.\.venv\Scripts\python.exe -m financial_simulations compare scenarios/examples/evaluation.toml --output output/stage1d
-.\.venv\Scripts\python.exe scripts/validate_experiment.py --experiment scenarios/examples/evaluation.toml --output output/stage1d
-```
-
-The example's explicit toy target is to preserve opening purchasing power.
-It retains the 40/20/20/20 portfolio and the Stage 1C demonstration assumption
-grid. Daily calendar account marks produce nominal/real pointwise percentile
-bands, terminal empirical distributions and drawdown/recovery metrics. Open
-recoveries keep their censored status and observed lower-bound durations.
-
-New PNGs are `wealth_percentiles_nominal.png`, `wealth_percentiles_real.png`,
-`terminal_distribution.png`, `target_shortfall.png` and `drawdown_recovery.png`.
-Detailed CSVs include `wealth_percentiles.csv`, `risk_summary.csv` and the
-expanded path outcomes. Confidence intervals quantify conditional simulation
-sampling error; overlapping replay windows receive descriptive statistics.
-They do not cover parameter uncertainty or disagreement between generators.
-
-Read [evaluation methodology](docs/methodology/evaluation.md) and
-[validation](docs/validation/stage-1d.md).
-
-Add `[volatility]` with `model = "garch_fhs"` to a comparison with parametric
-assumptions to run the [GARCH filtered historical simulation](docs/methodology/volatility.md)
-beside the Gaussian cases. It supports `historical` and `geometric_growth`
-means only.
-
-## Paired portfolios, source segments and holdouts (Stage 1D)
-
-```powershell
-.\.venv\Scripts\python.exe -m financial_simulations paired scenarios/examples/paired.toml --output output/stage1d-paired
-.\.venv\Scripts\python.exe -m financial_simulations holdout scenarios/examples/holdout.toml --output output/stage1d-holdout
-.\.venv\Scripts\python.exe scripts/validate_studies.py --reuse
-```
-
-Both examples compare the leveraged default with the same mix in unlevered
-series and an equal-weight global portfolio. They use the opt-in
-`common_dates` calendar policy, which reaches back to 1970 (see
-[ADR 0009](docs/decisions/0009-common-date-calendar-policy.md)).
-
-The paired study compounds every portfolio on identical draws (replay,
-stationary bootstrap, lognormal, GARCH-FHS). It runs on an observed-only
-2009-2025 window, a reconstructed-only 1970-2006 window and the full history.
-A window whose required provenance does not hold fails. Outputs are
-`paired_terminal.png`, `paired_differences.png`, `segment_statistics.png`,
-`tail_diagnostics.png` and the matching CSVs.
-
-The holdout study refits each generator on the ten years before each January
-origin, then scores the realised next 252 and 1,260 observations by their PIT
-within the generated distribution: `holdout_pit.png`, `holdout_timeline.png`,
-`holdout_folds.csv` and `holdout_summary.csv`.
-
-The validator recomputes sampled paths through the full daily ledger,
-recomputes PIT values, and reconciles the batched cash-flow engine on
-bootstrapped companion data. `--reuse` audits existing outputs; without it the
-studies are rerun.
-
-## Reproduce the checks
-
-The unit suite uses only small synthetic fixtures; companion data is not needed.
-`scripts/check_repository.py` checks tracked text for UTF-8/LF, machine paths,
-broken local links and ignored private paths; CI runs it after the tests.
-The integration script below needs both sibling checkouts and Parquet support:
-
-```powershell
-.\.venv\Scripts\python.exe -m pytest
 .\.venv\Scripts\python.exe scripts/check_repository.py
-.\.venv\Scripts\python.exe scripts/validate_stage1a.py --output output/validation
 ```
 
-The script checks repeated CSV/PNG outputs, CSV/Parquet agreement, daily account
-invariants, the cash-flow example and both policies against the actual optimiser
-for the default, equal-weight comparator and imported portfolio. Its local evidence
-is `output/validation/validation.json`. An optional `--tracker-script` argument
-audits selected calculation functions from a trusted local `portfolio_plot17.py`
-without running its top-level downloads, plotting or configuration. The
-[tracker audit](docs/decisions/0005-default-portfolio-and-tracker-audit.md) explains
-which conventions reconcile and which require different treatment.
-The declared numerical tolerances and observed results are in the validation record.
-GitHub Actions runs the synthetic suite on Python 3.11 and 3.14 without copying
-companion data into this repository.
-
-For the exact tested Windows/Python 3.14 runtime/test versions, install
-`requirements-dev.lock.txt` before the editable package:
-
-```powershell
-.\.venv\Scripts\python.exe -m pip install -r requirements-dev.lock.txt
-.\.venv\Scripts\python.exe -m pip install --no-deps -e .
-```
-
-Other platforms/Python versions should resolve the compatible ranges from
-`pyproject.toml`; the snapshot is not a universal platform lock. Each run records
-its actual dependency versions.
-
-## Project principles
-
-- Keep daily returns throughout calibration, path generation and portfolio/account compounding, consistent with [financial_datasets](https://github.com/mwilczynska/financial_datasets).
-- Consume candidate asset weights from [portfolio_optimisation](https://github.com/mwilczynska/portfolio_optimisation) or a manually specified portfolio.
-- Compare historical replay, joint daily block resampling and statistical Monte Carlo rather than relying on one generator.
-- Separate market paths from portfolio accounting, personal accounts, Australian rules and spending policies.
-- Start retirement modelling with one Australian tax resident, then add couples with separate account ownership and super access dates.
-- Write detailed methodology and decision records as the models develop, including assumptions, alternatives, reasons, references, validation and limitations.
-- Commit and push coherent, reviewed checkpoints regularly. Keep private financial inputs and generated personal reports out of Git.
-
-## Read the design
-
-- [Project plan](PLAN.md): staged implementation, data contracts and validation requirements.
-- [Literature review](docs/literature-review.md): primary research, modelling implications and limitations of the review.
-- [Methodology register](docs/methodology/README.md): detailed documentation standards, topic roadmap and current status.
-- [Daily-engine methodology](docs/methodology/daily-engine.md): calendars, compounding, scheduled cash flows, leverage, costs and worked examples.
-- [Decision records](docs/decisions/README.md): dated explanations of material choices, alternatives, evidence and consequences.
-
-Monthly and annual charts or tables will be summaries derived from daily paths. Cash flows may occur monthly, annually or on other configured dates; the underlying accounting remains daily.
+The tests use small synthetic fixtures and need no market data. `requirements-dev.lock.txt` pins the tested
+Windows and Python 3.14 versions.
