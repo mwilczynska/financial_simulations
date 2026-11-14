@@ -81,20 +81,34 @@ def group_view(run, d, members, label):
     a.metric("Spendable wealth at retirement (median)", compact(float(group[spendable].median())),
              help="Cash, investments and super on the retirement date, less any home loan; it excludes an investment "
                   f"property's equity. Median total wealth: {compact(float(group['Wealth at retirement'].median()))}.")
-    b.metric("Ending wealth (median)", compact(float(group["Ending wealth"].median())))
-    c.metric("Average spending per retired year", compact(float(group["Average retired-year spending"].median())),
+    # The same eight tiles in the same places as a single path's (``path_view``), as medians across the group, then
+    # the three shares that only a group has.
+    median = lambda column: float(group[column].median()) if column in group else np.nan
+    b.metric("Wealth when super becomes accessible (median)", compact(median("Wealth when super accessible")),
+             help="Total wealth on the first day super can be withdrawn (preservation age and retirement), when that "
+                  "is after the start; the median across the group.")
+    c.metric("Ending wealth (median)", compact(float(group["Ending wealth"].median())))
+    e.metric("Average spending per retired year", compact(float(group["Average retired-year spending"].median())),
              help="Each path's spending paid, averaged over its full retired financial years; the group's median path.")
-    e.metric("Withdrawal rate (median)", share(float(group["Median withdrawal rate"].median())),
-             help="The median, across the group, of each path's median withdrawal rate over its retired years.")
+    a, b, c, e = st.columns(4)
+    a.metric("Age Pension: paths · median", affected(group["Age Pension received"]),
+             help="Share of the group's paths paid any Age Pension, then the median total received among them.")
+    b.metric("Shortfall: paths · median", affected(group["Spending shortfall"]),
+             help="Share of the group's paths with any unpaid spending, then the median total shortfall among them.")
+    taxes = [column for column in ("Personal tax assessed", "Fund tax", "Division 296 tax") if column in group]
+    c.metric("Tax (personal, fund, Division 296)", compact(float(group[taxes].sum(axis=1).median())) if taxes else "–",
+             help="Each path's personal tax assessed, super fund tax and Division 296 tax over the horizon; the median "
+                  "of those path totals.")
+    e.metric("Largest fall in wealth (median)", share(median("Largest fall in wealth")),
+             help="Each path's deepest fall of wealth below its previous high, measured before subtracting any loans; "
+                  "the median across the group.")
     a, b, c, e = st.columns(4)
     a.metric("Ran out", share(float((group["Status"] == "depleted").mean())),
              help="Share of the group's paths with any unpaid spending or tax.")
-    b.metric("Shortfall: paths · median", affected(group["Spending shortfall"]),
-             help="Share of the group's paths with any unpaid spending, then the median total shortfall among them.")
-    c.metric("Age Pension: paths · median", affected(group["Age Pension received"]),
-             help="Share of the group's paths paid any Age Pension, then the median total received among them.")
-    e.metric("Reached the full Age Pension", share(float((group["Full Age Pension years"] > 0).mean())),
+    b.metric("Reached the full Age Pension", share(float((group["Full Age Pension years"] > 0).mean())),
              help="Share of the group's paths with at least one year paid the full rate.")
+    c.metric("Withdrawal rate (median)", share(float(group["Median withdrawal rate"].median())),
+             help="The median, across the group, of each path's median withdrawal rate over its retired years.")
     tabs = kept_tabs(result_key(run, "group_tabs"), ["Markets, wealth and money", "Year by year"])
     if tabs[0].open:
         with tabs[0]:

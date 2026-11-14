@@ -769,8 +769,13 @@ positions them.
      percentile), the best 10% and the best 1%. The ranked groups are
      ranked by ending wealth, and each has at least one path. A group's
      view uses **medians** across its paths (ADR 0040) for:
-     - its outcomes: wealth at retirement, when super becomes accessible
-       and at the end, and each path's median withdrawal rate;
+     - its outcomes, in the same eight tiles and the same places as a
+       single path's: spendable wealth at retirement, wealth when super
+       becomes accessible, ending wealth and average retired-year spending;
+       then Age Pension, shortfall, total tax and the largest fall in
+       wealth. A third row holds what only a group has: the share that ran
+       out, the share that reached the full Age Pension and the median of
+       each path's median withdrawal rate;
      - month-end balances by account (from `PlanRun.path_series`); each
        account's median is taken on its own, so the stacked total need
        not be any path's wealth;
