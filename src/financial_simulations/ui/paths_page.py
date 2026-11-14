@@ -11,6 +11,7 @@ from financial_simulations.reporting.palette import BOLD_SERIES, portfolio_line_
 from financial_simulations.retirement.flows import account_flows, fold_taxes, household_flows
 from financial_simulations.retirement.outcomes import TIERS, ending_percentiles
 from financial_simulations.retirement.path_markets import COMBINED_PORTFOLIO, PORTFOLIO, group_markets, path_markets, real_growth
+from financial_simulations.retirement.paths import largest_fall
 from financial_simulations.retirement.plan import slug
 from financial_simulations.retirement.real import real_daily, real_events, year_deflator
 from financial_simulations.retirement.run_plan import ledger_for_path
@@ -442,11 +443,11 @@ def path_view(run, d, path, ranks):
                                                                    outcome["Wealth at retirement"])),
              help="Cash, investments and super on your retirement date, less any home loan; it excludes an investment "
                   f"property's equity. Total wealth: {compact(outcome['Wealth at retirement'])}.")
-    b.metric(f"Wealth at {daily.index[-1].date():%B %Y}", compact(daily["total"].iloc[-1]),
-             help=f"The {ordinal(ranks[path])} percentile of ending wealth among calculated paths.")
-    c.metric("Wealth when super becomes accessible", compact(outcome.get("Wealth when super accessible", np.nan)),
+    b.metric("Wealth when super becomes accessible", compact(outcome.get("Wealth when super accessible", np.nan)),
              help="Total wealth on the first day super can be withdrawn (preservation age and retirement), when that "
                   "is after the start.")
+    c.metric(f"Wealth at {daily.index[-1].date():%B %Y}", compact(daily["total"].iloc[-1]),
+             help=f"The {ordinal(ranks[path])} percentile of ending wealth among calculated paths.")
     e.metric("Average spending per retired year", compact(outcome["Average retired-year spending"]),
              help="Spending paid, averaged over this path's full retired financial years. Its lowest retired year paid "
                   f"{compact(outcome['Lowest retired-year spending'])}.")
@@ -461,9 +462,10 @@ def path_view(run, d, path, ranks):
              compact(sum((x["assessment"].net_tax + x["assessment"].division_293_tax)
                          / year_deflator(int(x["financial_year"][:4]) + 1, start, cpi) for x in result.annual)
                      + daily["fund_tax"].sum() + daily["division_296"].sum()))
-    e.metric("Largest fall in wealth", share(float((daily["total"] / daily["total"].cummax() - 1).min())),
-             help="Deepest fall of total wealth below its previous high on this path. Unlike a portfolio drawdown it "
-                  "includes spending, so it keeps falling in retirement even in flat markets.")
+    e.metric("Largest fall in wealth", share(largest_fall(daily)),
+             help="Deepest fall of wealth below its previous high on this path, measured before subtracting any loans "
+                  "so that a home loan cannot distort it. Unlike a portfolio drawdown it includes spending, so it keeps "
+                  "falling in retirement even in flat markets.")
     tabs = kept_tabs(result_key(run, "path_tabs"), ["Markets, wealth and money", "Transfers between accounts",
                                                     "Year by year", "Event log"])
     if tabs[0].open:

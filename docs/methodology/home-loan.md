@@ -52,6 +52,17 @@ Net wealth:
 total = cash + outside investments + accumulation + pension − owed
 ```
 
+The **largest fall in wealth** is not measured on this total. A plan whose loan exceeds its savings starts with
+`total` below zero, and a fall from a peak near zero is not a percentage of anything. It is measured on wealth
+before loans, `A = total + owed` (plus any investment loan owed):
+
+```
+largest fall = min over days d of  A[d] / max(A[s] for s <= d) − 1
+```
+
+Days before the first positive high are skipped. Without a loan `A` is `total`
+([ADR 0060](../decisions/0060-largest-fall-in-wealth-before-loans.md)).
+
 ## Algorithm
 
 Each day in the ledger (see the event order in [retirement-ledger.md](retirement-ledger.md)):

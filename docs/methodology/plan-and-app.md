@@ -792,7 +792,9 @@ positions them.
      re-run on demand. Its metrics include wealth at the start, at
      retirement, when super becomes accessible and at the horizon. The view
      shows:
-   - balances by account, and the largest fall in total wealth;
+   - balances by account, and the largest fall in wealth, measured on wealth
+     before loans (`paths.largest_fall`,
+     [ADR 0060](../decisions/0060-largest-fall-in-wealth-before-loans.md));
    - **money in and out each year**, from `household_flows`: take-home
      salary, super contributions and investment returns against spending,
      income tax, contributions tax and fund tax, with a net-change line.

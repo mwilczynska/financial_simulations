@@ -149,3 +149,15 @@ def test_extra_repayments_can_be_redrawn_for_spending_so_paying_down_only_saves_
     # With a zero market return the only difference in net wealth is the interest saved.
     saved = none.daily["mortgage_interest"].sum() - everything.daily["mortgage_interest"].sum()
     assert everything.daily["total"].iloc[-1] - none.daily["total"].iloc[-1] == pytest.approx(saved)
+
+
+def test_largest_fall_in_wealth_is_measured_before_loans():
+    from financial_simulations.retirement.paths import largest_fall
+
+    # Assets 100 -> 150 -> 90 -> 200 against a loan of 140, so total wealth is -40, 10, -50, 60.
+    assets = pd.Series([100.0, 150.0, 90.0, 200.0])
+    daily = pd.DataFrame({"total": assets - 140.0, "mortgage": 140.0, "property_loan": 0.0})
+    assert largest_fall(daily) == pytest.approx(90 / 150 - 1)  # not -50 / 10 - 1 = -600%
+    # Without a loan it is the fall of total wealth, and a path that only rises has no fall.
+    assert largest_fall(pd.DataFrame({"total": assets})) == pytest.approx(-0.4)
+    assert largest_fall(pd.DataFrame({"total": [0.0, 0.0, 5.0, 6.0]})) == 0.0

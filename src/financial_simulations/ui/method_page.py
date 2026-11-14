@@ -852,8 +852,10 @@ years, so shortfalls lower it.
 not yet due, Division 296 not yet released, and the final part-year's estimated tax. The headline ending wealth is
 net of it.
 
-**Largest fall in wealth** is $\min_d \big(W_d / \max_{s \le d} W_s - 1\big)$ on daily total wealth in today's
-dollars. It includes spending, not only market falls.
+**Largest fall in wealth** is $\min_d \big(A_d / \max_{s \le d} A_s - 1\big)$ in today's dollars, where $A_d$ is
+total wealth plus any home loan and investment loan still owed (wealth before loans). Total wealth can start below
+zero when a loan is larger than the savings, and a fall from a peak near zero is not a meaningful percentage. Without
+a loan $A_d$ is total wealth. It includes spending, not only market falls.
 
 #### Precision
 

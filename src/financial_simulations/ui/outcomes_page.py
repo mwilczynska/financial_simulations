@@ -178,8 +178,9 @@ def ruin_metrics(run, d):
              help=f"Share of paths whose ending wealth was below the starting {compact(start)}.")
     c.metric("Ended below half of the start", share(float((outcomes["Ending wealth"] < 0.5 * start).mean())))
     e.metric("Median largest fall in wealth", share(float(outcomes["Largest fall in wealth"].median())),
-             help="Each path's deepest fall of total wealth below its previous high; the median across paths. Unlike a "
-                  "portfolio drawdown it includes spending, so it keeps falling in retirement even in flat markets.")
+             help="Each path's deepest fall of wealth below its previous high, measured before subtracting any loans; "
+                  "the median across paths. Unlike a portfolio drawdown it includes spending, so it keeps falling in "
+                  "retirement even in flat markets.")
 
 
 def tier_table(d):

@@ -39,6 +39,23 @@ OPTIONAL_SERIES = ("Spendable wealth", "Mortgage owed", "Investment property", "
                    "Home you moved into")
 
 
+def largest_fall(daily) -> float:
+    """Deepest fall of wealth before loans below its previous high, as a fraction of that high (ADR 0060).
+
+    Wealth before loans is total wealth plus the home loan and any investment loan still owed. Total wealth itself
+    starts below zero when the home loan is larger than the savings, and a fall measured against a peak near zero is
+    not a percentage of anything. Without a loan the two are the same series. Days before the first positive high
+    are skipped.
+    """
+    assets = daily["total"]
+    for loan in ("mortgage", "property_loan"):
+        if loan in daily:
+            assets = assets + daily[loan]
+    peak = assets.cummax()
+    falls = (assets / peak - 1)[peak > 0]
+    return float(min(falls.min(), 0.0)) if len(falls) else 0.0
+
+
 def _fy_start(day: date) -> date:
     return date(day.year if day.month >= 7 else day.year - 1, 7, 1)
 
@@ -141,7 +158,7 @@ def _summarise(path: int, result: LedgerResult, retire: date, cpi: float):
                # Total wealth on the first day super can be withdrawn, when that falls after the start.
                "Wealth when super accessible": (float(daily["total"].loc[accessible[0]])
                                                 if len(accessible) and accessible[0] > daily.index[0] else np.nan),
-               "Largest fall in wealth": float((daily["total"] / daily["total"].cummax() - 1).min()),
+               "Largest fall in wealth": largest_fall(daily),
                "Spending paid": float(daily["spending_paid"].sum()), "Spending shortfall": shortfall,
                "Shortfall years": int(sum(r["Shortfall"] > 0 for r in rows)),
                "First shortfall": str(shortfall_days[0].date()) if len(shortfall_days) else "",
