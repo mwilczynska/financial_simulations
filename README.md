@@ -30,8 +30,10 @@ It runs locally in your browser. Your plan and results never leave your machine.
 | --- | --- |
 | [![Plan page, You tab](docs/images/plan.png)](docs/images/plan.png) | [![Plan page, Retirement tab](docs/images/plan-retirement.png)](docs/images/plan-retirement.png) |
 | **Plan.** Your age, salary, home, loan and any investment property, with a first-year estimate of tax and saving. | **Spending strategies.** Tick one or more: fixed, Guyton–Klinger guardrails, Vanguard ceiling and floor, or a percentage of wealth. |
-| [![Paths page](docs/images/paths.png)](docs/images/paths.png) | [![Compare page](docs/images/compare.png)](docs/images/compare.png) |
-| **Paths.** One future in full: what markets did, what each account held, and the money in and out each year. | **Compare.** Every ticked strategy on the same market paths, so the differences come from the strategy alone. |
+| [![Paths page, summary cards](docs/images/paths.png)](docs/images/paths.png) | [![Paths page, charts](docs/images/paths-charts.png)](docs/images/paths-charts.png) |
+| **Paths.** Open any one future: its wealth at each milestone, spending, tax, Age Pension and any shortfall. | **One path in full.** What markets did, what each account held, and the money in and out each year, on one date axis. |
+| [![Outcomes page, Money in and out tab](docs/images/outcomes-flows.png)](docs/images/outcomes-flows.png) | [![Compare page](docs/images/compare.png)](docs/images/compare.png) |
+| **Money in and out.** The typical year across all paths: pay, returns, spending, tax and home costs. | **Compare.** Every ticked strategy on the same market paths, so the differences come from the strategy alone. |
 | [![Markets page](docs/images/markets.png)](docs/images/markets.png) | [![Method page](docs/images/method.png)](docs/images/method.png) |
 | **Markets.** Each portfolio's mix, historical growth, volatility and drawdowns. | **Method.** The model's equations, rules and assumptions, filled in with the figures of your own run. |
 

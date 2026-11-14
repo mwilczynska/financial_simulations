@@ -444,12 +444,12 @@ def path_view(run, d, path, ranks):
                   f"property's equity. Total wealth: {compact(outcome['Wealth at retirement'])}.")
     b.metric(f"Wealth at {daily.index[-1].date():%B %Y}", compact(daily["total"].iloc[-1]),
              help=f"The {ordinal(ranks[path])} percentile of ending wealth among calculated paths.")
-    c.metric("Average spending per retired year", compact(outcome["Average retired-year spending"]),
+    c.metric("Wealth when super becomes accessible", compact(outcome.get("Wealth when super accessible", np.nan)),
+             help="Total wealth on the first day super can be withdrawn (preservation age and retirement), when that "
+                  "is after the start.")
+    e.metric("Average spending per retired year", compact(outcome["Average retired-year spending"]),
              help="Spending paid, averaged over this path's full retired financial years. Its lowest retired year paid "
                   f"{compact(outcome['Lowest retired-year spending'])}.")
-    e.metric("Largest fall in wealth", share(float((daily["total"] / daily["total"].cummax() - 1).min())),
-             help="Deepest fall of total wealth below its previous high on this path. Unlike a portfolio drawdown it "
-                  "includes spending, so it keeps falling in retirement even in flat markets.")
     a, b, c, e = st.columns(4)
     a.metric("Age Pension received", compact(daily["age_pension"].sum()) if "age_pension" in daily else "–",
              help=(f"First paid {outcome['Age Pension first paid']}; {outcome['Age Pension years']} financial years with a "
@@ -461,9 +461,9 @@ def path_view(run, d, path, ranks):
              compact(sum((x["assessment"].net_tax + x["assessment"].division_293_tax)
                          / year_deflator(int(x["financial_year"][:4]) + 1, start, cpi) for x in result.annual)
                      + daily["fund_tax"].sum() + daily["division_296"].sum()))
-    e.metric("Wealth when super becomes accessible", compact(outcome.get("Wealth when super accessible", np.nan)),
-             help="Total wealth on the first day super can be withdrawn (preservation age and retirement), when that "
-                  "is after the start.")
+    e.metric("Largest fall in wealth", share(float((daily["total"] / daily["total"].cummax() - 1).min())),
+             help="Deepest fall of total wealth below its previous high on this path. Unlike a portfolio drawdown it "
+                  "includes spending, so it keeps falling in retirement even in flat markets.")
     tabs = kept_tabs(result_key(run, "path_tabs"), ["Markets, wealth and money", "Transfers between accounts",
                                                     "Year by year", "Event log"])
     if tabs[0].open:
